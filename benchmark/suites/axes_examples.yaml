@@ -8,12 +8,9 @@ cases:
   - ideal@1
   - b0_offset@1
   - b0_localized@1
-  - b1_low@1
-  - b1_localized@1
   - rigid_steps@1
   - deformation@1
   - b0_drift@1
-  - b1_drift@1
   - dynamic_tissue@1
 - task: rich_geometry_gre@1
   physics:

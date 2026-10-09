@@ -2,7 +2,7 @@
 schema_version: 1
 id: fields_and_motion
 version: 1
-description: Combined scanner-fixed fields and rigid object motion.
+description: Scanner-fixed B0 inhomogeneity and rigid object motion.
 level: P4
 effects:
 - kind: b0
@@ -11,12 +11,6 @@ effects:
   gradient_hz_per_m:
   - 1000
   - 0
-- kind: b1
-  model: linear
-  center_scale: 1
-  gradient_scale_per_m:
-  - 0
-  - 2
 - kind: motion
   model: rigid_sinusoidal
   translation_amplitude_mm:

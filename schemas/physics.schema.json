@@ -225,68 +225,6 @@
       "title": "B0",
       "type": "object"
     },
-    "B1": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "b1",
-          "title": "Kind",
-          "type": "string"
-        },
-        "model": {
-          "const": "linear",
-          "title": "Model",
-          "type": "string"
-        },
-        "center_scale": {
-          "exclusiveMinimum": 0,
-          "title": "Center Scale",
-          "type": "number"
-        },
-        "gradient_scale_per_m": {
-          "anyOf": [
-            {
-              "maxItems": 2,
-              "minItems": 2,
-              "prefixItems": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "number"
-                }
-              ],
-              "type": "array"
-            },
-            {
-              "maxItems": 3,
-              "minItems": 3,
-              "prefixItems": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "number"
-                }
-              ],
-              "type": "array"
-            }
-          ],
-          "title": "Gradient Scale Per M"
-        }
-      },
-      "required": [
-        "kind",
-        "model",
-        "center_scale",
-        "gradient_scale_per_m"
-      ],
-      "title": "B1",
-      "type": "object"
-    },
     "ConstantB0": {
       "additionalProperties": false,
       "properties": {
@@ -311,33 +249,6 @@
         "offset_hz"
       ],
       "title": "ConstantB0",
-      "type": "object"
-    },
-    "ConstantB1": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "b1",
-          "title": "Kind",
-          "type": "string"
-        },
-        "model": {
-          "const": "constant",
-          "title": "Model",
-          "type": "string"
-        },
-        "scale": {
-          "exclusiveMinimum": 0,
-          "title": "Scale",
-          "type": "number"
-        }
-      },
-      "required": [
-        "kind",
-        "model",
-        "scale"
-      ],
-      "title": "ConstantB1",
       "type": "object"
     },
     "Deformation": {
@@ -513,113 +424,6 @@
       "title": "GaussianB0",
       "type": "object"
     },
-    "GaussianB1": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "b1",
-          "title": "Kind",
-          "type": "string"
-        },
-        "model": {
-          "const": "gaussian",
-          "title": "Model",
-          "type": "string"
-        },
-        "baseline_scale": {
-          "exclusiveMinimum": 0,
-          "title": "Baseline Scale",
-          "type": "number"
-        },
-        "amplitude_scale": {
-          "title": "Amplitude Scale",
-          "type": "number"
-        },
-        "center_mm": {
-          "anyOf": [
-            {
-              "maxItems": 2,
-              "minItems": 2,
-              "prefixItems": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "number"
-                }
-              ],
-              "type": "array"
-            },
-            {
-              "maxItems": 3,
-              "minItems": 3,
-              "prefixItems": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "number"
-                }
-              ],
-              "type": "array"
-            }
-          ],
-          "title": "Center Mm"
-        },
-        "sigma_mm": {
-          "anyOf": [
-            {
-              "maxItems": 2,
-              "minItems": 2,
-              "prefixItems": [
-                {
-                  "exclusiveMinimum": 0,
-                  "type": "number"
-                },
-                {
-                  "exclusiveMinimum": 0,
-                  "type": "number"
-                }
-              ],
-              "type": "array"
-            },
-            {
-              "maxItems": 3,
-              "minItems": 3,
-              "prefixItems": [
-                {
-                  "exclusiveMinimum": 0,
-                  "type": "number"
-                },
-                {
-                  "exclusiveMinimum": 0,
-                  "type": "number"
-                },
-                {
-                  "exclusiveMinimum": 0,
-                  "type": "number"
-                }
-              ],
-              "type": "array"
-            }
-          ],
-          "title": "Sigma Mm"
-        }
-      },
-      "required": [
-        "kind",
-        "model",
-        "baseline_scale",
-        "amplitude_scale",
-        "center_mm",
-        "sigma_mm"
-      ],
-      "title": "GaussianB1",
-      "type": "object"
-    },
     "MapB0": {
       "additionalProperties": false,
       "properties": {
@@ -643,31 +447,6 @@
         "asset"
       ],
       "title": "MapB0",
-      "type": "object"
-    },
-    "MapB1": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "b1",
-          "title": "Kind",
-          "type": "string"
-        },
-        "model": {
-          "const": "map",
-          "title": "Model",
-          "type": "string"
-        },
-        "asset": {
-          "$ref": "#/$defs/Asset"
-        }
-      },
-      "required": [
-        "kind",
-        "model",
-        "asset"
-      ],
-      "title": "MapB1",
       "type": "object"
     },
     "Motion": {
@@ -848,7 +627,6 @@
         "target": {
           "enum": [
             "b0_offset",
-            "b1_scale",
             "proton_density"
           ],
           "title": "Target",
@@ -937,7 +715,6 @@
       "enum": [
         "P0",
         "P2",
-        "P3",
         "P4"
       ],
       "title": "Level",
@@ -969,31 +746,6 @@
                 },
                 {
                   "$ref": "#/$defs/MapB0"
-                }
-              ]
-            },
-            "b1": {
-              "discriminator": {
-                "mapping": {
-                  "constant": "#/$defs/ConstantB1",
-                  "gaussian": "#/$defs/GaussianB1",
-                  "linear": "#/$defs/B1",
-                  "map": "#/$defs/MapB1"
-                },
-                "propertyName": "model"
-              },
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/B1"
-                },
-                {
-                  "$ref": "#/$defs/ConstantB1"
-                },
-                {
-                  "$ref": "#/$defs/GaussianB1"
-                },
-                {
-                  "$ref": "#/$defs/MapB1"
                 }
               ]
             },
@@ -1045,31 +797,6 @@
               },
               {
                 "$ref": "#/$defs/MapB0"
-              }
-            ]
-          },
-          {
-            "discriminator": {
-              "mapping": {
-                "constant": "#/$defs/ConstantB1",
-                "gaussian": "#/$defs/GaussianB1",
-                "linear": "#/$defs/B1",
-                "map": "#/$defs/MapB1"
-              },
-              "propertyName": "model"
-            },
-            "oneOf": [
-              {
-                "$ref": "#/$defs/B1"
-              },
-              {
-                "$ref": "#/$defs/ConstantB1"
-              },
-              {
-                "$ref": "#/$defs/GaussianB1"
-              },
-              {
-                "$ref": "#/$defs/MapB1"
               }
             ]
           },

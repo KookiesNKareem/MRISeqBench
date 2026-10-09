@@ -158,15 +158,6 @@ class Catalog:
                 if len(effect.asset.shape) != len(task.sequence.fov_mm):
                     raise ValueError("field asset dimensions do not match FOV")
                 self.validate_asset(effect.asset)
-            if effect.kind == "b1" and effect.model == "linear":
-                excursion = sum(
-                    abs(g) * f / 2000
-                    for g, f in zip(effect.gradient_scale_per_m, task.sequence.fov_mm)
-                )
-                if effect.center_scale <= excursion:
-                    raise ValueError(
-                        f"{task.id}/{physics.id}: B1 scale becomes nonpositive"
-                    )
             if effect.kind == "time_variation" and effect.material:
                 materials = self.phantoms[obj.phantom].materials
                 if effect.material not in materials:

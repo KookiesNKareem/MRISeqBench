@@ -328,48 +328,6 @@ class MapB0(Strict):
         return self
 
 
-class B1(Strict):
-    kind: Literal["b1"]
-    model: Literal["linear"]
-    center_scale: Positive
-    gradient_scale_per_m: Vector
-
-
-class ConstantB1(Strict):
-    kind: Literal["b1"]
-    model: Literal["constant"]
-    scale: Positive
-
-
-class GaussianB1(Strict):
-    kind: Literal["b1"]
-    model: Literal["gaussian"]
-    baseline_scale: Positive
-    amplitude_scale: Finite
-    center_mm: Vector
-    sigma_mm: Extent
-
-    @model_validator(mode="after")
-    def dimensions_and_scale(self):
-        if len(self.center_mm) != len(self.sigma_mm):
-            raise ValueError("Gaussian center and sigma dimensions must match")
-        if self.baseline_scale + min(0, self.amplitude_scale) <= 0:
-            raise ValueError("Gaussian B1 must remain positive")
-        return self
-
-
-class MapB1(Strict):
-    kind: Literal["b1"]
-    model: Literal["map"]
-    asset: Asset
-
-    @model_validator(mode="after")
-    def units(self):
-        if self.asset.units != "relative":
-            raise ValueError("B1 map units must be relative")
-        return self
-
-
 class Motion(Strict):
     kind: Literal["motion"]
     model: Literal["rigid_sinusoidal"]
@@ -418,7 +376,7 @@ class Deformation(Strict):
 class TimeVariation(Strict):
     kind: Literal["time_variation"]
     model: Literal["sinusoidal"]
-    target: Literal["b0_offset", "b1_scale", "proton_density"]
+    target: Literal["b0_offset", "proton_density"]
     # Unit follows target; require exactly one corresponding amplitude.
     amplitude_hz: Finite | None = None
     amplitude_scale: Finite | None = None
@@ -441,25 +399,20 @@ class TimeVariation(Strict):
             if abs(self.amplitude_scale) >= 1:
                 raise ValueError("scale variation amplitude must remain below one")
             if (self.target == "proton_density") != (self.material is not None):
-                raise ValueError(
-                    "proton_density requires a material; b1_scale does not"
-                )
+                raise ValueError("proton_density requires a material")
         return self
 
 
 B0Effect = Annotated[B0 | ConstantB0 | GaussianB0 | MapB0, Field(discriminator="model")]
-B1Effect = Annotated[B1 | ConstantB1 | GaussianB1 | MapB1, Field(discriminator="model")]
 MotionEffect = Annotated[
     Motion | RigidTrajectory | Deformation, Field(discriminator="model")
 ]
-Effect = Annotated[
-    B0Effect | B1Effect | MotionEffect | TimeVariation, Field(discriminator="kind")
-]
+Effect = Annotated[B0Effect | MotionEffect | TimeVariation, Field(discriminator="kind")]
 
 
 class Physics(Document):
     description: str
-    level: Literal["P0", "P2", "P3", "P4"]
+    level: Literal["P0", "P2", "P4"]
     effects: list[Effect]
 
     @model_validator(mode="after")
@@ -470,7 +423,7 @@ class Physics(Document):
         expected = (
             "P4"
             if {"motion", "time_variation"}.intersection(kinds)
-            else ("P3" if len(kinds) > 1 else "P2" if kinds else "P0")
+            else ("P2" if kinds else "P0")
         )
         if self.level != expected:
             raise ValueError(f"effects imply {expected}, not {self.level}")

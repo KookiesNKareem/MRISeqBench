@@ -30,17 +30,46 @@ def update(root, folder, name, mutate):
 def test_explicit_cases_and_axes():
     catalog = Catalog(ROOT)
     cases = catalog.cases(catalog.get("suites", "core"))
-    assert len(cases) == 8
-    assert [c["object_level"] for c in cases[:6]] == [
+    assert len(cases) == 6
+    assert [c["object_level"] for c in cases[:4]] == [
         "P1",
         "P2",
-        "P2",
-        "P3",
         "P4",
         "P4",
     ]
     assert {c["sequence_level"] for c in cases} == {"S1", "S2"}
     assert all(c["evaluation"]["calibrated"] is False for c in cases)
+
+
+def test_physics_axis_is_b0_only_and_has_no_p3():
+    from mriseqbench.models import Physics
+
+    catalog = Catalog(ROOT)
+    for profile in catalog.documents["physics"].values():
+        assert profile.level in {"P0", "P2", "P4"}
+        assert all(effect.kind != "b1" for effect in profile.effects)
+        if profile.level == "P2":
+            assert {effect.kind for effect in profile.effects} == {"b0"}
+    profile = catalog.get("physics", "b0_smooth").model_dump()
+    profile["level"] = "P3"
+    with pytest.raises(ValidationError):
+        Physics.model_validate(profile)
+    profile["level"] = "P2"
+    profile["effects"] = [{"kind": "b1", "model": "constant", "scale": 0.8}]
+    with pytest.raises(ValidationError):
+        Physics.model_validate(profile)
+    profile["level"] = "P4"
+    profile["effects"] = [
+        {
+            "kind": "time_variation",
+            "model": "sinusoidal",
+            "target": "b1_scale",
+            "amplitude_scale": 0.1,
+            "period_s": 1,
+        }
+    ]
+    with pytest.raises(ValidationError):
+        Physics.model_validate(profile)
 
 
 @pytest.mark.parametrize(
@@ -51,7 +80,6 @@ def test_explicit_cases_and_axes():
         ("tasks", "gre_t1w", lambda d: d.update(object="tissue_discs@2")),
         ("tasks", "gre_t1w", lambda d: d["sequence"].update(level="S6")),
         ("physics", "b0_smooth", lambda d: d.update(level="P0")),
-        ("physics", "b1_smooth", lambda d: d["effects"][0].update(center_scale=0.1)),
         ("suites", "core", lambda d: d["cases"].append(d["cases"][0])),
         (
             "objects",
@@ -151,12 +179,9 @@ def test_axes_keep_geometry_and_physics_separate():
     [
         "b0_offset",
         "b0_localized",
-        "b1_low",
-        "b1_localized",
         "rigid_steps",
         "deformation",
         "b0_drift",
-        "b1_drift",
         "dynamic_tissue",
     ],
 )
@@ -172,11 +197,6 @@ def test_extended_profiles_resolve(profile):
 @pytest.mark.parametrize(
     "folder,name,mutate",
     [
-        (
-            "physics",
-            "b1_localized",
-            lambda d: d["effects"][0].update(amplitude_scale=-1),
-        ),
         (
             "physics",
             "b0_localized",
@@ -197,7 +217,6 @@ def test_extended_profiles_resolve(profile):
             "deformation",
             lambda d: d["effects"][0].update(strain_amplitude=[1, 0]),
         ),
-        ("physics", "b1_drift", lambda d: d["effects"][0].update(amplitude_scale=1)),
         (
             "physics",
             "dynamic_tissue",
@@ -316,8 +335,8 @@ def test_map_fields_have_explicit_units():
         "effects": [{"kind": "b0", "model": "map", "asset": asset}],
     }
     assert Physics.model_validate(profile).effects[0].asset.units == "Hz"
-    profile["effects"][0]["kind"] = "b1"
-    with pytest.raises(ValueError, match="relative"):
+    profile["effects"][0]["asset"]["units"] = "relative"
+    with pytest.raises(ValueError, match="B0 map units must be Hz"):
         Physics.model_validate(profile)
 
 
@@ -357,7 +376,7 @@ def test_suite_can_reuse_task_with_explicit_object_override():
 def test_full_suite_covers_every_benchmark_task_across_both_axes():
     catalog = Catalog(ROOT)
     cases = catalog.cases(catalog.get("suites", "full"))
-    assert len(cases) == 2760
+    assert len(cases) == 1840
     tasks = {
         task.id
         for task in catalog.documents["tasks"].values()
@@ -371,7 +390,6 @@ def test_full_suite_covers_every_benchmark_task_across_both_axes():
             "P0",
             "P1",
             "P2",
-            "P3",
             "P4",
         }
         assert all(case["evaluation"]["scope"] == "benchmark" for case in selected)

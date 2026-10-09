@@ -11,23 +11,23 @@ Agents submit Pulseq `sequence.seq` files using versioned KomaMRI phantoms.
 
 ## Current task grid
 
-**40 sequence tasks, 2,760 cases** in the [full suite](benchmark/suites/full.yaml),
-covering 690 object/physics combinations on each of four hardware profiles.
+**40 sequence tasks, 1,840 cases** in the [full suite](benchmark/suites/full.yaml),
+covering 460 object/physics combinations on each of four hardware profiles.
 Each checkmark means every task in that row has cases in that object/physics category.
 
-| Sequence | Tasks | P0 | P1 | P2 | P3 | P4 |
-|---|---|:---:|:---:|:---:|:---:|:---:|
-| S1 · Basic | T1/T2* GRE, spin echo, bSSFP, geometry GRE, 3D GRE | ✓ | ✓ | ✓ | ✓ | ✓ |
-| S2 · Readout | Single/multishot EPI, radial, spiral, rosette, rings, stack-of-stars, PROPELLER, UTE, TSE, GRASE | ✓ | ✓ | ✓ | ✓ | ✓ |
-| S3 · Sampling | SENSE, GRAPPA, CAIPIRINHA, compressed sensing, variable density, partial Fourier, asymmetric echo, reduced FOV, elliptical k-space | ✓ | ✓ | ✓ | ✓ | ✓ |
-| S4 · Temporal | Radial/interleaved cine, real-time radial, keyhole, k-t BLAST, k-t SENSE, TWIST | ✓ | ✓ | ✓ | ✓ | ✓ |
-| S5 · Application | Inversion recovery, adiabatic inversion, T2 preparation, multi-echo GRE, T1/T2 mapping, MRF | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Sequence | Tasks | P0 | P1 | P2 | P4 |
+|---|---|:---:|:---:|:---:|:---:|
+| S1 · Basic | T1/T2* GRE, spin echo, bSSFP, geometry GRE, 3D GRE | ✓ | ✓ | ✓ | ✓ |
+| S2 · Readout | Single/multishot EPI, radial, spiral, rosette, rings, stack-of-stars, PROPELLER, UTE, TSE, GRASE | ✓ | ✓ | ✓ | ✓ |
+| S3 · Sampling | SENSE, GRAPPA, CAIPIRINHA, compressed sensing, variable density, partial Fourier, asymmetric echo, reduced FOV, elliptical k-space | ✓ | ✓ | ✓ | ✓ |
+| S4 · Temporal | Radial/interleaved cine, real-time radial, keyhole, k-t BLAST, k-t SENSE, TWIST | ✓ | ✓ | ✓ | ✓ |
+| S5 · Application | Inversion recovery, adiabatic inversion, T2 preparation, multi-echo GRE, T1/T2 mapping, MRF | ✓ | ✓ | ✓ | ✓ |
 
 **P0:** uniform ideal object. **P1:** richer ideal geometry/tissues.
-**P2:** B0 or B1 perturbation. **P3:** combined B0/B1. **P4:** motion.
+**P2:** B0 inhomogeneity only. **P4:** motion or time-varying properties.
 
 The full suite combines each sequence with compatible uniform and multi-tissue
-phantoms, ideal fields, B0, B1, combined fields, motion, and fields plus motion.
+phantoms, ideal fields, B0 inhomogeneity, motion, and B0 plus motion.
 2D and 3D cases use matching phantom and physics definitions.
 
 ## Hardware

@@ -2,7 +2,7 @@
 schema_version: 1
 id: fields_and_motion_3d
 version: 1
-description: Combined 3D B0/B1 fields and rigid motion.
+description: Scanner-fixed B0 inhomogeneity and rigid object motion in 3D.
 level: P4
 effects:
 - kind: b0
@@ -12,13 +12,6 @@ effects:
   - 1000
   - 0
   - 300
-- kind: b1
-  model: linear
-  center_scale: 1
-  gradient_scale_per_m:
-  - 0
-  - 2
-  - 0.5
 - kind: motion
   model: rigid_sinusoidal
   translation_amplitude_mm:
