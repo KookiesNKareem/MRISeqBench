@@ -41,6 +41,7 @@ def parser():
     )
     describe.add_argument("task")
     describe.add_argument("--physics", default="ideal")
+    describe.add_argument("--hardware", help="override the task's hardware reference")
     describe.add_argument(
         "--object", help="override the task's default object reference"
     )
@@ -95,6 +96,13 @@ def main(argv=None):
                 print(f"\n{kind.upper()}")
                 for doc in catalog.documents[kind].values():
                     print(f"{doc.level} {doc.id}@{doc.version}: {doc.description}")
+            print("\nHARDWARE (per-axis gradient limits)")
+            for hw in catalog.documents["hardware"].values():
+                print(
+                    f"{hw.id}@{hw.version}: {hw.field_strength_T:g} T, "
+                    f"{hw.max_gradient_mT_per_m:g} mT/m, "
+                    f"{hw.max_slew_T_per_m_per_s:g} T/m/s"
+                )
             return 0
         if args.command == "validate":
             print(
@@ -126,6 +134,7 @@ def main(argv=None):
                 catalog.get("tasks", args.task),
                 catalog.get("physics", args.physics),
                 args.object,
+                hardware_ref=args.hardware,
             )
             print(prompt(case))
             return 0

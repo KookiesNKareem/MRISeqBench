@@ -477,7 +477,15 @@ class Physics(Document):
         return self
 
 
+class HardwareProvenance(Strict):
+    system: str
+    source_url: Annotated[str, Field(pattern=r"^https://\S+$")]
+    accessed_on: Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
+    notes: str
+
+
 class Hardware(Document):
+    provenance: HardwareProvenance | None = None
     field_strength_T: Positive
     max_gradient_mT_per_m: Positive
     max_slew_T_per_m_per_s: Positive
@@ -531,6 +539,7 @@ class Evaluation(Document):
 class SuiteEntry(Strict):
     task: Reference
     objects: Annotated[list[Reference], Field(min_length=1)] | None = None
+    hardware: Annotated[list[Reference], Field(min_length=1)] | None = None
     physics: Annotated[list[Reference], Field(min_length=1)]
 
 

@@ -25,6 +25,23 @@
           "default": null,
           "title": "Objects"
         },
+        "hardware": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hardware"
+        },
         "physics": {
           "items": {
             "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",

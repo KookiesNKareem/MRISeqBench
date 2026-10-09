@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../schemas/hardware.schema.json
+schema_version: 1
+id: low_field
+version: 1
+field_strength_T: 0.55
+max_gradient_mT_per_m: 26
+max_slew_T_per_m_per_s: 45
+max_b1_uT: 20
+rf_dead_time_us: 100
+rf_ringdown_time_us: 30
+adc_dead_time_us: 10
+gradient_raster_us: 10
+rf_raster_us: 1
+adc_raster_us: 0.1
+block_raster_us: 10
+provenance:
+  system: Siemens MAGNETOM Free.Max, B80 gradients
+  source_url: https://academy.siemens-healthineers.com/_/en-us/magnetom-free-max-system-overview/
+  accessed_on: '2026-10-09'
+  notes: 'Published values: field_strength_T, max_gradient_mT_per_m and max_slew_T_per_m_per_s.
+    Gradient limits are per axis, not vector sums. max_b1_uT, dead times and rasters
+    are shared benchmark assumptions copied from standard@1, not manufacturer specifications.
+    This is a limit profile, not a complete scanner model.'

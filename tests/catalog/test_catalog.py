@@ -357,6 +357,7 @@ def test_suite_can_reuse_task_with_explicit_object_override():
 def test_full_suite_covers_every_benchmark_task_across_both_axes():
     catalog = Catalog(ROOT)
     cases = catalog.cases(catalog.get("suites", "full"))
+    assert len(cases) == 2760
     tasks = {
         task.id
         for task in catalog.documents["tasks"].values()
@@ -379,3 +380,50 @@ def test_full_suite_covers_every_benchmark_task_across_both_axes():
             == len(case["task"]["sequence"]["matrix"])
             for case in selected
         )
+        assert {case["hardware"]["id"] for case in selected} == {
+            "standard",
+            "low_field",
+            "standard_1_5t",
+            "high_performance",
+        }
+
+
+def test_hardware_override_preserves_default_and_resolves_contract():
+    from mriseqbench.models import Suite
+
+    catalog = Catalog(ROOT)
+    task = catalog.get("tasks", "gre_t1w")
+    suite = Suite.model_validate(
+        {
+            "schema_version": 1,
+            "id": "hardware_axis",
+            "version": 1,
+            "cases": [
+                {
+                    "task": "gre_t1w@1",
+                    "physics": ["ideal@1"],
+                    "hardware": ["standard@1", "low_field@1", "high_performance@1"],
+                }
+            ],
+        }
+    )
+    cases = catalog.cases(suite)
+    assert cases[0]["case_id"] == "gre_t1w-v1--ideal-v1"
+    assert cases[1]["case_id"].endswith("--hardware-low_field-v1")
+    assert cases[1]["task"]["hardware"] == "low_field@1"
+    assert cases[1]["hardware"]["field_strength_T"] == 0.55
+    assert cases[2]["hardware"]["max_gradient_mT_per_m"] == 80
+    assert "benchmark assumptions" in cases[1]["hardware"]["provenance"]["notes"]
+    assert task.hardware == "standard@1"
+    assert (
+        catalog.resolve(task, catalog.get("physics", "ideal"), hardware_ref="standard")[
+            "case_id"
+        ]
+        == cases[0]["case_id"]
+    )
+    assert catalog.find_case(cases[1]["case_id"]) == cases[1]
+    with pytest.raises(ValueError, match="unknown hardware"):
+        catalog.resolve(task, catalog.get("physics", "ideal"), hardware_ref="missing@1")
+    suite.cases[0].hardware.append("low_field@1")
+    with pytest.raises(ValueError, match="duplicate suite case"):
+        catalog.cases(suite)

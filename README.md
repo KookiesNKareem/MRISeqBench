@@ -11,7 +11,8 @@ Agents submit Pulseq `sequence.seq` files using versioned KomaMRI phantoms.
 
 ## Current task grid
 
-**40 sequence tasks, 690 cases** in the [full suite](benchmark/suites/full.yaml).
+**40 sequence tasks, 2,760 cases** in the [full suite](benchmark/suites/full.yaml),
+covering 690 object/physics combinations on each of four hardware profiles.
 Each checkmark means every task in that row has cases in that object/physics category.
 
 | Sequence | Tasks | P0 | P1 | P2 | P3 | P4 |
@@ -29,6 +30,30 @@ The full suite combines each sequence with compatible uniform and multi-tissue
 phantoms, ideal fields, B0, B1, combined fields, motion, and fields plus motion.
 2D and 3D cases use matching phantom and physics definitions.
 
+## Hardware
+
+Gradient amplitude and slew limits are **per axis**. The three sourced profiles use
+published field strengths and gradient limits from real systems:
+
+| Profile | System/configuration | B0 (T) | Gradient (mT/m) | Slew (T/m/s) |
+|---|---|---:|---:|---:|
+| `standard@1` | Existing generic benchmark baseline | 3 | 32 | 80 |
+| `low_field@1` | [Siemens Free.Max, B80](https://academy.siemens-healthineers.com/_/en-us/magnetom-free-max-system-overview/) | 0.55 | 26 | 45 |
+| `standard_1_5t@1` | [Siemens Sola, XJ](https://www.siemens-healthineers.com/en-us/magnetic-resonance-imaging/0-35-to-1-5t-mri-scanner/magnetom-sola) | 1.5 | 33 | 125 |
+| `high_performance@1` | [Siemens Prisma, XR](https://www.siemens-healthineers.com/en-au/magnetic-resonance-imaging/3t-mri-scanner/magnetom-prisma) | 3 | 80 | 200 |
+
+Sources checked October 9, 2026; each sourced YAML records its provenance.
+RF amplitude (20 µT), dead times and raster settings are shared benchmark
+assumptions, not published specifications for these scanners. Profiles enforce
+sequence limits; they do not model scanner-specific coils, SAR, PNS, gradient
+duty cycles, noise or field-dependent tissue relaxation. Phantoms and physics
+perturbations retain their explicitly defined properties across hardware profiles.
+
+Suite entries can select `hardware: [low_field@1, standard_1_5t@1, high_performance@1]`
+alongside objects and physics. Each combination gets a distinct case ID;
+the task's default hardware keeps its original ID. The full suite includes all
+four profiles; core and smoke retain their default hardware.
+
 ## Run
 
 ```bash
@@ -37,6 +62,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 uv run mriseqbench validate
 uv run mriseqbench list --suite full
 uv run mriseqbench describe spiral_gre --physics b0_smooth
+uv run mriseqbench describe spiral_gre --hardware low_field
 uv run mriseqbench run --experiment experiments/sandbox_smoke.yaml
 ```
 

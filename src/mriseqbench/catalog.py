@@ -118,8 +118,11 @@ class Catalog:
         ):
             raise ValueError(f"{task.id}: phantom extends beyond FOV")
 
-    def resolve(self, task: Task, physics: Physics, object_ref=None, seed=42):
+    def resolve(
+        self, task: Task, physics: Physics, object_ref=None, seed=42, hardware_ref=None
+    ):
         obj = self.get("objects", object_ref or task.object)
+        hardware = self.get("hardware", hardware_ref or task.hardware)
         self.validate_geometry(task, object_ref)
         evaluator = self.get("evaluators", task.evaluation)
         if evaluator.scope == "smoke" and physics.effects:
@@ -171,8 +174,11 @@ class Catalog:
         case_id = f"{task.id}-v{task.version}--{physics.id}-v{physics.version}"
         if object_ref and object_ref != task.object:
             case_id += f"--object-{obj.id}-v{obj.version}"
+        if f"{hardware.id}@{hardware.version}" != task.hardware:
+            case_id += f"--hardware-{hardware.id}-v{hardware.version}"
         task_contract = task.model_dump(mode="json")
         task_contract["object"] = f"{obj.id}@{obj.version}"
+        task_contract["hardware"] = f"{hardware.id}@{hardware.version}"
         return {
             "case_id": case_id,
             "sequence_level": task.sequence.level,
@@ -186,7 +192,7 @@ class Catalog:
                 "definition": self.phantoms[obj.phantom].model_dump(mode="json"),
             },
             "physics": physics.model_dump(mode="json"),
-            "hardware": self.get("hardware", task.hardware).model_dump(mode="json"),
+            "hardware": hardware.model_dump(mode="json", exclude_none=True),
             "evaluation": self.get("evaluators", task.evaluation).model_dump(
                 mode="json"
             ),
@@ -198,11 +204,17 @@ class Catalog:
             task = self.get("tasks", entry.task)
             for object_ref in entry.objects or [task.object]:
                 for ref in entry.physics:
-                    case = self.resolve(task, self.get("physics", ref), object_ref)
-                    if case["case_id"] in seen:
-                        raise ValueError(f"duplicate suite case {case['case_id']}")
-                    seen.add(case["case_id"])
-                    cases.append(case)
+                    for hardware_ref in entry.hardware or [task.hardware]:
+                        case = self.resolve(
+                            task,
+                            self.get("physics", ref),
+                            object_ref,
+                            hardware_ref=hardware_ref,
+                        )
+                        if case["case_id"] in seen:
+                            raise ValueError(f"duplicate suite case {case['case_id']}")
+                        seen.add(case["case_id"])
+                        cases.append(case)
         return cases
 
     def find_case(self, case_id):

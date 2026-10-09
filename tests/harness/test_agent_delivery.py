@@ -223,3 +223,31 @@ def test_prompt_uses_resolved_contract():
     assert "null" not in text
     assert "schema_version" not in text
     assert "physical scoring is pending" in text
+
+
+def test_hardware_provenance_stays_out_of_agent_context(tmp_path):
+    from types import SimpleNamespace
+
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(
+        catalog.get("tasks", "gre_t1w"),
+        catalog.get("physics", "ideal"),
+        hardware_ref="low_field@1",
+    )
+    original = copy.deepcopy(case)
+    prepare(
+        tmp_path,
+        case,
+        catalog.get("experiments", "smoke"),
+        SimpleNamespace(root=ROOT, port=12345, token="test-token"),
+    )
+    for filename in ("PROMPT.md", "task.yaml", "case.json"):
+        text = (tmp_path / filename).read_text()
+        assert "provenance" not in text
+        assert "source_url" not in text
+        assert "Siemens" not in text
+    public = json.loads((tmp_path / "case.json").read_text())
+    assert public["hardware"] == {
+        k: v for k, v in case["hardware"].items() if k != "provenance"
+    }
+    assert case == original

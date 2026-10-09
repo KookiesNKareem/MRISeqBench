@@ -18,6 +18,52 @@ def gre_case():
     )
 
 
+def test_selected_hardware_enforces_real_gradient_limit(tmp_path):
+    from pypulseq import Opts, Sequence, make_adc, make_block_pulse, make_trapezoid
+
+    from mriseqbench.evaluation.preflight import preflight
+
+    catalog = Catalog(ROOT)
+    system = Opts(
+        max_grad=80,
+        grad_unit="mT/m",
+        max_slew=200,
+        slew_unit="T/m/s",
+        rf_dead_time=100e-6,
+        rf_ringdown_time=30e-6,
+        adc_dead_time=10e-6,
+    )
+    seq = Sequence(system)
+    seq.add_block(
+        make_block_pulse(
+            0.5, duration=1e-3, delay=100e-6, system=system, use="excitation"
+        )
+    )
+    # 30 mT/m at 30 T/m/s clears the slew limit of both profiles,
+    # but exceeds Free.Max's 26 mT/m amplitude limit.
+    grad = make_trapezoid(
+        "x",
+        amplitude=0.03 * system.gamma,
+        rise_time=1e-3,
+        flat_time=1e-3,
+        system=system,
+    )
+    adc = make_adc(32, duration=960e-6, delay=1e-3, system=system)
+    seq.add_block(grad, adc)
+    path = tmp_path / "hardware.seq"
+    seq.write(str(path))
+    for hardware, passes in [("high_performance@1", True), ("low_field@1", False)]:
+        case = catalog.resolve(
+            catalog.get("tasks", "gre_t1w"),
+            catalog.get("physics", "ideal"),
+            hardware_ref=hardware,
+        )
+        checks = preflight(path, case)
+        assert next(c for c in checks if c["name"] == "gradient_x")["passed"] is passes
+        assert next(c for c in checks if c["name"] == "slew_x")["passed"]
+        assert all(c["passed"] for c in checks) is passes
+
+
 def fake_backend(case, **changes):
     # Contract fixtures only; no synthetic metric is a real benchmark result.
     result = {

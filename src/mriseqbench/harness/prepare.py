@@ -52,7 +52,7 @@ def task_brief(case):
             "hardware": {
                 k: v
                 for k, v in case["hardware"].items()
-                if k not in ("id", "version", "schema_version")
+                if k not in ("id", "version", "schema_version", "provenance")
             },
             "seed": case["seed"],
         }
@@ -149,7 +149,11 @@ def prepare_inputs(workspace, case, root, phantom_dir=None):
 def prepare(workspace, case, experiment, server, phantom_dir=None):
     workspace = Path(workspace).resolve()
     workspace.mkdir(parents=True, exist_ok=True)
-    write_json(workspace / "case.json", case)
+    public_case = {
+        **case,
+        "hardware": {k: v for k, v in case["hardware"].items() if k != "provenance"},
+    }
+    write_json(workspace / "case.json", public_case)
     (workspace / "task.yaml").write_text(brief_yaml(case))
     prepare_inputs(workspace, case, server.root, phantom_dir)
     instructions = prompt(case) + (

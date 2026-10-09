@@ -1,4 +1,37 @@
 {
+  "$defs": {
+    "HardwareProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "title": "System",
+          "type": "string"
+        },
+        "source_url": {
+          "pattern": "^https://\\S+$",
+          "title": "Source Url",
+          "type": "string"
+        },
+        "accessed_on": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Accessed On",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "system",
+        "source_url",
+        "accessed_on",
+        "notes"
+      ],
+      "title": "HardwareProvenance",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "schema_version": {
@@ -15,6 +48,17 @@
       "exclusiveMinimum": 0,
       "title": "Version",
       "type": "integer"
+    },
+    "provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HardwareProvenance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "field_strength_T": {
       "exclusiveMinimum": 0,
