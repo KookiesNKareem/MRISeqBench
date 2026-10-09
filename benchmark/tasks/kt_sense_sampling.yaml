@@ -1,16 +1,18 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: sense_sampling
+id: kt_sense_sampling
 version: 1
-objective: Create an undersampled Cartesian spoiled GRE acquisition designed for SENSE
-  reconstruction.
+objective: Acquire eight Cartesian frames with twofold phase-encode undersampling
+  and eight central calibration lines. Alternate the retained odd/even line pattern
+  across frames for k-t SENSE reconstruction.
 sequence:
-  level: S3
+  level: S4
   capabilities:
   - spoiled_gre
   - cartesian
-  - undersampling
-  - sense
+  - kt_sense
+  - interleaved
+  - dynamic
   matrix:
   - 32
   - 32
@@ -21,6 +23,11 @@ sequence:
   sampling:
     acceleration: 2
     calibration_lines: 8
+    pattern: uniform
+  temporal:
+    frames: 8
+    frame_duration_ms: 150
+    ordering: interleaved
 object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1

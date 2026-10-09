@@ -112,3 +112,20 @@ end
     p,_=snapshot(c)
     @test p.Δw ≈ 2π*150 .*exp.(-0.5 .* (((p.x.-0.03)./0.02).^2 .+ (p.y./0.035).^2))
 end
+
+@testset "3D field and motion controls" begin
+    b0=Dict("kind"=>"b0","model"=>"linear","offset_hz"=>0,"gradient_hz_per_m"=>[1000,0,300])
+    b1=Dict("kind"=>"b1","model"=>"linear","center_scale"=>1,"gradient_scale_per_m"=>[0,2,0.5])
+    motion=Dict("kind"=>"motion","model"=>"rigid_sinusoidal","translation_amplitude_mm"=>[3,0,2],"rotation_amplitude_deg"=>0,"period_s"=>1)
+    c=case("uniform_sphere@1",[b0,b1,motion])
+    obj,scale=snapshot(c,0.25)
+    @test obj.z ≈ c.phantom.z .+ 0.002
+    @test obj.Δw ≈ 2π.*(1000 .* obj.x .+ 300 .* obj.z)
+    @test scale ≈ 1 .+ 2 .*obj.y .+ 0.5 .*obj.z
+    mktempdir() do out
+        materialize(c,out)
+        saved=read_phantom(joinpath(out,"phantom.phantom"))
+        coords=get_spin_coords(saved.motion,saved.x,saved.y,saved.z,reshape([0.25],1,:))
+        @test vec(coords[3]) ≈ obj.z
+    end
+end

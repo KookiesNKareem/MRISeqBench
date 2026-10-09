@@ -1,14 +1,14 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: rich_geometry_gre
+id: concentric_rings
 version: 1
-objective: Create a Cartesian spoiled GRE acquisition covering the selected phantom
-  and prescribed FOV.
+objective: Acquire 16 concentric k-space rings from the center to the Nyquist radius
+  for the prescribed 32 x 32 matrix and 200 mm FOV.
 sequence:
-  level: S1
+  level: S2
   capabilities:
   - spoiled_gre
-  - cartesian
+  - concentric_rings
   matrix:
   - 32
   - 32
@@ -16,7 +16,9 @@ sequence:
   - 200
   - 200
   duration_s: 6
-object: nested_ellipses@1
+  readout:
+    rings: 16
+object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1
 submission:

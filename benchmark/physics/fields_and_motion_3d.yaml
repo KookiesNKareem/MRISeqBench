@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: fields_and_motion_3d
+version: 1
+description: Combined 3D B0/B1 fields and rigid motion.
+level: P4
+effects:
+- kind: b0
+  model: linear
+  offset_hz: 0
+  gradient_hz_per_m:
+  - 1000
+  - 0
+  - 300
+- kind: b1
+  model: linear
+  center_scale: 1
+  gradient_scale_per_m:
+  - 0
+  - 2
+  - 0.5
+- kind: motion
+  model: rigid_sinusoidal
+  translation_amplitude_mm:
+  - 3
+  - 0
+  - 2
+  rotation_amplitude_deg: 2
+  period_s: 1
+  phase_deg: 0

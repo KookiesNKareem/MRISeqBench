@@ -1,0 +1,480 @@
+# yaml-language-server: $schema=../../schemas/suites.schema.json
+schema_version: 1
+id: full
+version: 1
+cases:
+- task: adiabatic_inversion@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: asymmetric_echo@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: bssfp@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: caipirinha@1
+  objects:
+  - uniform_sphere@1
+  - volume_ellipsoids@1
+  physics:
+  - ideal@1
+  - b0_smooth_3d@1
+  - b1_smooth_3d@1
+  - b0_b1_3d@1
+  - rigid_motion_3d@1
+  - fields_and_motion_3d@1
+- task: compressed_sensing@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: concentric_rings@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: elliptical_kspace@1
+  objects:
+  - uniform_sphere@1
+  - volume_ellipsoids@1
+  physics:
+  - ideal@1
+  - b0_smooth_3d@1
+  - b1_smooth_3d@1
+  - b0_b1_3d@1
+  - rigid_motion_3d@1
+  - fields_and_motion_3d@1
+- task: epi_multishot@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: epi_single_shot@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: grappa_sampling@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: grase@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: gre_t1w@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: gre_t2star@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: interleaved_cine@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: inversion_prepared@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: keyhole_dynamic@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: kt_blast_sampling@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: kt_sense_sampling@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: mrf_schedule@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: multi_echo_gre@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: partial_fourier@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: propeller_tse@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: radial_cine@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: radial_readout@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: real_time_radial@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: reduced_fov@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: rich_geometry_gre@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: rosette_gre@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: sense_sampling@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: spin_echo_t2w@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: spiral_gre@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: stack_of_stars@1
+  objects:
+  - uniform_sphere@1
+  - volume_ellipsoids@1
+  physics:
+  - ideal@1
+  - b0_smooth_3d@1
+  - b1_smooth_3d@1
+  - b0_b1_3d@1
+  - rigid_motion_3d@1
+  - fields_and_motion_3d@1
+- task: t1_mapping@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: t2_mapping@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: t2_prepared@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: tse_t2w@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: twist_dynamic@1
+  objects:
+  - uniform_sphere@1
+  - volume_ellipsoids@1
+  physics:
+  - ideal@1
+  - b0_smooth_3d@1
+  - b1_smooth_3d@1
+  - b0_b1_3d@1
+  - rigid_motion_3d@1
+  - fields_and_motion_3d@1
+- task: ute_radial@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: variable_density@1
+  objects:
+  - uniform_disc@1
+  - tissue_discs@1
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: volume_gre@1
+  objects:
+  - uniform_sphere@1
+  - volume_ellipsoids@1
+  physics:
+  - ideal@1
+  - b0_smooth_3d@1
+  - b1_smooth_3d@1
+  - b0_b1_3d@1
+  - rigid_motion_3d@1
+  - fields_and_motion_3d@1

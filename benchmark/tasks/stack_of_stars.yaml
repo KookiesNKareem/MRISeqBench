@@ -1,23 +1,30 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: radial_readout
+id: stack_of_stars
 version: 1
-objective: Create a spoiled GRE acquisition with radial readout.
+objective: Acquire a 3D stack-of-stars volume with 32 Cartesian partitions and 48
+  uniformly spaced radial spokes per partition.
 sequence:
   level: S2
   capabilities:
   - spoiled_gre
+  - stack_of_stars
   - radial
   matrix:
+  - 32
   - 32
   - 32
   fov_mm:
   - 200
   - 200
-  duration_s: 6
+  - 200
+  duration_s: 30
+  tr_ms:
+    target: 12
+    tolerance: 0.6000000000000001
   readout:
     spokes: 48
-object: tissue_discs@1
+object: volume_ellipsoids@1
 hardware: standard@1
 evaluation: image_fidelity@1
 submission:

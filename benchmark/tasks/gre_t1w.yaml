@@ -2,7 +2,8 @@
 schema_version: 1
 id: gre_t1w
 version: 1
-objective: Create a Cartesian spoiled GRE acquisition with white-matter signal greater than
+objective: Create a Cartesian spoiled GRE acquisition for T1-weighted imaging using
+  the declared matrix, FOV and timing. On tissue_discs, white-matter signal must exceed
   gray-matter signal.
 sequence:
   level: S1

@@ -129,6 +129,12 @@ class ReadoutSpec(Strict):
     spokes: Annotated[int, Field(gt=0)] | None = None
     dwell_us: Positive | None = None
     bandwidth_hz_per_pixel: Positive | None = None
+    turns: Positive | None = None
+    rings: Annotated[int, Field(gt=0)] | None = None
+    rosette_lobes: Annotated[int, Field(gt=0)] | None = None
+    blade_width_lines: Annotated[int, Field(gt=0)] | None = None
+    echo_spacing_ms: Positive | None = None
+    center_out: StrictBool | None = None
 
 
 class SamplingSpec(Strict):
@@ -137,6 +143,20 @@ class SamplingSpec(Strict):
     calibration_lines: Annotated[int, Field(ge=0)] | None = None
     multiband_factor: Annotated[int, Field(gt=0)] | None = None
     mask_seed: Annotated[int, Field(ge=0)] | None = None
+    pattern: (
+        Literal[
+            "uniform",
+            "variable_density",
+            "poisson_disc",
+            "elliptical",
+            "asymmetric_echo",
+            "reduced_fov",
+        ]
+        | None
+    ) = None
+    caipi_shift: Annotated[int, Field(ge=0)] | None = None
+    asymmetric_echo_fraction: Annotated[float, Field(gt=0.5, le=1)] | None = None
+    reduced_fov_fraction: Annotated[float, Field(gt=0, le=1)] | None = None
 
 
 class TemporalSpec(Strict):
@@ -144,10 +164,12 @@ class TemporalSpec(Strict):
     frame_duration_ms: Positive
     ordering: Literal["sequential", "interleaved", "golden_angle"]
     view_sharing_window: Annotated[int, Field(gt=0)] | None = None
+    center_fraction: Annotated[float, Field(gt=0, le=1)] | None = None
 
 
 class ApplicationSpec(Strict):
     inversion_time_ms: Positive | None = None
+    inversion_times_ms: list[Positive] = Field(default_factory=list)
     preparation_duration_ms: Positive | None = None
     saturation_offset_hz: Finite | None = None
     diffusion_b_s_per_mm2: Annotated[float, Field(ge=0)] | None = None
@@ -180,6 +202,7 @@ class SequenceSpec(Strict):
     te_ms: Timing | None = None
     tr_ms: Timing | None = None
     duration_s: Positive
+    flip_angle_deg: Annotated[float, Field(gt=0, le=180)] | None = None
     readout: ReadoutSpec | None = None
     sampling: SamplingSpec | None = None
     temporal: TemporalSpec | None = None
@@ -348,7 +371,7 @@ class MapB1(Strict):
 class Motion(Strict):
     kind: Literal["motion"]
     model: Literal["rigid_sinusoidal"]
-    translation_amplitude_mm: tuple[Finite, Finite]
+    translation_amplitude_mm: Vector
     rotation_amplitude_deg: Finite
     period_s: Positive
     phase_deg: Finite = 0

@@ -16,6 +16,14 @@
           "default": null,
           "title": "Inversion Time Ms"
         },
+        "inversion_times_ms": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "title": "Inversion Times Ms",
+          "type": "array"
+        },
         "preparation_duration_ms": {
           "anyOf": [
             {
@@ -189,6 +197,83 @@
           ],
           "default": null,
           "title": "Bandwidth Hz Per Pixel"
+        },
+        "turns": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turns"
+        },
+        "rings": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rings"
+        },
+        "rosette_lobes": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rosette Lobes"
+        },
+        "blade_width_lines": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blade Width Lines"
+        },
+        "echo_spacing_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Echo Spacing Ms"
+        },
+        "center_out": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Center Out"
         }
       },
       "title": "ReadoutSpec",
@@ -262,6 +347,67 @@
           ],
           "default": null,
           "title": "Mask Seed"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "enum": [
+                "uniform",
+                "variable_density",
+                "poisson_disc",
+                "elliptical",
+                "asymmetric_echo",
+                "reduced_fov"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "caipi_shift": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caipi Shift"
+        },
+        "asymmetric_echo_fraction": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.5,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asymmetric Echo Fraction"
+        },
+        "reduced_fov_fraction": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reduced Fov Fraction"
         }
       },
       "title": "SamplingSpec",
@@ -461,6 +607,20 @@
           "title": "Duration S",
           "type": "number"
         },
+        "flip_angle_deg": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 180,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Flip Angle Deg"
+        },
         "readout": {
           "anyOf": [
             {
@@ -569,6 +729,20 @@
           ],
           "default": null,
           "title": "View Sharing Window"
+        },
+        "center_fraction": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Center Fraction"
         }
       },
       "required": [

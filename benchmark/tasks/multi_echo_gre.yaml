@@ -1,13 +1,15 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: radial_readout
+id: multi_echo_gre
 version: 1
-objective: Create a spoiled GRE acquisition with radial readout.
+objective: Acquire three gradient echoes after each excitation at TE 4, 12 and 20
+  ms, preserving the same phase-encode index across echoes. Use TR 32 ms.
 sequence:
-  level: S2
+  level: S5
   capabilities:
   - spoiled_gre
-  - radial
+  - cartesian
+  - multi_echo
   matrix:
   - 32
   - 32
@@ -15,8 +17,14 @@ sequence:
   - 200
   - 200
   duration_s: 6
-  readout:
-    spokes: 48
+  tr_ms:
+    target: 32
+    tolerance: 1.6
+  application:
+    echo_times_ms:
+    - 4
+    - 12
+    - 20
 object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1

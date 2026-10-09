@@ -352,3 +352,30 @@ def test_suite_can_reuse_task_with_explicit_object_override():
             catalog.get("physics", "ideal"),
             "volume_ellipsoids@1",
         )
+
+
+def test_full_suite_covers_every_benchmark_task_across_both_axes():
+    catalog = Catalog(ROOT)
+    cases = catalog.cases(catalog.get("suites", "full"))
+    tasks = {
+        task.id
+        for task in catalog.documents["tasks"].values()
+        if catalog.get("evaluators", task.evaluation).scope == "benchmark"
+    }
+    assert {case["task"]["id"] for case in cases} == tasks
+    assert len({case["case_id"] for case in cases}) == len(cases)
+    for task in tasks:
+        selected = [case for case in cases if case["task"]["id"] == task]
+        assert {case["object_level"] for case in selected} == {
+            "P0",
+            "P1",
+            "P2",
+            "P3",
+            "P4",
+        }
+        assert all(case["evaluation"]["scope"] == "benchmark" for case in selected)
+        assert all(
+            case["object"]["definition"]["dimensions"]
+            == len(case["task"]["sequence"]["matrix"])
+            for case in selected
+        )

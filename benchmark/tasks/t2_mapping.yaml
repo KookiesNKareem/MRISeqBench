@@ -1,14 +1,16 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: mrf_schedule
+id: t2_mapping
 version: 1
-objective: Create a variable sequence schedule for MR fingerprinting.
+objective: Acquire three refocused spin-echo images at TE 20, 40 and 60 ms after each
+  excitation, retaining the same phase-encode index across echoes. Use TR 1000 ms
+  for T2 mapping.
 sequence:
   level: S5
   capabilities:
-  - spoiled_gre
+  - spin_echo
   - cartesian
-  - mrf
+  - multi_echo
   - mapping
   matrix:
   - 32
@@ -16,18 +18,15 @@ sequence:
   fov_mm:
   - 200
   - 200
-  duration_s: 6
+  duration_s: 40
+  tr_ms:
+    target: 1000
+    tolerance: 50.0
   application:
-    flip_angle_schedule_deg:
-    - 5
-    - 15
-    - 30
-    - 10
-    tr_schedule_ms:
-    - 12
-    - 15
-    - 18
-    - 14
+    echo_times_ms:
+    - 20
+    - 40
+    - 60
 object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1

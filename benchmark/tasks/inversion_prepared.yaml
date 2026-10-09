@@ -2,8 +2,7 @@
 schema_version: 1
 id: inversion_prepared
 version: 1
-objective: Create an inversion-prepared Cartesian spoiled GRE acquisition. Draft authoring
-  contract; task-specific evaluation is deferred.
+objective: Create an inversion-prepared Cartesian spoiled GRE acquisition.
 sequence:
   level: S5
   capabilities:

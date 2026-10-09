@@ -1,14 +1,15 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: rich_geometry_gre
+id: epi_multishot
 version: 1
-objective: Create a Cartesian spoiled GRE acquisition covering the selected phantom
-  and prescribed FOV.
+objective: Acquire the complete 32 x 32 Cartesian grid in four excitations, interleaving
+  phase-encode lines across four alternating-polarity EPI shots.
 sequence:
-  level: S1
+  level: S2
   capabilities:
-  - spoiled_gre
+  - epi
   - cartesian
+  - multi_shot
   matrix:
   - 32
   - 32
@@ -16,7 +17,12 @@ sequence:
   - 200
   - 200
   duration_s: 6
-object: nested_ellipses@1
+  te_ms:
+    target: 20
+    tolerance: 2.0
+  readout:
+    shots: 4
+object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1
 submission:

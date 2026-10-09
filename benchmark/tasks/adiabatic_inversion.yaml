@@ -1,13 +1,16 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: radial_readout
+id: adiabatic_inversion
 version: 1
-objective: Create a spoiled GRE acquisition with radial readout.
+objective: Apply a 10 ms hyperbolic-secant adiabatic inversion pulse followed by Cartesian
+  spoiled GRE, with inversion time 600 ms measured to the center-k-space echo.
 sequence:
-  level: S2
+  level: S5
   capabilities:
   - spoiled_gre
-  - radial
+  - cartesian
+  - adiabatic
+  - inversion
   matrix:
   - 32
   - 32
@@ -15,8 +18,9 @@ sequence:
   - 200
   - 200
   duration_s: 6
-  readout:
-    spokes: 48
+  application:
+    preparation_duration_ms: 10
+    inversion_time_ms: 600
 object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1

@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+schema_version: 1
+id: caipirinha
+version: 1
+objective: Acquire a 3D Cartesian CAIPIRINHA pattern with acceleration two along each
+  phase-encode axis. Shift retained ky lines by one grid index on successive retained
+  kz partitions and acquire an 8 x 8 central calibration region.
+sequence:
+  level: S3
+  capabilities:
+  - spoiled_gre
+  - cartesian
+  - undersampling
+  - caipirinha
+  matrix:
+  - 32
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  - 200
+  duration_s: 8
+  sampling:
+    acceleration: 4
+    calibration_lines: 8
+    caipi_shift: 1
+    pattern: uniform
+object: volume_ellipsoids@1
+hardware: standard@1
+evaluation: image_fidelity@1
+submission:
+  format: pulseq
+  file: sequence.seq

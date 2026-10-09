@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: rigid_motion_3d
+version: 1
+description: Periodic 3D translation with in-plane rotation.
+level: P4
+effects:
+- kind: motion
+  model: rigid_sinusoidal
+  translation_amplitude_mm:
+  - 3
+  - 0
+  - 2
+  rotation_amplitude_deg: 2
+  period_s: 1
+  phase_deg: 0

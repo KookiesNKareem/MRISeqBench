@@ -1,6 +1,139 @@
 {
-  "uniform_disc@1": {"dimensions": 2, "grid": [64,64], "fov_mm": [200,200], "bounds_mm": [[-60,60],[-60,60]], "materials": ["water"]},
-  "tissue_discs@1": {"dimensions": 2, "grid": [64,64], "fov_mm": [200,200], "bounds_mm": [[-59,59],[-63,54]], "materials": ["wm","gm","csf","fat"]},
-  "nested_ellipses@1": {"dimensions": 2, "grid": [96,96], "fov_mm": [200,200], "bounds_mm": [[-75,75],[-60,60]], "materials": ["background","inclusion"]},
-  "volume_ellipsoids@1": {"dimensions": 3, "grid": [32,32,16], "fov_mm": [200,200,200], "bounds_mm": [[-75,75],[-60,60],[-40,40]], "materials": ["background","inclusion"]}
+  "uniform_disc@1": {
+    "dimensions": 2,
+    "grid": [
+      64,
+      64
+    ],
+    "fov_mm": [
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -60,
+        60
+      ],
+      [
+        -60,
+        60
+      ]
+    ],
+    "materials": [
+      "water"
+    ]
+  },
+  "tissue_discs@1": {
+    "dimensions": 2,
+    "grid": [
+      64,
+      64
+    ],
+    "fov_mm": [
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -59,
+        59
+      ],
+      [
+        -63,
+        54
+      ]
+    ],
+    "materials": [
+      "wm",
+      "gm",
+      "csf",
+      "fat"
+    ]
+  },
+  "nested_ellipses@1": {
+    "dimensions": 2,
+    "grid": [
+      96,
+      96
+    ],
+    "fov_mm": [
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -75,
+        75
+      ],
+      [
+        -60,
+        60
+      ]
+    ],
+    "materials": [
+      "background",
+      "inclusion"
+    ]
+  },
+  "volume_ellipsoids@1": {
+    "dimensions": 3,
+    "grid": [
+      32,
+      32,
+      16
+    ],
+    "fov_mm": [
+      200,
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -75,
+        75
+      ],
+      [
+        -60,
+        60
+      ],
+      [
+        -40,
+        40
+      ]
+    ],
+    "materials": [
+      "background",
+      "inclusion"
+    ]
+  },
+  "uniform_sphere@1": {
+    "dimensions": 3,
+    "grid": [
+      32,
+      32,
+      16
+    ],
+    "fov_mm": [
+      200,
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -60,
+        60
+      ],
+      [
+        -60,
+        60
+      ],
+      [
+        -60,
+        60
+      ]
+    ],
+    "materials": [
+      "water"
+    ]
+  }
 }

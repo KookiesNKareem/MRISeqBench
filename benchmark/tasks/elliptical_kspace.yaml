@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+schema_version: 1
+id: elliptical_kspace
+version: 1
+objective: Acquire a 3D Cartesian volume retaining only phase-encode pairs satisfying
+  (ky/ky_max)^2 + (kz/kz_max)^2 <= 1.
+sequence:
+  level: S3
+  capabilities:
+  - spoiled_gre
+  - cartesian
+  - elliptical_kspace
+  matrix:
+  - 32
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  - 200
+  duration_s: 12
+  te_ms:
+    target: 3
+    tolerance: 0.30000000000000004
+  tr_ms:
+    target: 10
+    tolerance: 0.5
+  flip_angle_deg: 20
+  sampling:
+    pattern: elliptical
+object: volume_ellipsoids@1
+hardware: standard@1
+evaluation: image_fidelity@1
+submission:
+  format: pulseq
+  file: sequence.seq

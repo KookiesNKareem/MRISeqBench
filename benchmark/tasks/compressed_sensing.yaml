@@ -1,16 +1,16 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: sense_sampling
+id: compressed_sensing
 version: 1
-objective: Create an undersampled Cartesian spoiled GRE acquisition designed for SENSE
-  reconstruction.
+objective: Acquire a Cartesian Poisson-disc mask with nominal acceleration three,
+  eight fully sampled central phase-encode lines and mask seed 42.
 sequence:
   level: S3
   capabilities:
   - spoiled_gre
   - cartesian
-  - undersampling
-  - sense
+  - compressed_sensing
+  - poisson_disc
   matrix:
   - 32
   - 32
@@ -19,8 +19,10 @@ sequence:
   - 200
   duration_s: 6
   sampling:
-    acceleration: 2
+    acceleration: 3
     calibration_lines: 8
+    mask_seed: 42
+    pattern: poisson_disc
 object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1

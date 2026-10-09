@@ -1,15 +1,18 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: radial_cine
+id: keyhole_dynamic
 version: 1
-objective: Create a cine bSSFP acquisition with golden-angle radial frame ordering.
+objective: Acquire four Cartesian frames. Fully acquire the first frame; reacquire
+  the central quarter of phase-encode lines in each later frame and reuse peripheral
+  lines from the first frame.
 sequence:
   level: S4
   capabilities:
-  - bssfp
-  - radial
-  - golden_angle
-  - cine
+  - spoiled_gre
+  - cartesian
+  - keyhole
+  - view_sharing
+  - dynamic
   matrix:
   - 32
   - 32
@@ -20,7 +23,9 @@ sequence:
   temporal:
     frames: 4
     frame_duration_ms: 250
-    ordering: golden_angle
+    ordering: sequential
+    view_sharing_window: 4
+    center_fraction: 0.25
 object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1

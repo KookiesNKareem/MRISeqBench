@@ -75,6 +75,7 @@ def evaluate(submission, case, root, workspace, backend=None):
             raise ValueError("backend case/reconstruction does not match contract")
         required = set(case["task"]["sequence"]["capabilities"]) | {"matrix", "fov_mm"}
         for field in (
+            "flip_angle_deg",
             "te_ms",
             "tr_ms",
             "readout",

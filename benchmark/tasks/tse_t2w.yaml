@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+schema_version: 1
+id: tse_t2w
+version: 1
+objective: Acquire a Cartesian T2-weighted image in four shots with eight refocused
+  echoes per shot, 10 ms echo spacing, and k-space center at TE 40 ms.
+sequence:
+  level: S2
+  capabilities:
+  - spin_echo
+  - cartesian
+  - tse
+  - rare
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 8
+  te_ms:
+    target: 40
+    tolerance: 4.0
+  tr_ms:
+    target: 1200
+    tolerance: 60.0
+  readout:
+    shots: 4
+    echo_train_length: 8
+    echo_spacing_ms: 10
+object: tissue_discs@1
+hardware: standard@1
+evaluation: image_fidelity@1
+submission:
+  format: pulseq
+  file: sequence.seq

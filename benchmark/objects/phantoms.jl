@@ -9,6 +9,8 @@ function material_at(ref, p)
     x, y, z = p .* 1000
     if ref == "uniform_disc@1"
         return x^2 + y^2 <= 60^2 ? "water" : ""
+    elseif ref == "uniform_sphere@1"
+        return x^2 + y^2 + z^2 <= 60^2 ? "water" : ""
     elseif ref == "tissue_discs@1"
         for (name, cx, cy, r) in (("wm",-35,30,24), ("gm",35,30,24),
                                   ("csf",0,-40,23), ("fat",-45,-45,12))

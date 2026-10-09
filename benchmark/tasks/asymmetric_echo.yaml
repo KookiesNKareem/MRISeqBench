@@ -1,16 +1,16 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: sense_sampling
+id: asymmetric_echo
 version: 1
-objective: Create an undersampled Cartesian spoiled GRE acquisition designed for SENSE
-  reconstruction.
+objective: 'Acquire each Cartesian readout asymmetrically about its echo center: retain
+  the negative-kx quarter and the full nonnegative-kx half of the prescribed grid,
+  for 75 percent readout coverage.'
 sequence:
   level: S3
   capabilities:
   - spoiled_gre
   - cartesian
-  - undersampling
-  - sense
+  - asymmetric_echo
   matrix:
   - 32
   - 32
@@ -19,8 +19,8 @@ sequence:
   - 200
   duration_s: 6
   sampling:
-    acceleration: 2
-    calibration_lines: 8
+    asymmetric_echo_fraction: 0.75
+    pattern: asymmetric_echo
 object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1

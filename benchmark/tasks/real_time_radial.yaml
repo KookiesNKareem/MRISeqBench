@@ -1,13 +1,15 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: radial_readout
+id: real_time_radial
 version: 1
-objective: Create a spoiled GRE acquisition with radial readout.
+objective: Acquire eight consecutive radial frames, with 16 uniformly spaced spokes
+  per frame and 100 ms frame duration. Do not share views between frames.
 sequence:
-  level: S2
+  level: S4
   capabilities:
   - spoiled_gre
   - radial
+  - real_time
   matrix:
   - 32
   - 32
@@ -16,7 +18,11 @@ sequence:
   - 200
   duration_s: 6
   readout:
-    spokes: 48
+    spokes: 16
+  temporal:
+    frames: 8
+    frame_duration_ms: 100
+    ordering: sequential
 object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1

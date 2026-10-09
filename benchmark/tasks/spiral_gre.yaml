@@ -1,13 +1,14 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 schema_version: 1
-id: radial_readout
+id: spiral_gre
 version: 1
-objective: Create a spoiled GRE acquisition with radial readout.
+objective: Acquire a 32 x 32 image with four uniformly rotated center-out Archimedean
+  spiral interleaves, eight turns per interleaf, and TE 5 ms.
 sequence:
   level: S2
   capabilities:
   - spoiled_gre
-  - radial
+  - spiral
   matrix:
   - 32
   - 32
@@ -15,8 +16,13 @@ sequence:
   - 200
   - 200
   duration_s: 6
+  te_ms:
+    target: 5
+    tolerance: 0.5
   readout:
-    spokes: 48
+    interleaves: 4
+    turns: 8
+    center_out: true
 object: tissue_discs@1
 hardware: standard@1
 evaluation: image_fidelity@1
