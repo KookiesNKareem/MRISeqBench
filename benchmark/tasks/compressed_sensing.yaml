@@ -1,31 +1,15 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: compressed_sensing
-version: 1
-objective: Acquire a Cartesian Poisson-disc mask with nominal acceleration three,
-  eight fully sampled central phase-encode lines and mask seed 42.
+objective: Acquire a Cartesian Poisson-disc mask with nominal acceleration three, eight fully
+  sampled central phase-encode lines and mask seed 42.
 sequence:
   level: S3
-  capabilities:
-  - spoiled_gre
-  - cartesian
-  - compressed_sensing
-  - poisson_disc
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [spoiled_gre, cartesian, compressed_sensing, poisson_disc]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 6
   sampling:
     acceleration: 3
     calibration_lines: 8
     mask_seed: 42
     pattern: poisson_disc
-object: tissue_discs@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq

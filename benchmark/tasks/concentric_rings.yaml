@@ -1,26 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: concentric_rings
-version: 1
-objective: Acquire 16 concentric k-space rings from the center to the Nyquist radius
-  for the prescribed 32 x 32 matrix and 200 mm FOV.
+objective: Acquire 16 concentric k-space rings from the center to the Nyquist radius for the
+  prescribed 32 x 32 matrix and 200 mm FOV.
 sequence:
   level: S2
-  capabilities:
-  - spoiled_gre
-  - concentric_rings
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [spoiled_gre, concentric_rings]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 6
   readout:
     rings: 16
-object: tissue_discs@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq

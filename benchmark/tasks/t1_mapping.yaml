@@ -1,33 +1,13 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: t1_mapping
-version: 1
-objective: Acquire three inversion-prepared Cartesian GRE images at inversion times
-  100, 400 and 1200 ms, measured from the inversion pulse center to the center-k-space
-  echo of each image.
+objective: Acquire three inversion-prepared Cartesian GRE images at inversion times 100, 400
+  and 1200 ms, measured from the inversion pulse center to the center-k-space echo of each
+  image.
 sequence:
   level: S5
-  capabilities:
-  - spoiled_gre
-  - cartesian
-  - inversion
-  - multi_contrast
-  - mapping
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [spoiled_gre, cartesian, inversion, multi_contrast, mapping]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 6
   application:
-    inversion_times_ms:
-    - 100
-    - 400
-    - 1200
-object: tissue_discs@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq
+    inversion_times_ms: [100, 400, 1200]

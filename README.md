@@ -37,3 +37,8 @@ uv run mriseqbench run --experiment experiments/sandbox_smoke.yaml
 Set the model and suite in [experiments/pi.yaml](experiments/pi.yaml) for agent runs.
 Task definitions live in [benchmark/tasks/](benchmark/tasks/), combinations in
 [benchmark/suites/](benchmark/suites/), and execution settings in [experiments/](experiments/).
+
+Tasks specify an `id`, `objective`, and `sequence` requirements. Defaults: version 1,
+`tissue_discs@1`, `standard@1` hardware, `image_fidelity@1` evaluation, and `sequence.seq`
+output; override these in the task YAML. Agents receive a compact brief and `task.yaml`;
+the full resolved contract remains in `case.json`.

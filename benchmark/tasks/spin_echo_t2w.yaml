@@ -1,31 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: spin_echo_t2w
-version: 1
-objective: Create a Cartesian spin-echo acquisition with one 90-degree excitation
-  and one 180-degree refocusing pulse per k-space line. Use TE 80 ms and TR 1000 ms
-  for T2 weighting.
+objective: Create a Cartesian spin-echo acquisition with one 90-degree excitation and one
+  180-degree refocusing pulse per k-space line. Use TE 80 ms and TR 1000 ms for T2 weighting.
 sequence:
   level: S1
-  capabilities:
-  - spin_echo
-  - cartesian
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [spin_echo, cartesian]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 40
-  te_ms:
-    target: 80
-    tolerance: 8.0
-  tr_ms:
-    target: 1000
-    tolerance: 50.0
-object: tissue_discs@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq
+  te_ms: {target: 80, tolerance: 8.0}
+  tr_ms: {target: 1000, tolerance: 50.0}

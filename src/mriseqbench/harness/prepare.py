@@ -7,7 +7,79 @@ import shutil
 import sys
 from pathlib import Path
 
+import yaml
+
 from ..io import write_json
+
+
+class BriefDumper(yaml.SafeDumper):
+    pass
+
+
+def sequence_list(dumper, values):
+    return dumper.represent_sequence(
+        "tag:yaml.org,2002:seq",
+        values,
+        flow_style=all(not isinstance(value, (dict, list)) for value in values),
+    )
+
+
+BriefDumper.add_representer(list, sequence_list)
+
+
+def compact(value):
+    """Remove absent optional fields without losing zeroes or false requirements."""
+    if isinstance(value, dict):
+        return {
+            k: compact(v)
+            for k, v in value.items()
+            if v is not None and (v != [] or k == "effects")
+        }
+    if isinstance(value, list):
+        return [compact(v) for v in value]
+    return value
+
+
+def task_brief(case):
+    """Agent requirements, without catalog metadata or expanded registry records."""
+    sequence = {k: v for k, v in case["task"]["sequence"].items() if k != "level"}
+    return compact(
+        {
+            "objective": case["task"]["objective"],
+            "sequence": sequence,
+            "phantom": case["object"]["phantom"],
+            "physics": {"effects": case["physics"]["effects"]},
+            "hardware": {
+                k: v
+                for k, v in case["hardware"].items()
+                if k not in ("id", "version", "schema_version")
+            },
+            "seed": case["seed"],
+        }
+    )
+
+
+def brief_yaml(case, include_objective=True):
+    brief = task_brief(case)
+    if not include_objective:
+        brief.pop("objective")
+    return yaml.dump(brief, Dumper=BriefDumper, sort_keys=False, width=88)
+
+
+def evaluation_summary(contract):
+    if contract["scope"] == "smoke":
+        return "Evaluation: hardware/timing preflight."
+    if not contract["calibrated"]:
+        return "Evaluation: hardware/timing preflight; physical scoring is pending."
+    metrics = []
+    for metric in contract["metrics"]:
+        bounds = " and ".join(
+            f"{op} {metric[key]}"
+            for key, op in (("min", ">="), ("max", "<="))
+            if metric[key] is not None
+        )
+        metrics.append(f"{metric['name']} {bounds}")
+    return f"Evaluation: {contract['reconstruction']}; {', '.join(metrics)}."
 
 
 def prompt(case):
@@ -16,11 +88,14 @@ def prompt(case):
     return (
         f"# {case['case_id']}\n\n{task['objective'].strip()}\n\n"
         f"Submit `{task['submission']['file']}` in Pulseq format in the working directory.\n"
-        "The evaluator uses the fixed reconstruction declared below.\n"
-        "All dimensional fields include their units. Capability tags and timing targets are requirements.\n\n"
-        "## Complete case contract\n\n```json\n"
-        + json.dumps(case, indent=2)
-        + "\n```\n"
+        "Meet the requirements below; field names include units. Duration is an upper limit.\n"
+        "Timing targets use the stated tolerance; max values are upper limits.\n\n"
+        "```yaml\n"
+        + brief_yaml(case, include_objective=False)
+        + "```\n\n"
+        + evaluation_summary(case["evaluation"])
+        + "\n"
+        + "These requirements are also in `task.yaml`; full metadata is in `case.json`.\n"
     )
 
 
@@ -75,6 +150,7 @@ def prepare(workspace, case, experiment, server, phantom_dir=None):
     workspace = Path(workspace).resolve()
     workspace.mkdir(parents=True, exist_ok=True)
     write_json(workspace / "case.json", case)
+    (workspace / "task.yaml").write_text(brief_yaml(case))
     prepare_inputs(workspace, case, server.root, phantom_dir)
     instructions = prompt(case) + (
         f"\n## Execution\n\nTime limit: {experiment.agent.timeout_s:g} seconds.\n"

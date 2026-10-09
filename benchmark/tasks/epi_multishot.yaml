@@ -1,30 +1,13 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: epi_multishot
-version: 1
-objective: Acquire the complete 32 x 32 Cartesian grid in four excitations, interleaving
-  phase-encode lines across four alternating-polarity EPI shots.
+objective: Acquire the complete 32 x 32 Cartesian grid in four excitations, interleaving phase-encode
+  lines across four alternating-polarity EPI shots.
 sequence:
   level: S2
-  capabilities:
-  - epi
-  - cartesian
-  - multi_shot
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [epi, cartesian, multi_shot]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 6
-  te_ms:
-    target: 20
-    tolerance: 2.0
+  te_ms: {target: 20, tolerance: 2.0}
   readout:
     shots: 4
-object: tissue_discs@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq

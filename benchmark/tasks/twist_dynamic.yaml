@@ -1,26 +1,13 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: twist_dynamic
-version: 1
-objective: Acquire four 3D Cartesian TWIST frames. Reacquire the central quarter of
-  phase-encode space every frame and cycle through three disjoint peripheral subsets
-  for a three-frame view-sharing window.
+objective: Acquire four 3D Cartesian TWIST frames. Reacquire the central quarter of phase-encode
+  space every frame and cycle through three disjoint peripheral subsets for a three-frame
+  view-sharing window.
 sequence:
   level: S4
-  capabilities:
-  - spoiled_gre
-  - cartesian
-  - twist
-  - view_sharing
-  - dynamic
-  matrix:
-  - 32
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
-  - 200
+  capabilities: [spoiled_gre, cartesian, twist, view_sharing, dynamic]
+  matrix: [32, 32, 32]
+  fov_mm: [200, 200, 200]
   duration_s: 12
   sampling:
     acceleration: 3
@@ -33,8 +20,3 @@ sequence:
     view_sharing_window: 3
     center_fraction: 0.25
 object: volume_ellipsoids@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq

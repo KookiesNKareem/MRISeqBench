@@ -804,6 +804,7 @@
   "properties": {
     "schema_version": {
       "const": 1,
+      "default": 1,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -813,6 +814,7 @@
       "type": "string"
     },
     "version": {
+      "default": 1,
       "exclusiveMinimum": 0,
       "title": "Version",
       "type": "integer"
@@ -826,16 +828,19 @@
       "$ref": "#/$defs/SequenceSpec"
     },
     "object": {
+      "default": "tissue_discs@1",
       "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
       "title": "Object",
       "type": "string"
     },
     "hardware": {
+      "default": "standard@1",
       "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
       "title": "Hardware",
       "type": "string"
     },
     "evaluation": {
+      "default": "image_fidelity@1",
       "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
       "title": "Evaluation",
       "type": "string"
@@ -845,14 +850,9 @@
     }
   },
   "required": [
-    "schema_version",
     "id",
-    "version",
     "objective",
-    "sequence",
-    "object",
-    "hardware",
-    "evaluation"
+    "sequence"
   ],
   "title": "Task",
   "type": "object"

@@ -1,27 +1,13 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: rosette_gre
-version: 1
-objective: Acquire a 32 x 32 image using four rotated rosette interleaves, each with
-  eight lobes and repeated k-space-center crossings.
+objective: Acquire a 32 x 32 image using four rotated rosette interleaves, each with eight
+  lobes and repeated k-space-center crossings.
 sequence:
   level: S2
-  capabilities:
-  - spoiled_gre
-  - rosette
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [spoiled_gre, rosette]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 6
   readout:
     interleaves: 4
     rosette_lobes: 8
-object: tissue_discs@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq

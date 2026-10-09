@@ -1,35 +1,13 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: t2_mapping
-version: 1
-objective: Acquire three refocused spin-echo images at TE 20, 40 and 60 ms after each
-  excitation, retaining the same phase-encode index across echoes. Use TR 1000 ms
-  for T2 mapping.
+objective: Acquire three refocused spin-echo images at TE 20, 40 and 60 ms after each excitation,
+  retaining the same phase-encode index across echoes. Use TR 1000 ms for T2 mapping.
 sequence:
   level: S5
-  capabilities:
-  - spin_echo
-  - cartesian
-  - multi_echo
-  - mapping
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [spin_echo, cartesian, multi_echo, mapping]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 40
-  tr_ms:
-    target: 1000
-    tolerance: 50.0
+  tr_ms: {target: 1000, tolerance: 50.0}
   application:
-    echo_times_ms:
-    - 20
-    - 40
-    - 60
-object: tissue_discs@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq
+    echo_times_ms: [20, 40, 60]

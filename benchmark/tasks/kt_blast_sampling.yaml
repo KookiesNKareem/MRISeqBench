@@ -1,24 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: kt_blast_sampling
-version: 1
-objective: Acquire eight Cartesian frames with twofold phase-encode undersampling,
-  alternating odd/even masks each frame, plus four central training lines in every
-  frame.
+objective: Acquire eight Cartesian frames with twofold phase-encode undersampling, alternating
+  odd/even masks each frame, plus four central training lines in every frame.
 sequence:
   level: S4
-  capabilities:
-  - spoiled_gre
-  - cartesian
-  - kt_blast
-  - interleaved
-  - dynamic
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [spoiled_gre, cartesian, kt_blast, interleaved, dynamic]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 6
   sampling:
     acceleration: 2
@@ -28,9 +16,3 @@ sequence:
     frames: 8
     frame_duration_ms: 100
     ordering: interleaved
-object: tissue_discs@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq

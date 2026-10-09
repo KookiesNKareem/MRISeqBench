@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+import yaml
 
 from mriseqbench.catalog import Catalog
 from mriseqbench.harness.feedback import FeedbackServer
@@ -50,8 +51,10 @@ def test_real_pi_receives_task_and_submits_without_paid_api(tmp_path, monkeypatc
     observed = []
     errors = []
     script = (
-        "import json,pathlib,subprocess,sys,h5py; "
+        "import json,pathlib,subprocess,sys,h5py,yaml; "
         "c=json.loads(pathlib.Path('case.json').read_text()); "
+        "t=yaml.safe_load(pathlib.Path('task.yaml').read_text()); "
+        "assert t['objective']==c['task']['objective']; "
         "assert c['case_id']=='pulseq_smoke-v1--ideal-v1'; "
         "assert c['task']['objective'] in pathlib.Path('PROMPT.md').read_text(); "
         "subprocess.run([sys.executable,sys.argv[1],'--case','case.json',"
@@ -213,5 +216,10 @@ def test_prompt_uses_resolved_contract():
     )
     text = prompt(case)
     assert case["task"]["objective"] in text
-    assert '"gradient_hz_per_m"' in text
-    assert '"duration_s": 6.0' in text
+    requirements = yaml.safe_load(text.split("```yaml\n", 1)[1].split("```", 1)[0])
+    assert requirements["physics"]["effects"] == case["physics"]["effects"]
+    assert requirements["sequence"]["duration_s"] == 6
+    assert requirements["sequence"]["te_ms"] == {"target": 5, "tolerance": 1}
+    assert "null" not in text
+    assert "schema_version" not in text
+    assert "physical scoring is pending" in text

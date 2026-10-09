@@ -1,24 +1,11 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: rich_geometry_gre
-version: 1
-objective: Create a Cartesian spoiled GRE acquisition covering the selected phantom
-  and prescribed FOV.
+objective: Create a Cartesian spoiled GRE acquisition covering the selected phantom and prescribed
+  FOV.
 sequence:
   level: S1
-  capabilities:
-  - spoiled_gre
-  - cartesian
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [spoiled_gre, cartesian]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 6
 object: nested_ellipses@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq

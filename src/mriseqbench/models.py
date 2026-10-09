@@ -223,11 +223,13 @@ class Submission(Strict):
 
 
 class Task(Document):
+    schema_version: Literal[1] = 1
+    version: Annotated[int, Field(gt=0)] = 1
     objective: Annotated[str, Field(min_length=1)]
     sequence: SequenceSpec
-    object: Reference
-    hardware: Reference
-    evaluation: Reference
+    object: Reference = "tissue_discs@1"
+    hardware: Reference = "standard@1"
+    evaluation: Reference = "image_fidelity@1"
     submission: Submission = Field(default_factory=Submission)
 
 

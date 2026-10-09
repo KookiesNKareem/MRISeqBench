@@ -1,24 +1,13 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
-schema_version: 1
 id: keyhole_dynamic
-version: 1
-objective: Acquire four Cartesian frames. Fully acquire the first frame; reacquire
-  the central quarter of phase-encode lines in each later frame and reuse peripheral
-  lines from the first frame.
+objective: Acquire four Cartesian frames. Fully acquire the first frame; reacquire the central
+  quarter of phase-encode lines in each later frame and reuse peripheral lines from the first
+  frame.
 sequence:
   level: S4
-  capabilities:
-  - spoiled_gre
-  - cartesian
-  - keyhole
-  - view_sharing
-  - dynamic
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
+  capabilities: [spoiled_gre, cartesian, keyhole, view_sharing, dynamic]
+  matrix: [32, 32]
+  fov_mm: [200, 200]
   duration_s: 6
   temporal:
     frames: 4
@@ -26,9 +15,3 @@ sequence:
     ordering: sequential
     view_sharing_window: 4
     center_fraction: 0.25
-object: tissue_discs@1
-hardware: standard@1
-evaluation: image_fidelity@1
-submission:
-  format: pulseq
-  file: sequence.seq
