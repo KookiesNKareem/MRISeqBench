@@ -1,4 +1,6 @@
-# MRISeqBench
+<p align="center">
+  <img src="assets/logo.png" alt="MRISeqBench" width="800">
+</p>
 
 MRI sequence programming tasks spanning sequence complexity and object/physics complexity.
 Agents submit Pulseq `sequence.seq` files using versioned KomaMRI phantoms.
