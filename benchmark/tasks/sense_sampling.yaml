@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+schema_version: 1
+id: sense_sampling
+version: 1
+objective: Create an undersampled Cartesian spoiled GRE acquisition designed for SENSE
+  reconstruction. Draft authoring contract; task-specific evaluation is deferred.
+sequence:
+  level: S3
+  capabilities:
+  - spoiled_gre
+  - cartesian
+  - undersampling
+  - sense
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 6
+  sampling:
+    acceleration: 2
+    calibration_lines: 8
+object: tissue_discs@1
+hardware: standard@1
+evaluation: image_fidelity@1
+submission:
+  format: pulseq
+  file: sequence.seq

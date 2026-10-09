@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=../../schemas/objects.schema.json
+schema_version: 1
+id: tissue_discs
+version: 1
+description: 'Four separated tissue discs: white matter, gray matter, CSF and fat.'
+level: P1
+phantom: tissue_discs@1

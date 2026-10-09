@@ -1,0 +1,80 @@
+{
+  "$defs": {
+    "SuiteEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+          "title": "Task",
+          "type": "string"
+        },
+        "objects": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Objects"
+        },
+        "physics": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Physics",
+          "type": "array"
+        }
+      },
+      "required": [
+        "task",
+        "physics"
+      ],
+      "title": "SuiteEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "version": {
+      "exclusiveMinimum": 0,
+      "title": "Version",
+      "type": "integer"
+    },
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/SuiteEntry"
+      },
+      "minItems": 1,
+      "title": "Cases",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "cases"
+  ],
+  "title": "Suite",
+  "type": "object"
+}

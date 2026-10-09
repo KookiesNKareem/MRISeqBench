@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: ideal
+version: 1
+description: Uniform B0=0 Hz, B1 scale=1; stationary object.
+level: P0
+effects: []

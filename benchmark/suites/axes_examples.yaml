@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../schemas/suites.schema.json
+schema_version: 1
+id: axes_examples
+version: 1
+cases:
+- task: gre_t1w@1
+  physics:
+  - ideal@1
+  - b0_offset@1
+  - b0_localized@1
+  - b1_low@1
+  - b1_localized@1
+  - rigid_steps@1
+  - deformation@1
+  - b0_drift@1
+  - b1_drift@1
+  - dynamic_tissue@1
+- task: rich_geometry_gre@1
+  physics:
+  - ideal@1
+  - b0_localized@1
+  - deformation@1
+- task: radial_readout@1
+  physics:
+  - ideal@1
+- task: partial_fourier@1
+  physics:
+  - ideal@1
+- task: sense_sampling@1
+  physics:
+  - ideal@1
+- task: radial_cine@1
+  physics:
+  - ideal@1
+- task: inversion_prepared@1
+  physics:
+  - ideal@1
+- task: mrf_schedule@1
+  physics:
+  - ideal@1
+- task: volume_gre@1
+  physics:
+  - ideal@1
+- task: gre_t1w@1
+  objects:
+  - nested_ellipses@1
+  physics:
+  - ideal@1
+  - b0_localized@1

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../schemas/suites.schema.json
+schema_version: 1
+id: core
+version: 1
+cases:
+- task: gre_t1w@1
+  physics:
+  - ideal@1
+  - b0_smooth@1
+  - b1_smooth@1
+  - b0_b1@1
+  - rigid_motion@1
+  - fields_and_motion@1
+- task: epi_single_shot@1
+  physics:
+  - ideal@1
+  - b0_smooth@1

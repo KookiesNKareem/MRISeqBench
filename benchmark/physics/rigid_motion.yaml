@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: rigid_motion
+version: 1
+description: Sinusoidal rigid translation and in-plane rotation; fields are ideal.
+level: P4
+effects:
+- kind: motion
+  model: rigid_sinusoidal
+  translation_amplitude_mm:
+  - 3
+  - 0
+  rotation_amplitude_deg: 2
+  period_s: 1
+  phase_deg: 0

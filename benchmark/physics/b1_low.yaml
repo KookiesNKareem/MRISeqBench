@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: b1_low
+version: 1
+description: Uniform transmit reduction, an isolated B1 control.
+level: P2
+effects:
+- kind: b1
+  model: constant
+  scale: 0.8

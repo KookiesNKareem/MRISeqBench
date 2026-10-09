@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: b0_localized
+version: 1
+description: Localized smooth off-resonance; scanner-fixed Gaussian field.
+level: P2
+effects:
+- kind: b0
+  model: gaussian
+  offset_hz: 0
+  amplitude_hz: 150
+  center_mm:
+  - 30
+  - 0
+  sigma_mm:
+  - 20
+  - 35

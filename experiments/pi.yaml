@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../schemas/experiments.schema.json
+schema_version: 1
+id: pi
+version: 1
+suite: core@1
+repeats: 1
+submission_mode: submit
+agent:
+  adapter: pi
+  model: REPLACE_WITH_OPENROUTER_MODEL_ID
+  command: [pi, --provider, openrouter, --model, '{model}', --thinking, medium, --session-dir, '{workspace}/transcript', --mode, json, -p, '{prompt_text}']
+  timeout_s: 600
+  sandbox:
+    backend: auto
+    read_paths: ['~/.nvm']
+api_proxy:
+  upstream_url: https://openrouter.ai/api/v1
+  key_env: OPENROUTER_API_KEY
+feedback:
+  mode: preflight
+  max_checks: 6
+  timeout_s: 300

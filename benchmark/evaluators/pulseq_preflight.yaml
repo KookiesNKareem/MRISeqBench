@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=../../schemas/evaluators.schema.json
+schema_version: 1
+id: pulseq_preflight
+version: 1
+scope: smoke
+calibrated: false
+reconstruction: none
+metrics: []

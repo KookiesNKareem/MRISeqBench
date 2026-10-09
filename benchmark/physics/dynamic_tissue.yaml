@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: dynamic_tissue
+version: 1
+description: Synthetic sinusoidal PD variation of white matter; illustrative dynamic
+  object.
+level: P4
+effects:
+- kind: time_variation
+  model: sinusoidal
+  target: proton_density
+  material: wm
+  amplitude_scale: 0.1
+  period_s: 2

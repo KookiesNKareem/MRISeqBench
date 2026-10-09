@@ -1,0 +1,685 @@
+{
+  "$defs": {
+    "ApplicationSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "inversion_time_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inversion Time Ms"
+        },
+        "preparation_duration_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preparation Duration Ms"
+        },
+        "saturation_offset_hz": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Saturation Offset Hz"
+        },
+        "diffusion_b_s_per_mm2": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diffusion B S Per Mm2"
+        },
+        "labeling_duration_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Labeling Duration Ms"
+        },
+        "post_label_delay_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Post Label Delay Ms"
+        },
+        "flip_angle_schedule_deg": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "maximum": 180,
+            "type": "number"
+          },
+          "title": "Flip Angle Schedule Deg",
+          "type": "array"
+        },
+        "tr_schedule_ms": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "title": "Tr Schedule Ms",
+          "type": "array"
+        },
+        "echo_times_ms": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "title": "Echo Times Ms",
+          "type": "array"
+        }
+      },
+      "title": "ApplicationSpec",
+      "type": "object"
+    },
+    "ReadoutSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "shots": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shots"
+        },
+        "echo_train_length": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Echo Train Length"
+        },
+        "interleaves": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interleaves"
+        },
+        "spokes": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spokes"
+        },
+        "dwell_us": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dwell Us"
+        },
+        "bandwidth_hz_per_pixel": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bandwidth Hz Per Pixel"
+        }
+      },
+      "title": "ReadoutSpec",
+      "type": "object"
+    },
+    "SamplingSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "acceleration": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Acceleration"
+        },
+        "partial_fourier_fraction": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.5,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Partial Fourier Fraction"
+        },
+        "calibration_lines": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Lines"
+        },
+        "multiband_factor": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Multiband Factor"
+        },
+        "mask_seed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mask Seed"
+        }
+      },
+      "title": "SamplingSpec",
+      "type": "object"
+    },
+    "SequenceSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "enum": [
+            "S1",
+            "S2",
+            "S3",
+            "S4",
+            "S5"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "enum": [
+              "gre",
+              "spoiled_gre",
+              "spin_echo",
+              "bssfp",
+              "cartesian",
+              "spiral",
+              "rosette",
+              "concentric_rings",
+              "radial",
+              "stack_of_stars",
+              "propeller",
+              "ute",
+              "zte",
+              "epi",
+              "single_shot",
+              "multi_shot",
+              "tse",
+              "rare",
+              "grase",
+              "undersampling",
+              "grappa",
+              "sense",
+              "caipirinha",
+              "wave_caipi",
+              "sms",
+              "compressed_sensing",
+              "variable_density",
+              "poisson_disc",
+              "partial_fourier",
+              "asymmetric_echo",
+              "reduced_fov",
+              "elliptical_kspace",
+              "kt_blast",
+              "kt_sense",
+              "kt_pca",
+              "low_rank_sparse",
+              "interleaved",
+              "golden_angle",
+              "view_sharing",
+              "twist",
+              "keyhole",
+              "cine",
+              "real_time",
+              "dynamic",
+              "tailored_rf",
+              "cest",
+              "tone",
+              "adiabatic",
+              "spectral_spatial",
+              "ptx",
+              "inversion",
+              "t2_preparation",
+              "magnetization_transfer",
+              "diffusion",
+              "asl",
+              "fat_saturation",
+              "multi_echo",
+              "multi_contrast",
+              "mpm",
+              "mrf",
+              "mapping",
+              "triggering",
+              "gating",
+              "navigator",
+              "motion_correction"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "matrix": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Matrix"
+        },
+        "fov_mm": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Fov Mm"
+        },
+        "te_ms": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Timing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tr_ms": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Timing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "duration_s": {
+          "exclusiveMinimum": 0,
+          "title": "Duration S",
+          "type": "number"
+        },
+        "readout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadoutSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sampling": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SamplingSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "temporal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TemporalSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "application": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApplicationSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "level",
+        "capabilities",
+        "matrix",
+        "fov_mm",
+        "duration_s"
+      ],
+      "title": "SequenceSpec",
+      "type": "object"
+    },
+    "Submission": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "const": "pulseq",
+          "default": "pulseq",
+          "title": "Format",
+          "type": "string"
+        },
+        "file": {
+          "const": "sequence.seq",
+          "default": "sequence.seq",
+          "title": "File",
+          "type": "string"
+        }
+      },
+      "title": "Submission",
+      "type": "object"
+    },
+    "TemporalSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "frames": {
+          "exclusiveMinimum": 0,
+          "title": "Frames",
+          "type": "integer"
+        },
+        "frame_duration_ms": {
+          "exclusiveMinimum": 0,
+          "title": "Frame Duration Ms",
+          "type": "number"
+        },
+        "ordering": {
+          "enum": [
+            "sequential",
+            "interleaved",
+            "golden_angle"
+          ],
+          "title": "Ordering",
+          "type": "string"
+        },
+        "view_sharing_window": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "View Sharing Window"
+        }
+      },
+      "required": [
+        "frames",
+        "frame_duration_ms",
+        "ordering"
+      ],
+      "title": "TemporalSpec",
+      "type": "object"
+    },
+    "Timing": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        },
+        "tolerance": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tolerance"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max"
+        }
+      },
+      "title": "Timing",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "version": {
+      "exclusiveMinimum": 0,
+      "title": "Version",
+      "type": "integer"
+    },
+    "objective": {
+      "minLength": 1,
+      "title": "Objective",
+      "type": "string"
+    },
+    "sequence": {
+      "$ref": "#/$defs/SequenceSpec"
+    },
+    "object": {
+      "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+      "title": "Object",
+      "type": "string"
+    },
+    "hardware": {
+      "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+      "title": "Hardware",
+      "type": "string"
+    },
+    "evaluation": {
+      "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+      "title": "Evaluation",
+      "type": "string"
+    },
+    "submission": {
+      "$ref": "#/$defs/Submission"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "objective",
+    "sequence",
+    "object",
+    "hardware",
+    "evaluation"
+  ],
+  "title": "Task",
+  "type": "object"
+}

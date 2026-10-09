@@ -1,0 +1,272 @@
+{
+  "$defs": {
+    "Agent": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "default": "command",
+          "enum": [
+            "command",
+            "pi"
+          ],
+          "title": "Adapter",
+          "type": "string"
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "timeout_s": {
+          "default": 60,
+          "exclusiveMinimum": 0,
+          "title": "Timeout S",
+          "type": "number"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/SandboxConfig"
+        },
+        "environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Environment",
+          "type": "object"
+        },
+        "model": {
+          "default": "",
+          "title": "Model",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "Agent",
+      "type": "object"
+    },
+    "ApiProxyConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "upstream_url": {
+          "default": "https://openrouter.ai/api/v1",
+          "title": "Upstream Url",
+          "type": "string"
+        },
+        "key_env": {
+          "default": "OPENROUTER_API_KEY",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Key Env",
+          "type": "string"
+        },
+        "allowed_routes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Routes",
+          "type": "array"
+        },
+        "timeout_s": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "title": "Timeout S",
+          "type": "number"
+        },
+        "max_request_bytes": {
+          "default": 8388608,
+          "exclusiveMinimum": 0,
+          "title": "Max Request Bytes",
+          "type": "integer"
+        }
+      },
+      "title": "ApiProxyConfig",
+      "type": "object"
+    },
+    "Backend": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "timeout_s": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "title": "Timeout S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "Backend",
+      "type": "object"
+    },
+    "FeedbackConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "none",
+          "enum": [
+            "none",
+            "preflight",
+            "evaluation"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "max_checks": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Max Checks",
+          "type": "integer"
+        },
+        "max_submission_bytes": {
+          "default": 16777216,
+          "exclusiveMinimum": 0,
+          "title": "Max Submission Bytes",
+          "type": "integer"
+        },
+        "timeout_s": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "title": "Timeout S",
+          "type": "number"
+        }
+      },
+      "title": "FeedbackConfig",
+      "type": "object"
+    },
+    "SandboxConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "macos",
+            "bubblewrap",
+            "none"
+          ],
+          "title": "Backend",
+          "type": "string"
+        },
+        "read_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Read Paths",
+          "type": "array"
+        },
+        "deny_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Deny Paths",
+          "type": "array"
+        },
+        "network_ports": {
+          "items": {
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Network Ports",
+          "type": "array"
+        }
+      },
+      "title": "SandboxConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "version": {
+      "exclusiveMinimum": 0,
+      "title": "Version",
+      "type": "integer"
+    },
+    "suite": {
+      "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+      "title": "Suite",
+      "type": "string"
+    },
+    "seed": {
+      "default": 42,
+      "maximum": 4294967295,
+      "minimum": 0,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "repeats": {
+      "default": 1,
+      "exclusiveMinimum": 0,
+      "maximum": 1000,
+      "title": "Repeats",
+      "type": "integer"
+    },
+    "agent": {
+      "$ref": "#/$defs/Agent"
+    },
+    "backend": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Backend"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "feedback": {
+      "$ref": "#/$defs/FeedbackConfig"
+    },
+    "api_proxy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ApiProxyConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "submission_mode": {
+      "default": "file",
+      "enum": [
+        "file",
+        "submit"
+      ],
+      "title": "Submission Mode",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "suite",
+    "agent"
+  ],
+  "title": "Experiment",
+  "type": "object"
+}

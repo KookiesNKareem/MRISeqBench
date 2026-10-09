@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=../../schemas/objects.schema.json
+schema_version: 1
+id: uniform_disc
+version: 1
+description: Uniform water disc.
+level: P0
+phantom: uniform_disc@1

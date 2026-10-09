@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: deformation
+version: 1
+description: Origin-centered periodic affine strain; isolated nonrigid motion.
+level: P4
+effects:
+- kind: motion
+  model: affine_sinusoidal
+  strain_amplitude:
+  - 0.05
+  - -0.03
+  period_s: 1

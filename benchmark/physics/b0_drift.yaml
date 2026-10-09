@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: b0_drift
+version: 1
+description: Time-varying spatially uniform off-resonance; no object motion.
+level: P4
+effects:
+- kind: time_variation
+  model: sinusoidal
+  target: b0_offset
+  amplitude_hz: 40
+  period_s: 2

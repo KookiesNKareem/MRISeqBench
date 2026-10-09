@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=../../schemas/suites.schema.json
+schema_version: 1
+id: smoke
+version: 1
+cases:
+- task: pulseq_smoke@1
+  physics:
+  - ideal@1

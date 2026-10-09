@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: b0_smooth
+version: 1
+description: 'Linear off-resonance: -100 to +100 Hz across a 200 mm x FOV.'
+level: P2
+effects:
+- kind: b0
+  model: linear
+  offset_hz: 0
+  gradient_hz_per_m:
+  - 1000
+  - 0

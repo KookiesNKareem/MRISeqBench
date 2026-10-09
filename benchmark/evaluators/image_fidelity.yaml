@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../schemas/evaluators.schema.json
+schema_version: 1
+id: image_fidelity
+version: 1
+scope: benchmark
+calibrated: false
+reconstruction: cartesian_fft@1
+metrics:
+- name: image_nrmse
+  max: 0.2

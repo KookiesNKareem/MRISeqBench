@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../schemas/evaluators.schema.json
+schema_version: 1
+id: t1_contrast
+version: 1
+scope: benchmark
+calibrated: false
+reconstruction: cartesian_fft@1
+metrics:
+- name: wm_gm_ratio
+  min: 1.15
+- name: outside_object_energy_fraction
+  max: 0.4

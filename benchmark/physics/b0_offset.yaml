@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: b0_offset
+version: 1
+description: Uniform off-resonance, an isolated B0 control.
+level: P2
+effects:
+- kind: b0
+  model: constant
+  offset_hz: 100

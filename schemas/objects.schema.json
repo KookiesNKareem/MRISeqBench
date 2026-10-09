@@ -1,0 +1,47 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "version": {
+      "exclusiveMinimum": 0,
+      "title": "Version",
+      "type": "integer"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "level": {
+      "enum": [
+        "P0",
+        "P1"
+      ],
+      "title": "Level",
+      "type": "string"
+    },
+    "phantom": {
+      "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+      "title": "Phantom",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "description",
+    "level",
+    "phantom"
+  ],
+  "title": "Object",
+  "type": "object"
+}

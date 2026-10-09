@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: b0_b1
+version: 1
+description: Combined linear B0 and B1 fields.
+level: P3
+effects:
+- kind: b0
+  model: linear
+  offset_hz: 0
+  gradient_hz_per_m:
+  - 1000
+  - 0
+- kind: b1
+  model: linear
+  center_scale: 1
+  gradient_scale_per_m:
+  - 0
+  - 2

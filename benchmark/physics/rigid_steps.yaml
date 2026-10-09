@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: rigid_steps
+version: 1
+description: In-plane rigid keyframes, held constant between poses; isolated motion.
+level: P4
+effects:
+- kind: motion
+  model: rigid_keyframes
+  interpolation: previous
+  poses:
+  - time_s: 0
+    translation_mm:
+    - 0
+    - 0
+    - 0
+    rotation_xyz_deg:
+    - 0
+    - 0
+    - 0
+  - time_s: 1
+    translation_mm:
+    - 3
+    - 0
+    - 0
+    rotation_xyz_deg:
+    - 0
+    - 0
+    - 2
+  - time_s: 2
+    translation_mm:
+    - -2
+    - 1
+    - 0
+    rotation_xyz_deg:
+    - 0
+    - 0
+    - -1

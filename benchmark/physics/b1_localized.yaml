@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: b1_localized
+version: 1
+description: Localized smooth transmit reduction.
+level: P2
+effects:
+- kind: b1
+  model: gaussian
+  baseline_scale: 1
+  amplitude_scale: -0.35
+  center_mm:
+  - 0
+  - 20
+  sigma_mm:
+  - 40
+  - 25

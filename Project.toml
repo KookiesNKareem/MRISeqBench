@@ -1,0 +1,12 @@
+[deps]
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+KomaMRIBase = "d0bc0b20-b151-4d03-b2a4-6ca51751cb9c"
+KomaMRIFiles = "fcf631a6-1c7e-4e88-9e64-b8888386d9dc"
+
+[compat]
+HDF5 = "=0.17.2"
+JSON = "=0.21.4"
+KomaMRIBase = "=0.11.3"
+KomaMRIFiles = "=0.10.3"
+julia = "1.12"

@@ -1,0 +1,1096 @@
+{
+  "$defs": {
+    "Asset": {
+      "additionalProperties": false,
+      "description": "A content-addressed local array asset.",
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "npz",
+            "nifti",
+            "hdf5"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "array": {
+          "minLength": 1,
+          "title": "Array",
+          "type": "string"
+        },
+        "units": {
+          "enum": [
+            "label",
+            "Hz",
+            "relative",
+            "mm"
+          ],
+          "title": "Units",
+          "type": "string"
+        },
+        "shape": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Shape"
+        },
+        "spacing_mm": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Spacing Mm"
+        },
+        "origin_mm": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Origin Mm"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "format",
+        "array",
+        "units",
+        "shape",
+        "spacing_mm",
+        "origin_mm"
+      ],
+      "title": "Asset",
+      "type": "object"
+    },
+    "B0": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "b0",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "linear",
+          "title": "Model",
+          "type": "string"
+        },
+        "offset_hz": {
+          "default": 0,
+          "title": "Offset Hz",
+          "type": "number"
+        },
+        "gradient_hz_per_m": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Gradient Hz Per M"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "gradient_hz_per_m"
+      ],
+      "title": "B0",
+      "type": "object"
+    },
+    "B1": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "b1",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "linear",
+          "title": "Model",
+          "type": "string"
+        },
+        "center_scale": {
+          "exclusiveMinimum": 0,
+          "title": "Center Scale",
+          "type": "number"
+        },
+        "gradient_scale_per_m": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Gradient Scale Per M"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "center_scale",
+        "gradient_scale_per_m"
+      ],
+      "title": "B1",
+      "type": "object"
+    },
+    "ConstantB0": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "b0",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "constant",
+          "title": "Model",
+          "type": "string"
+        },
+        "offset_hz": {
+          "title": "Offset Hz",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "offset_hz"
+      ],
+      "title": "ConstantB0",
+      "type": "object"
+    },
+    "ConstantB1": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "b1",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "constant",
+          "title": "Model",
+          "type": "string"
+        },
+        "scale": {
+          "exclusiveMinimum": 0,
+          "title": "Scale",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "scale"
+      ],
+      "title": "ConstantB1",
+      "type": "object"
+    },
+    "Deformation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "motion",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "affine_sinusoidal",
+          "title": "Model",
+          "type": "string"
+        },
+        "strain_amplitude": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Strain Amplitude"
+        },
+        "period_s": {
+          "exclusiveMinimum": 0,
+          "title": "Period S",
+          "type": "number"
+        },
+        "phase_deg": {
+          "default": 0,
+          "title": "Phase Deg",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "strain_amplitude",
+        "period_s"
+      ],
+      "title": "Deformation",
+      "type": "object"
+    },
+    "GaussianB0": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "b0",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "gaussian",
+          "title": "Model",
+          "type": "string"
+        },
+        "offset_hz": {
+          "default": 0,
+          "title": "Offset Hz",
+          "type": "number"
+        },
+        "amplitude_hz": {
+          "title": "Amplitude Hz",
+          "type": "number"
+        },
+        "center_mm": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Center Mm"
+        },
+        "sigma_mm": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Sigma Mm"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "amplitude_hz",
+        "center_mm",
+        "sigma_mm"
+      ],
+      "title": "GaussianB0",
+      "type": "object"
+    },
+    "GaussianB1": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "b1",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "gaussian",
+          "title": "Model",
+          "type": "string"
+        },
+        "baseline_scale": {
+          "exclusiveMinimum": 0,
+          "title": "Baseline Scale",
+          "type": "number"
+        },
+        "amplitude_scale": {
+          "title": "Amplitude Scale",
+          "type": "number"
+        },
+        "center_mm": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Center Mm"
+        },
+        "sigma_mm": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Sigma Mm"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "baseline_scale",
+        "amplitude_scale",
+        "center_mm",
+        "sigma_mm"
+      ],
+      "title": "GaussianB1",
+      "type": "object"
+    },
+    "MapB0": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "b0",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "map",
+          "title": "Model",
+          "type": "string"
+        },
+        "asset": {
+          "$ref": "#/$defs/Asset"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "asset"
+      ],
+      "title": "MapB0",
+      "type": "object"
+    },
+    "MapB1": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "b1",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "map",
+          "title": "Model",
+          "type": "string"
+        },
+        "asset": {
+          "$ref": "#/$defs/Asset"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "asset"
+      ],
+      "title": "MapB1",
+      "type": "object"
+    },
+    "Motion": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "motion",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "rigid_sinusoidal",
+          "title": "Model",
+          "type": "string"
+        },
+        "translation_amplitude_mm": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation Amplitude Mm",
+          "type": "array"
+        },
+        "rotation_amplitude_deg": {
+          "title": "Rotation Amplitude Deg",
+          "type": "number"
+        },
+        "period_s": {
+          "exclusiveMinimum": 0,
+          "title": "Period S",
+          "type": "number"
+        },
+        "phase_deg": {
+          "default": 0,
+          "title": "Phase Deg",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "translation_amplitude_mm",
+        "rotation_amplitude_deg",
+        "period_s"
+      ],
+      "title": "Motion",
+      "type": "object"
+    },
+    "Pose": {
+      "additionalProperties": false,
+      "properties": {
+        "time_s": {
+          "minimum": 0,
+          "title": "Time S",
+          "type": "number"
+        },
+        "translation_mm": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation Mm",
+          "type": "array"
+        },
+        "rotation_xyz_deg": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Rotation Xyz Deg",
+          "type": "array"
+        }
+      },
+      "required": [
+        "time_s",
+        "translation_mm",
+        "rotation_xyz_deg"
+      ],
+      "title": "Pose",
+      "type": "object"
+    },
+    "RigidTrajectory": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "motion",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "rigid_keyframes",
+          "title": "Model",
+          "type": "string"
+        },
+        "interpolation": {
+          "enum": [
+            "linear",
+            "previous"
+          ],
+          "title": "Interpolation",
+          "type": "string"
+        },
+        "poses": {
+          "items": {
+            "$ref": "#/$defs/Pose"
+          },
+          "minItems": 2,
+          "title": "Poses",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "interpolation",
+        "poses"
+      ],
+      "title": "RigidTrajectory",
+      "type": "object"
+    },
+    "TimeVariation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "time_variation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "sinusoidal",
+          "title": "Model",
+          "type": "string"
+        },
+        "target": {
+          "enum": [
+            "b0_offset",
+            "b1_scale",
+            "proton_density"
+          ],
+          "title": "Target",
+          "type": "string"
+        },
+        "amplitude_hz": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amplitude Hz"
+        },
+        "amplitude_scale": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amplitude Scale"
+        },
+        "period_s": {
+          "exclusiveMinimum": 0,
+          "title": "Period S",
+          "type": "number"
+        },
+        "phase_deg": {
+          "default": 0,
+          "title": "Phase Deg",
+          "type": "number"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "target",
+        "period_s"
+      ],
+      "title": "TimeVariation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "version": {
+      "exclusiveMinimum": 0,
+      "title": "Version",
+      "type": "integer"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "level": {
+      "enum": [
+        "P0",
+        "P2",
+        "P3",
+        "P4"
+      ],
+      "title": "Level",
+      "type": "string"
+    },
+    "effects": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "b0": {
+              "discriminator": {
+                "mapping": {
+                  "constant": "#/$defs/ConstantB0",
+                  "gaussian": "#/$defs/GaussianB0",
+                  "linear": "#/$defs/B0",
+                  "map": "#/$defs/MapB0"
+                },
+                "propertyName": "model"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/B0"
+                },
+                {
+                  "$ref": "#/$defs/ConstantB0"
+                },
+                {
+                  "$ref": "#/$defs/GaussianB0"
+                },
+                {
+                  "$ref": "#/$defs/MapB0"
+                }
+              ]
+            },
+            "b1": {
+              "discriminator": {
+                "mapping": {
+                  "constant": "#/$defs/ConstantB1",
+                  "gaussian": "#/$defs/GaussianB1",
+                  "linear": "#/$defs/B1",
+                  "map": "#/$defs/MapB1"
+                },
+                "propertyName": "model"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/B1"
+                },
+                {
+                  "$ref": "#/$defs/ConstantB1"
+                },
+                {
+                  "$ref": "#/$defs/GaussianB1"
+                },
+                {
+                  "$ref": "#/$defs/MapB1"
+                }
+              ]
+            },
+            "motion": {
+              "discriminator": {
+                "mapping": {
+                  "affine_sinusoidal": "#/$defs/Deformation",
+                  "rigid_keyframes": "#/$defs/RigidTrajectory",
+                  "rigid_sinusoidal": "#/$defs/Motion"
+                },
+                "propertyName": "model"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Motion"
+                },
+                {
+                  "$ref": "#/$defs/RigidTrajectory"
+                },
+                {
+                  "$ref": "#/$defs/Deformation"
+                }
+              ]
+            },
+            "time_variation": "#/$defs/TimeVariation"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "discriminator": {
+              "mapping": {
+                "constant": "#/$defs/ConstantB0",
+                "gaussian": "#/$defs/GaussianB0",
+                "linear": "#/$defs/B0",
+                "map": "#/$defs/MapB0"
+              },
+              "propertyName": "model"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/B0"
+              },
+              {
+                "$ref": "#/$defs/ConstantB0"
+              },
+              {
+                "$ref": "#/$defs/GaussianB0"
+              },
+              {
+                "$ref": "#/$defs/MapB0"
+              }
+            ]
+          },
+          {
+            "discriminator": {
+              "mapping": {
+                "constant": "#/$defs/ConstantB1",
+                "gaussian": "#/$defs/GaussianB1",
+                "linear": "#/$defs/B1",
+                "map": "#/$defs/MapB1"
+              },
+              "propertyName": "model"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/B1"
+              },
+              {
+                "$ref": "#/$defs/ConstantB1"
+              },
+              {
+                "$ref": "#/$defs/GaussianB1"
+              },
+              {
+                "$ref": "#/$defs/MapB1"
+              }
+            ]
+          },
+          {
+            "discriminator": {
+              "mapping": {
+                "affine_sinusoidal": "#/$defs/Deformation",
+                "rigid_keyframes": "#/$defs/RigidTrajectory",
+                "rigid_sinusoidal": "#/$defs/Motion"
+              },
+              "propertyName": "model"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/Motion"
+              },
+              {
+                "$ref": "#/$defs/RigidTrajectory"
+              },
+              {
+                "$ref": "#/$defs/Deformation"
+              }
+            ]
+          },
+          {
+            "$ref": "#/$defs/TimeVariation"
+          }
+        ]
+      },
+      "title": "Effects",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "description",
+    "level",
+    "effects"
+  ],
+  "title": "Physics",
+  "type": "object"
+}

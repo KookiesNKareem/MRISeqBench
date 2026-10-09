@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../schemas/experiments.schema.json
+schema_version: 1
+id: smoke
+version: 1
+suite: smoke@1
+repeats: 1
+agent:
+  command:
+  - '{python}'
+  - '{root}/tests/fixtures/make_smoke_submission.py'
+  - --case
+  - '{case}'
+  - --output
+  - '{submission}'
+  timeout_s: 30
+  sandbox:
+    backend: none
