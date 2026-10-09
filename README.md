@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/logo.png" alt="MRISeqBench" width="800">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
+    <img src="assets/logo-light.svg" alt="MRISeqBench" width="800">
+  </picture>
 </p>
 
 MRI sequence programming tasks spanning sequence complexity and object/physics complexity.
