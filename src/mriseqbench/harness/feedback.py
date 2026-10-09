@@ -1,4 +1,4 @@
-"""Per-run budgeted feedback and immutable one-shot submission, ported from KAB."""
+"""Blind first submission, immutable attempts and failure-driven retries."""
 
 import hashlib
 import hmac
@@ -16,7 +16,9 @@ from .proxy import QuietHTTPServer
 
 
 class FeedbackServer:
-    def __init__(self, case, config, root, control_dir, backend=None):
+    def __init__(
+        self, case, config, root, control_dir, backend=None, max_submissions=3
+    ):
         self.case, self.config, self.root = case, config, Path(root).resolve()
         self.directory = Path(control_dir).resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -30,6 +32,11 @@ class FeedbackServer:
         self.closed = threading.Event()
         self.lock = threading.Lock()
         self.checks_used, self.lints, self.seconds, self.requests = 0, 0, 0.0, 0
+        if not 1 <= max_submissions <= 3:
+            raise ValueError("max_submissions must be between 1 and 3")
+        self.max_submissions = max_submissions
+        self.attempts = []
+        self.submissions_started = 0
         self.submission_path = self.directory / "accepted.seq"
         self.httpd = QuietHTTPServer(("127.0.0.1", 0), self._handler())
         self.port = self.httpd.server_address[1]
@@ -51,10 +58,90 @@ class FeedbackServer:
     def stats(self):
         return {
             "checks_used": self.checks_used,
-            "max_checks": self.config.max_checks,
+            "max_checks": self.config.max_checks if self.max_submissions == 1 else None,
             "lints": self.lints,
             "feedback_wall_s": round(self.seconds, 6),
             "submitted": self.submitted.is_set(),
+            "submissions_used": self.submissions_started,
+            "max_submissions": self.max_submissions,
+        }
+
+    def _submit(self, body):
+        """Called under the run lock; grade the frozen bytes before any disclosure."""
+        attempt = len(self.attempts) + 1
+        self.submissions_started += 1
+        directory = self.directory / "submissions" / f"attempt-{attempt:03d}"
+        directory.mkdir(parents=True, exist_ok=False)
+        snapshot = directory / "sequence.seq"
+        snapshot.write_bytes(body)
+        receipt = {
+            "case_id": self.case["case_id"],
+            "attempt": attempt,
+            "blind": attempt == 1,
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "bytes": len(body),
+            "accepted_at_unix_s": time.time(),
+        }
+        write_json(directory / "receipt.json", receipt)
+        command = [
+            sys.executable,
+            "-m",
+            "mriseqbench.evaluation.worker",
+            "--mode",
+            "evaluation",
+            "--case",
+            str(self.directory / "case.json"),
+            "--submission",
+            str(snapshot),
+            "--root",
+            str(self.root),
+            "--workspace",
+            str(directory),
+        ]
+        if self.backend_path:
+            command += ["--backend", str(self.backend_path)]
+        started = time.monotonic()
+        execution = execute(
+            command,
+            directory,
+            self.config.timeout_s,
+            directory / "worker",
+            stop_when=self.closed,
+        )
+        self.seconds += time.monotonic() - started
+        try:
+            result = json.loads((directory / "result.json").read_text())
+            if execution["status"] != "completed":
+                raise ValueError("submission evaluator did not complete")
+        except (OSError, ValueError):
+            result = {
+                "case_id": self.case["case_id"],
+                "status": "evaluator_error",
+                "checks": [],
+                "metrics": {},
+                "reason": f"submission worker {execution['status']} or invalid output",
+            }
+            write_json(directory / "result.json", result)
+        record = {**receipt, "evaluation": result, "directory": str(directory)}
+        self.attempts.append(record)
+        write_json(self.directory / "submissions.json", self.attempts)
+        self.submission_path.write_bytes(body)
+        write_json(self.directory / "receipt.json", receipt)
+        self._log({"kind": "submit", **record})
+        if result["status"] == "failed" and attempt < self.max_submissions:
+            return 200, {
+                "status": "retry_required",
+                "attempt": attempt,
+                "submissions_remaining": self.max_submissions - attempt,
+                "evaluation": result,
+                "reason": "Submission failed. Revise sequence.seq and submit again. Lint/check provide only basic file, timing and hardware checks.",
+            }
+        self.submitted.set()
+        return 200, {
+            "status": "submitted",
+            "attempt": attempt,
+            "submissions_remaining": 0,
+            "reason": "Submission recorded. The run is finished; stop now.",
         }
 
     def _log(self, value):
@@ -73,7 +160,10 @@ class FeedbackServer:
             if self.closed.is_set() or self.submitted.is_set():
                 return 403, {"status": "closed", "reason": "run is already finished"}
             if kind == "submit":
+                if self.max_submissions > 1:
+                    return self._submit(body)
                 # Publish the receipt last; acceptance cannot be changed by later agent writes.
+                self.submissions_started += 1
                 self.submission_path.write_bytes(body)
                 receipt = {
                     "case_id": self.case["case_id"],
@@ -90,9 +180,15 @@ class FeedbackServer:
                     "status": "submitted",
                     "reason": "Final sequence accepted. Stop now; no verdict is shown.",
                 }
-            if kind not in ("lint", "check") or self.config.mode == "none":
+            if kind not in ("lint", "check") or (
+                self.max_submissions == 1 and self.config.mode == "none"
+            ):
                 return 403, {"status": "feedback_disabled"}
-            if kind == "check" and self.checks_used >= self.config.max_checks:
+            if (
+                self.max_submissions == 1
+                and kind == "check"
+                and self.checks_used >= self.config.max_checks
+            ):
                 return 403, {"status": "budget_exhausted", **self.stats()}
             if kind == "lint":
                 self.lints += 1
@@ -103,7 +199,8 @@ class FeedbackServer:
             request_dir.mkdir()
             sequence_path = request_dir / "sequence.seq"
             sequence_path.write_bytes(body)
-            mode = "preflight" if kind == "lint" else self.config.mode
+            # Both commands are basic checks; neither invokes SAR or image scoring.
+            mode = "lint" if kind == "lint" else "preflight"
             command = [
                 sys.executable,
                 "-m",
@@ -119,8 +216,6 @@ class FeedbackServer:
                 "--workspace",
                 str(request_dir),
             ]
-            if self.backend_path:
-                command += ["--backend", str(self.backend_path)]
             started = time.monotonic()
             execution = execute(
                 command,

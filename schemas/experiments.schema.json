@@ -222,6 +222,13 @@
       "title": "Repeats",
       "type": "integer"
     },
+    "max_submissions": {
+      "default": 3,
+      "maximum": 3,
+      "minimum": 1,
+      "title": "Max Submissions",
+      "type": "integer"
+    },
     "agent": {
       "$ref": "#/$defs/Agent"
     },
@@ -251,7 +258,7 @@
       "default": null
     },
     "submission_mode": {
-      "default": "file",
+      "default": "submit",
       "enum": [
         "file",
         "submit"

@@ -4,6 +4,7 @@ id: sandbox_smoke
 version: 1
 suite: smoke@1
 repeats: 1
+submission_mode: file
 agent:
   command: ['{python}', '{root}/tests/fixtures/make_smoke_submission.py', --case, '{case}', --output, '{submission}']
   timeout_s: 60

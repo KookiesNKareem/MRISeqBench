@@ -30,6 +30,46 @@
       ],
       "title": "HardwareProvenance",
       "type": "object"
+    },
+    "SARModel": {
+      "additionalProperties": false,
+      "description": "Fixed benchmark load, independent of the imaging phantom geometry.",
+      "properties": {
+        "model": {
+          "const": "homogeneous_sphere_v1",
+          "title": "Model",
+          "type": "string"
+        },
+        "radius_m": {
+          "exclusiveMinimum": 0,
+          "title": "Radius M",
+          "type": "number"
+        },
+        "conductivity_S_per_m": {
+          "exclusiveMinimum": 0,
+          "title": "Conductivity S Per M",
+          "type": "number"
+        },
+        "density_kg_per_m3": {
+          "exclusiveMinimum": 0,
+          "title": "Density Kg Per M3",
+          "type": "number"
+        },
+        "whole_body_limit_W_per_kg": {
+          "exclusiveMinimum": 0,
+          "title": "Whole Body Limit W Per Kg",
+          "type": "number"
+        }
+      },
+      "required": [
+        "model",
+        "radius_m",
+        "conductivity_S_per_m",
+        "density_kg_per_m3",
+        "whole_body_limit_W_per_kg"
+      ],
+      "title": "SARModel",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -64,6 +104,9 @@
       "exclusiveMinimum": 0,
       "title": "Field Strength T",
       "type": "number"
+    },
+    "sar": {
+      "$ref": "#/$defs/SARModel"
     },
     "max_gradient_mT_per_m": {
       "exclusiveMinimum": 0,
@@ -121,6 +164,7 @@
     "id",
     "version",
     "field_strength_T",
+    "sar",
     "max_gradient_mT_per_m",
     "max_slew_T_per_m_per_s",
     "max_b1_uT",

@@ -4,6 +4,7 @@ id: smoke
 version: 1
 suite: smoke@1
 repeats: 1
+submission_mode: file
 agent:
   command:
   - '{python}'

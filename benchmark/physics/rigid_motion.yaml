@@ -3,7 +3,7 @@ schema_version: 1
 id: rigid_motion
 version: 1
 description: Sinusoidal rigid translation and in-plane rotation; fields are ideal.
-level: P4
+level: P3
 effects:
 - kind: motion
   model: rigid_sinusoidal

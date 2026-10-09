@@ -3,7 +3,7 @@ schema_version: 1
 id: rigid_motion_3d
 version: 1
 description: Periodic 3D translation with in-plane rotation.
-level: P4
+level: P3
 effects:
 - kind: motion
   model: rigid_sinusoidal

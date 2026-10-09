@@ -87,7 +87,9 @@ def test_feedback_budget_refund_and_one_shot(monkeypatch, tmp_path):
 
     monkeypatch.setattr("mriseqbench.harness.feedback.execute", worker)
     config = FeedbackConfig(mode="preflight", max_checks=1)
-    with FeedbackServer(smoke_case(), config, ROOT, tmp_path) as server:
+    with FeedbackServer(
+        smoke_case(), config, ROOT, tmp_path, max_submissions=1
+    ) as server:
         assert server.handle("check", "wrong", b"candidate")[0] == 403
         assert server.handle("lint", server.token, b"candidate")[0] == 200
         assert server.checks_used == 0
@@ -111,7 +113,11 @@ def test_infrastructure_failure_refunds_check(monkeypatch, tmp_path):
         "mriseqbench.harness.feedback.execute", lambda *a, **kw: {"status": "timeout"}
     )
     with FeedbackServer(
-        smoke_case(), FeedbackConfig(mode="preflight", max_checks=1), ROOT, tmp_path
+        smoke_case(),
+        FeedbackConfig(mode="preflight", max_checks=1),
+        ROOT,
+        tmp_path,
+        max_submissions=1,
     ) as server:
         _, result = server.handle("check", server.token, b"candidate")
         assert result["check_refunded"] is True
@@ -120,7 +126,11 @@ def test_infrastructure_failure_refunds_check(monkeypatch, tmp_path):
 
 def test_blind_feedback_and_body_limits(tmp_path):
     with FeedbackServer(
-        smoke_case(), FeedbackConfig(max_submission_bytes=10), ROOT, tmp_path
+        smoke_case(),
+        FeedbackConfig(max_submission_bytes=10),
+        ROOT,
+        tmp_path,
+        max_submissions=1,
     ) as server:
         assert (
             server.handle("lint", server.token, b"abc")[1]["status"]
@@ -276,6 +286,7 @@ def test_submit_ends_sandboxed_run_and_grades_accepted_bytes(tmp_path):
     )
     experiment.submission_mode = "submit"
     experiment.feedback = FeedbackConfig(mode="preflight", max_checks=1, timeout_s=30)
+    experiment.max_submissions = 1  # Legacy budgeted-feedback mode.
     # Build a real Pulseq file, use real HTTP feedback, submit, then try to keep working.
     script = """import subprocess,sys,time
 subprocess.run([sys.executable,sys.argv[1],'--case','case.json','--output','sequence.seq'],check=True)

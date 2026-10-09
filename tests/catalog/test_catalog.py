@@ -34,31 +34,31 @@ def test_explicit_cases_and_axes():
     assert [c["object_level"] for c in cases[:4]] == [
         "P1",
         "P2",
-        "P4",
-        "P4",
+        "P3",
+        "P3",
     ]
     assert {c["sequence_level"] for c in cases} == {"S1", "S2"}
     assert all(c["evaluation"]["calibrated"] is False for c in cases)
 
 
-def test_physics_axis_is_b0_only_and_has_no_p3():
+def test_physics_axis_is_b0_only_and_rejects_old_p4():
     from mriseqbench.models import Physics
 
     catalog = Catalog(ROOT)
     for profile in catalog.documents["physics"].values():
-        assert profile.level in {"P0", "P2", "P4"}
+        assert profile.level in {"P0", "P2", "P3"}
         assert all(effect.kind != "b1" for effect in profile.effects)
         if profile.level == "P2":
             assert {effect.kind for effect in profile.effects} == {"b0"}
     profile = catalog.get("physics", "b0_smooth").model_dump()
-    profile["level"] = "P3"
+    profile["level"] = "P4"
     with pytest.raises(ValidationError):
         Physics.model_validate(profile)
     profile["level"] = "P2"
     profile["effects"] = [{"kind": "b1", "model": "constant", "scale": 0.8}]
     with pytest.raises(ValidationError):
         Physics.model_validate(profile)
-    profile["level"] = "P4"
+    profile["level"] = "P3"
     profile["effects"] = [
         {
             "kind": "time_variation",
@@ -171,7 +171,7 @@ def test_axes_keep_geometry_and_physics_separate():
         moving["geometry_level"],
         moving["physics_level"],
         moving["object_level"],
-    ) == ("P1", "P4", "P4")
+    ) == ("P1", "P3", "P3")
 
 
 @pytest.mark.parametrize(
@@ -390,7 +390,7 @@ def test_full_suite_covers_every_benchmark_task_across_both_axes():
             "P0",
             "P1",
             "P2",
-            "P4",
+            "P3",
         }
         assert all(case["evaluation"]["scope"] == "benchmark" for case in selected)
         assert all(

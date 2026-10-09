@@ -3,7 +3,7 @@ schema_version: 1
 id: rigid_steps
 version: 1
 description: In-plane rigid keyframes, held constant between poses; isolated motion.
-level: P4
+level: P3
 effects:
 - kind: motion
   model: rigid_keyframes

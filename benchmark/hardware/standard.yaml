@@ -3,6 +3,13 @@ schema_version: 1
 id: standard
 version: 1
 field_strength_T: 3
+# Synthetic RF load and normal-mode limit; not manufacturer SAR calibration.
+sar:
+  model: homogeneous_sphere_v1
+  radius_m: 0.15
+  conductivity_S_per_m: 0.5
+  density_kg_per_m3: 1000
+  whole_body_limit_W_per_kg: 2
 max_gradient_mT_per_m: 32
 max_slew_T_per_m_per_s: 80
 max_b1_uT: 20

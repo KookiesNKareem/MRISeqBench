@@ -4,7 +4,7 @@ id: dynamic_tissue
 version: 1
 description: Synthetic sinusoidal PD variation of white matter; illustrative dynamic
   object.
-level: P4
+level: P3
 effects:
 - kind: time_variation
   model: sinusoidal

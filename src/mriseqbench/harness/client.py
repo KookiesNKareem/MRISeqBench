@@ -36,7 +36,9 @@ def main():
             if result.get("status")
             in (
                 "submitted",
+                "retry_required",
                 "preflight_passed",
+                "lint_passed",
                 "passed",
                 "smoke_passed",
             )

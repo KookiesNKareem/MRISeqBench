@@ -80,6 +80,7 @@ def run_one(catalog, experiment, case, workspace, repeat, phantom_dir=None):
                 catalog.root,
                 workspace / "control",
                 experiment.backend,
+                max_submissions=experiment.max_submissions,
             )
         )
         proxy = (
@@ -131,7 +132,6 @@ def run_one(catalog, experiment, case, workspace, repeat, phantom_dir=None):
                 env=env,
                 stop_when=server.submitted,
             )
-        server.closed.set()
         if proxy:
             proxy.revoke()
         if server.submitted.is_set():
@@ -140,8 +140,23 @@ def run_one(catalog, experiment, case, workspace, repeat, phantom_dir=None):
             execution["status"] == "completed" and experiment.submission_mode == "file"
         ):
             source = submission
+            if (
+                experiment.max_submissions > 1
+                and not server.submissions_started
+                and submission.is_file()
+                and not submission.is_symlink()
+                and submission.stat().st_size
+                <= experiment.feedback.max_submission_bytes
+            ):
+                server.handle("submit", server.token, submission.read_bytes())
         else:
             source = None
+        server.closed.set()
+        # Drain any accepted attempt whose evaluator was active at the deadline.
+        with server.lock:
+            attempts = list(server.attempts)
+            if server.submitted.is_set():
+                source = server.submission_path
         report = {
             "case_id": case["case_id"],
             "status": "agent_not_submitted"
@@ -150,7 +165,13 @@ def run_one(catalog, experiment, case, workspace, repeat, phantom_dir=None):
             "checks": [],
             "metrics": {},
         }
-        if source is not None:
+        if attempts:
+            # Reuse the immutable attempt verdict; never regrade changed agent files.
+            report = dict(attempts[-1]["evaluation"])
+            shutil.copyfile(server.submission_path, judge_dir / "sequence.seq")
+            write_json(judge_dir / "case.json", case)
+            write_json(judge_dir / "result.json", report)
+        elif source is not None:
             report = final_evaluation(source, case, experiment, catalog.root, workspace)
         report.update(
             repeat=repeat,
@@ -159,14 +180,24 @@ def run_one(catalog, experiment, case, workspace, repeat, phantom_dir=None):
             feedback=server.stats(),
             api_requests=proxy.requests if proxy else 0,
             workspace=str(workspace),
+            submissions=attempts,
+            first_submission_status=attempts[0]["evaluation"]["status"]
+            if attempts
+            else None,
+            passed_on_submission=next(
+                (
+                    a["attempt"]
+                    for a in attempts
+                    if a["evaluation"]["status"] in ("passed", "smoke_passed")
+                ),
+                None,
+            ),
         )
     return report
 
 
 def run(catalog, experiment, output=None):
     cases = catalog.cases(catalog.get("suites", experiment.suite))
-    if experiment.feedback.mode == "evaluation" and experiment.backend is None:
-        raise ValueError("evaluation feedback requires a configured backend")
     if experiment.agent.adapter == "pi" and experiment.api_proxy is None:
         raise ValueError("the pi adapter requires an API proxy")
     output = (

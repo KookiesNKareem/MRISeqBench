@@ -715,7 +715,7 @@
       "enum": [
         "P0",
         "P2",
-        "P4"
+        "P3"
       ],
       "title": "Level",
       "type": "string"

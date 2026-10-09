@@ -32,7 +32,11 @@ def test_feedback_client_reports_failed_checks(tmp_path, monkeypatch):
     experiment = catalog.get("experiments", "sandbox_smoke")
     workspace = tmp_path / "agent"
     with FeedbackServer(
-        case, FeedbackConfig(mode="preflight"), ROOT, tmp_path / "control"
+        case,
+        FeedbackConfig(mode="preflight"),
+        ROOT,
+        tmp_path / "control",
+        max_submissions=1,
     ) as server:
         prepare(workspace, case, experiment, server)
         (workspace / "sequence.seq").write_bytes(b"invalid submission")

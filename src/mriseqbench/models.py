@@ -412,7 +412,7 @@ Effect = Annotated[B0Effect | MotionEffect | TimeVariation, Field(discriminator=
 
 class Physics(Document):
     description: str
-    level: Literal["P0", "P2", "P4"]
+    level: Literal["P0", "P2", "P3"]
     effects: list[Effect]
 
     @model_validator(mode="after")
@@ -421,7 +421,7 @@ class Physics(Document):
         if len(set(kinds)) != len(kinds):
             raise ValueError("only one effect per kind is allowed")
         expected = (
-            "P4"
+            "P3"
             if {"motion", "time_variation"}.intersection(kinds)
             else ("P2" if kinds else "P0")
         )
@@ -437,9 +437,20 @@ class HardwareProvenance(Strict):
     notes: str
 
 
+class SARModel(Strict):
+    """Fixed benchmark load, independent of the imaging phantom geometry."""
+
+    model: Literal["homogeneous_sphere_v1"]
+    radius_m: Positive
+    conductivity_S_per_m: Positive
+    density_kg_per_m3: Positive
+    whole_body_limit_W_per_kg: Positive
+
+
 class Hardware(Document):
     provenance: HardwareProvenance | None = None
     field_strength_T: Positive
+    sar: SARModel
     max_gradient_mT_per_m: Positive
     max_slew_T_per_m_per_s: Positive
     max_b1_uT: Positive
@@ -571,11 +582,12 @@ class Experiment(Document):
     suite: Reference
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)] = 42
     repeats: Annotated[int, Field(gt=0, le=1000)] = 1
+    max_submissions: Annotated[int, Field(ge=1, le=3)] = 3
     agent: Agent
     backend: Backend | None = None
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     api_proxy: ApiProxyConfig | None = None
-    submission_mode: Literal["file", "submit"] = "file"
+    submission_mode: Literal["file", "submit"] = "submit"
 
 
 MODELS = {

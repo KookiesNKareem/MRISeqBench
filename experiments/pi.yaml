@@ -5,6 +5,7 @@ version: 1
 suite: core@1
 repeats: 1
 submission_mode: submit
+max_submissions: 3
 agent:
   adapter: pi
   model: REPLACE_WITH_OPENROUTER_MODEL_ID
@@ -17,6 +18,6 @@ api_proxy:
   upstream_url: https://openrouter.ai/api/v1
   key_env: OPENROUTER_API_KEY
 feedback:
-  mode: preflight
-  max_checks: 6
+  mode: none
+  max_checks: 0
   timeout_s: 300

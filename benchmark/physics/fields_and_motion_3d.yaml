@@ -3,7 +3,7 @@ schema_version: 1
 id: fields_and_motion_3d
 version: 1
 description: Scanner-fixed B0 inhomogeneity and rigid object motion in 3D.
-level: P4
+level: P3
 effects:
 - kind: b0
   model: linear

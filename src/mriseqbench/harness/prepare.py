@@ -68,9 +68,9 @@ def brief_yaml(case, include_objective=True):
 
 def evaluation_summary(contract):
     if contract["scope"] == "smoke":
-        return "Evaluation: hardware/timing preflight."
+        return "Evaluation: hardware/timing preflight and final-submission SAR."
     if not contract["calibrated"]:
-        return "Evaluation: hardware/timing preflight; physical scoring is pending."
+        return "Evaluation: hardware/timing preflight and final-submission SAR; physical scoring is pending."
     metrics = []
     for metric in contract["metrics"]:
         bounds = " and ".join(
@@ -89,7 +89,12 @@ def prompt(case):
         f"# {case['case_id']}\n\n{task['objective'].strip()}\n\n"
         f"Submit `{task['submission']['file']}` in Pulseq format in the working directory.\n"
         "Meet the requirements below; field names include units. Duration is an upper limit.\n"
-        "Timing targets use the stated tolerance; max values are upper limits.\n\n"
+        "Timing targets use the stated tolerance; max values are upper limits.\n"
+        "SAR uses the hardware sphere load with circular B1+, scales as field_strength_T squared,\n"
+        "and final evaluation checks peak 360 s averages against the limit and 10 s averages against twice the limit.\n"
+        "Short scans use actual duration without zero padding or repetition.\n"
+        "SAR violations fail a submission. Built-in lint/check feedback excludes SAR;\n"
+        "calculate it yourself or use an available library.\n\n"
         "```yaml\n"
         + brief_yaml(case, include_objective=False)
         + "```\n\n"
@@ -158,20 +163,39 @@ def prepare(workspace, case, experiment, server, phantom_dir=None):
     prepare_inputs(workspace, case, server.root, phantom_dir)
     instructions = prompt(case) + (
         f"\n## Execution\n\nTime limit: {experiment.agent.timeout_s:g} seconds.\n"
-        f"Feedback mode: {experiment.feedback.mode}; at most {experiment.feedback.max_checks} charged checks.\n"
-        "`./bin/lint` runs hardware/timing preflight only when feedback is enabled.\n"
-        "`./bin/check` uses the configured feedback mode and check budget.\n"
-        "`./bin/submit` records exactly one final sequence and ends the run without showing its verdict.\n"
         "Work and write files only inside this working directory.\n"
         f"Python: `{sys.executable}`; NumPy, h5py and PyPulseq are installed.\n"
         "Input files are listed in `INPUTS.json`; HDF5 files can be read with h5py.\n"
         "For phantom inputs, read `inputs/manifest.json` for companion-field and motion handling.\n"
     )
+    if experiment.max_submissions > 1:
+        instructions += (
+            f"You may submit at most {experiment.max_submissions} times using `./bin/submit`.\n"
+            "Before any submission, `./bin/lint` checks file validity and timing;\n"
+            "`./bin/check` adds peak RF, gradient amplitude and slew limits.\n"
+            "Both may be run repeatedly without consuming submissions. Neither computes SAR or image scores.\n"
+            "Submission 1 is blind to SAR and image-scoring verdicts.\n"
+            "Each submission freezes and evaluates the current sequence.seq. If it fails and attempts remain,\n"
+            "the command returns retry_required with the failure reasons, including SAR violations.\n"
+            "Use that feedback to revise and submit again. Every attempt is recorded separately.\n"
+            "When the command returns submitted, stop: the sequence passed, the budget was exhausted,\n"
+            "or evaluation could not finish. No retry is granted for an unavailable evaluator.\n"
+            "The time limit covers the entire run, including submission evaluation.\n"
+        )
+    else:
+        instructions += (
+            f"Feedback mode: {experiment.feedback.mode}; at most {experiment.feedback.max_checks} charged checks.\n"
+            "`./bin/lint` checks file validity and timing when feedback is enabled.\n"
+            "`./bin/check` adds peak RF, gradient amplitude and slew limits, within the check budget.\n"
+            "Neither command computes SAR or image scores.\n"
+            "`./bin/submit` records one final sequence and ends the run without showing its verdict.\n"
+        )
     if experiment.submission_mode == "submit":
         instructions += "You must run `./bin/submit`; leaving a file without submitting does not count.\n"
     else:
         instructions += (
             "You may submit explicitly or leave `sequence.seq` and exit successfully.\n"
+            "Exiting without an explicit submission evaluates the leftover file once, with no chance to revise.\n"
         )
     (workspace / "PROMPT.md").write_text(instructions)
     write_json(

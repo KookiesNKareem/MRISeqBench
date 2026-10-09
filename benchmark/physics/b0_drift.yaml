@@ -3,7 +3,7 @@ schema_version: 1
 id: b0_drift
 version: 1
 description: Time-varying spatially uniform off-resonance; no object motion.
-level: P4
+level: P3
 effects:
 - kind: time_variation
   model: sinusoidal

@@ -3,7 +3,8 @@
 import numpy as np
 
 
-def preflight(submission, case):
+def preflight(submission, case, *, hardware_limits=True):
+    """Check file/timing validity; optionally also enforce public hardware limits."""
     from pypulseq import Opts, Sequence
 
     hw = case["hardware"]
@@ -85,11 +86,12 @@ def preflight(submission, case):
         )
         check("finite_rf", finite_events, "RF samples must be finite")
         b1 = rf_peak_hz / system.gamma * 1e6
-        check(
-            "peak_b1",
-            np.isfinite(b1) and b1 <= hw["max_b1_uT"] * (1 + 1e-6),
-            {"peak_uT": b1 if np.isfinite(b1) else None, "max_uT": hw["max_b1_uT"]},
-        )
+        if hardware_limits:
+            check(
+                "peak_b1",
+                np.isfinite(b1) and b1 <= hw["max_b1_uT"] * (1 + 1e-6),
+                {"peak_uT": b1 if np.isfinite(b1) else None, "max_uT": hw["max_b1_uT"]},
+            )
         for axis, waveform in zip("xyz", seq.waveforms()):
             if waveform.size == 0:
                 continue
@@ -98,7 +100,7 @@ def preflight(submission, case):
             check(
                 f"finite_gradient_{axis}", valid, "finite samples with increasing time"
             )
-            if not valid:
+            if not valid or not hardware_limits:
                 continue
             peak = float(np.max(np.abs(g)) / system.gamma * 1e3)
             slew = (

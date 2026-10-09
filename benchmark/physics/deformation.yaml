@@ -3,7 +3,7 @@ schema_version: 1
 id: deformation
 version: 1
 description: Origin-centered periodic affine strain; isolated nonrigid motion.
-level: P4
+level: P3
 effects:
 - kind: motion
   model: affine_sinusoidal

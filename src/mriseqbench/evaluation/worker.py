@@ -11,7 +11,9 @@ from . import evaluate, preflight
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--mode", choices=["preflight", "evaluation"], required=True)
+    p.add_argument(
+        "--mode", choices=["lint", "preflight", "evaluation", "feedback"], required=True
+    )
     p.add_argument("--case", required=True, type=Path)
     p.add_argument("--submission", required=True, type=Path)
     p.add_argument("--root", required=True, type=Path)
@@ -19,11 +21,11 @@ def main():
     p.add_argument("--backend", type=Path)
     args = p.parse_args()
     case = json.loads(args.case.read_text())
-    if args.mode == "preflight":
-        checks = preflight(args.submission, case)
+    if args.mode in ("lint", "preflight"):
+        checks = preflight(args.submission, case, hardware_limits=args.mode != "lint")
         result = {
             "case_id": case["case_id"],
-            "status": "preflight_passed"
+            "status": ("lint_passed" if args.mode == "lint" else "preflight_passed")
             if all(c["passed"] for c in checks)
             else "failed",
             "checks": checks,
@@ -36,7 +38,12 @@ def main():
             else None
         )
         result = evaluate(
-            args.submission, case, args.root, args.workspace / "physical", backend
+            args.submission,
+            case,
+            args.root,
+            args.workspace / "physical",
+            backend,
+            feedback=args.mode == "feedback",
         )
     write_json(args.workspace / "result.json", result)
 

@@ -9,6 +9,7 @@ from ..io import write_json
 from ..models import Finite, Strict
 from ..process import execute, expand
 from .preflight import preflight
+from .sar import evaluate_sar
 
 
 class BackendResult(Strict):
@@ -20,7 +21,8 @@ class BackendResult(Strict):
     metrics: dict[str, Finite]
 
 
-def evaluate(submission, case, root, workspace, backend=None):
+def evaluate(submission, case, root, workspace, backend=None, *, feedback=False):
+    """Judge submissions by default; feedback intentionally omits SAR entirely."""
     submission = Path(submission).resolve()
     workspace = Path(workspace).resolve()
     workspace.mkdir(parents=True, exist_ok=True)
@@ -38,6 +40,10 @@ def evaluate(submission, case, root, workspace, backend=None):
     write_json(workspace / "case.json", case)
     if not all(c["passed"] for c in checks):
         return report
+    if not feedback:
+        checks.extend(evaluate_sar(submission, case["hardware"]))
+        if not all(c["passed"] for c in checks):
+            return report
     contract = case["evaluation"]
     if contract["scope"] == "smoke":
         report["status"] = "smoke_passed"
