@@ -68,7 +68,8 @@ Neither computes SAR, simulates the phantom or returns image scores. Submission 
 is blind to those evaluation verdicts. Agents can also run their own checks or
 use libraries in their workspace.
 
-Each submission freezes the submitted bytes and runs the full evaluator. A failed
+Each submission freezes the submitted bytes and runs the full evaluator, including
+SAR limits. A SAR violation fails the submission. A failed
 attempt returns `retry_required` with its failure reasons when another attempt
 remains, allowing the same agent process to revise and submit again. The run ends
 on a pass or after submission 3. Incomplete, uncalibrated and infrastructure-error
@@ -88,69 +89,6 @@ implicit submission on successful exit, with no opportunity to revise it.
 Setting `max_submissions: 1` retains the legacy single-submission experiment and
 its configured basic-check budget. Neither basic command invokes image scoring,
 even when a legacy configuration sets `feedback.mode: evaluation`.
-
-## SAR evaluation
-
-Submission evaluation fails sequences exceeding either SAR limit, before
-physical image scoring, including when no physical backend is configured.
-SAR is excluded from separate lint/check feedback. It is included in failure
-feedback **after an attempt has been submitted and recorded**. Agents must estimate
-it themselves or use an available library before submitting. The load and limits appear in their
-hardware contract; submitted file definitions cannot override them.
-
-`homogeneous_sphere_v1` assumes a fixed, uniformly conducting sphere in a uniform
-circularly polarized transmit field. It integrates the actual Pulseq RF envelope
-(`signal` in Hz) after converting to B1+ in tesla with the proton gyromagnetic
-ratio. For this model:
-
-```text
-omega = 2*pi*gamma_Hz_per_T*hardware.field_strength_T
-SAR(t) = conductivity * omega^2 * radius^2 / (5*density) * |B1+(t)|^2
-```
-
-The coefficient follows from the assumed rotating field
-`B(t) = B1+ * (cos(omega*t), sin(omega*t), 0)`,
-`E = -(dB/dt cross r)/2`, and volume averaging `sigma*|E|^2/rho`.
-The B1+ convention matters when comparing formulas with other RF amplitude
-definitions. Squaring the complex envelope makes the estimate phase invariant.
-
-All four profiles explicitly use radius **0.15 m**, conductivity **0.5 S/m**, and
-density **1000 kg/m³**. These are benchmark assumptions, not measured scanner or
-patient calibration. The synthetic load stays fixed across imaging phantoms;
-their FOV, dimensionality and proton density do not define an electrical body model.
-Fixed conductivity gives quadratic field-strength scaling: identical RF has four
-times the modeled SAR at 3 T versus 1.5 T. At 3 T the coefficient is approximately
-**1.45 W/kg per µT²** of time-averaged B1+ power.
-
-The limits are **2 W/kg over any 360 s** and **4 W/kg over any 10 s**, following
-the IEC normal-mode whole-body limits reported in the literature. Integration
-includes RF delays, inter-pulse gaps and ringdown time as zero RF power, and finds
-peak windows without coarse time bins. Scans shorter than a window use their
-actual duration, without zero padding or assumed repetition; this is an explicit,
-more restrictive benchmark convention. Regular-raster RF and constant RF are
-supported; other explicit RF time shapes fail evaluation until their integration
-convention is supported. Reports include the load, coefficient, field strength,
-window location, B1 RMS, estimated SAR and limit. A relative tolerance of 1e-6
-is used at the limit, matching other hardware checks.
-
-This is a synthetic global SAR constraint, not a patient safety certification or
-a guaranteed upper bound. It omits local/head/partial-body SAR, tissue-dependent
-conductivity, electric-field hotspots, implants and scanner-specific transmit
-calibration. Clinical SAR needs validated electromagnetic/coil/body models.
-
-Sources reviewed October 9, 2026:
-
-- [Geethanath, Kabil and Vaughan (2020)](https://doi.org/10.1002/9780470034590.emrstm1633)
-  describes Q-matrix/VOP methods for open-source sequence RF assessment.
-  [sar4seq](https://github.com/imr-framework/sar4seq) and its
-  [Python branch](https://github.com/imr-framework/sar4seq/tree/PySar4seq)
-  require electromagnetic Q-matrices. Their coefficients are not transferable
-  scanner calibration; no implementation or Q-matrix data is vendored here.
-- [Tang and Yamamoto (2023)](https://pmc.ncbi.nlm.nih.gov/articles/PMC9849420/)
-  reviews the homogeneous-sphere approximation, field-strength scaling and IEC
-  averaging limits. Our rotating-field convention and load are specified above.
-- [Pulseq maintainers](https://github.com/pulseq/pulseq/discussions/59)
-  distinguish RF power/B1 RMS from absolute SAR, which depends on coil and subject.
 
 ## Run
 
