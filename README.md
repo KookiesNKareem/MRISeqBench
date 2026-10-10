@@ -42,13 +42,6 @@ published field strengths and gradient limits from real systems:
 | `standard_1_5t@1` | [Siemens Sola, XJ](https://www.siemens-healthineers.com/en-us/magnetic-resonance-imaging/0-35-to-1-5t-mri-scanner/magnetom-sola) | 1.5 | 33 | 125 |
 | `high_performance@1` | [Siemens Prisma, XR](https://www.siemens-healthineers.com/en-au/magnetic-resonance-imaging/3t-mri-scanner/magnetom-prisma) | 3 | 80 | 200 |
 
-Sources checked October 9, 2026; each sourced YAML records its provenance.
-RF amplitude (20 µT), dead times and raster settings are shared benchmark
-assumptions, not published specifications for these scanners. Profiles enforce
-sequence limits and a synthetic global SAR load; they do not model scanner-specific coils, PNS, gradient
-duty cycles, noise or field-dependent tissue relaxation. Phantoms and physics
-perturbations retain their explicitly defined properties across hardware profiles.
-
 Suite entries can select `hardware: [low_field@1, standard_1_5t@1, high_performance@1]`
 alongside objects and physics. Each combination gets a distinct case ID;
 the task's default hardware keeps its original ID. The full suite includes all
@@ -56,39 +49,19 @@ four profiles; core and smoke retain their default hardware.
 
 ## Submissions and feedback
 
-Agent experiments default to **at most three submissions** with explicit
-`./bin/submit` calls. Basic checks are available before any submission:
+Agents get **up to three submissions** via `./bin/submit`, with failure feedback
+and a chance to revise. Each submission runs the full evaluator, including SAR
+and image scoring. The run ends on a pass, the submission limit, an evaluation
+error or the time limit.
 
-- `./bin/lint` checks Pulseq parsing, finite waveforms, supported events, rasters,
-  timing, RF/ADC presence and the public duration limit.
-- `./bin/check` runs those checks and adds peak B1, gradient amplitude and slew limits.
+Before submitting, agents can freely run `./bin/lint` for format and timing checks
+or `./bin/check` to also check RF and gradient limits. These consume no submissions
+and reveal no SAR or image scores.
 
-Both may be run repeatedly within the run time limit without using submissions.
-Neither computes SAR, simulates the phantom or returns image scores. Submission 1
-is blind to those evaluation verdicts. Agents can also run their own checks or
-use libraries in their workspace.
-
-Each submission freezes the submitted bytes and runs the full evaluator, including
-SAR limits. A SAR violation fails the submission. A failed
-attempt returns `retry_required` with its failure reasons when another attempt
-remains, allowing the same agent process to revise and submit again. The run ends
-on a pass or after submission 3. Incomplete, uncalibrated and infrastructure-error
-verdicts end the run with their actual status; they are not counted as passes or
-turned into sequence failures. The agent's time limit covers the entire run,
-including submission evaluation.
-
-Every attempt retains its sequence, SHA-256 receipt and verdict under
-`control/submissions/attempt-NNN/`. Run reports include all `submissions`, the
-`first_submission_status`, and `passed_on_submission`, preserving the blind
-result separately from later improvement. The final report uses the last recorded
-verdict without reevaluating mutable agent files.
-
-`max_submissions: 3` and `submission_mode: submit` are explicit in the Pi example.
-For infrastructure smoke commands, `submission_mode: file` still permits one
-implicit submission on successful exit, with no opportunity to revise it.
-Setting `max_submissions: 1` retains the legacy single-submission experiment and
-its configured basic-check budget. Neither basic command invokes image scoring,
-even when a legacy configuration sets `feedback.mode: evaluation`.
+Each attempt's sequence, SHA-256 receipt and verdict are saved under
+`control/submissions/attempt-NNN/`. Reports retain every attempt and distinguish
+first-submission performance from later success; the final result uses the last
+recorded verdict.
 
 ## Run
 
