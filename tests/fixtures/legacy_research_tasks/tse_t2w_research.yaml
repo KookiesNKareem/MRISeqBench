@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+id: tse_t2w_research
+objective: Make a T2-weighted turbo spin-echo imaging sequence. Research the sequence
+  and choose an appropriate implementation.
+object: cardiac_2d@1
+sequence:
+  level: S2
+  capabilities:
+  - spin_echo
+  - cartesian
+  - tse
+  - rare
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 8
+prompt_mode: research
+identity_requirements:
+- Multiple refocused spin echoes per excitation acquire different phase encodes, with
+  effective TE and TR consistent with T2 weighting.
+evaluation: s2@3

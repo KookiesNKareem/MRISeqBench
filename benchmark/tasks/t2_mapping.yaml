@@ -1,13 +1,44 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: t2_mapping
-objective: Acquire three refocused spin-echo images at TE 20, 40 and 60 ms after each excitation,
-  retaining the same phase-encode index across echoes. Use TR 1000 ms for T2 mapping.
+objective: Acquire three ECG-triggered cardiac T2-prepared Cartesian bSSFP images
+  at preparation durations 0, 25 and 50 ms, with an unprepared reference at 0 ms.
+  Acquire all source images at the same cardiac phase, allow at least three RR intervals
+  of recovery between prepared images, and retain their preparation metadata for T2
+  estimation. Every acquired ADC sample must lie between 600 and 800 ms after its
+  ECG R-wave trigger, using nominal RR 1000 ms on physio1; preparations may precede
+  that window. Use ordinary Cartesian reconstruction. Complete magnetization preparation
+  before the imaging window. Balance net gradient area on all three axes in every
+  readout TR; alternate excitation RF phase by 180 degrees between readout TRs and
+  keep receiver phases coherent with that RF phase cycle.
+object: cardiac_2d@1
+evaluation: s4@1
 sequence:
-  level: S5
-  capabilities: [spin_echo, cartesian, multi_echo, mapping]
-  matrix: [32, 32]
-  fov_mm: [200, 200]
-  duration_s: 40
-  tr_ms: {target: 1000, tolerance: 50.0}
+  level: S4
+  capabilities:
+  - bssfp
+  - cartesian
+  - t2_preparation
+  - multi_contrast
+  - mapping
+  - triggering
+  - gating
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 16
   application:
-    echo_times_ms: [20, 40, 60]
+    preparation_durations_ms:
+    - 0
+    - 25
+    - 50
+  temporal:
+    frames: 3
+    frame_duration_ms: 1000
+    ordering: sequential
+    trigger_source: ecg
+    rr_interval_ms: 1000
+    trigger_delay_ms: 600
+    acquisition_window_ms: 200

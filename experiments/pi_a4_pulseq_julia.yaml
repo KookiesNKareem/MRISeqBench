@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../schemas/experiments.schema.json
+schema_version: 1
+id: pi_a4_pulseq_julia
+version: 1
+suite: core@1
+arm: a4_pulseq_julia@1
+arm_runtime:
+  author_image: mriseqbench/author-pulseq_julia:local
+repeats: 1
+submission_mode: submit
+max_submissions: 3
+agent:
+  adapter: pi
+  model: REPLACE_WITH_OPENROUTER_MODEL_ID
+  command:
+  - pi
+  - --provider
+  - openrouter
+  - --model
+  - '{model}'
+  - --thinking
+  - medium
+  - --session-dir
+  - '{workspace}/transcript'
+  - --mode
+  - json
+  - -p
+  - '{prompt_text}'
+  timeout_s: 1200
+  sandbox:
+    backend: docker
+api_proxy:
+  upstream_url: https://openrouter.ai/api/v1
+  key_env: OPENROUTER_API_KEY
+feedback:
+  mode: none
+  max_checks: 0
+  timeout_s: 300

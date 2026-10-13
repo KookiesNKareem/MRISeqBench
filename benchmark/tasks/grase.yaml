@@ -3,6 +3,7 @@ id: grase
 objective: Acquire a Cartesian GRASE image in four shots. Each shot has four spin echoes with
   two alternating-polarity gradient echoes around each spin echo, producing eight lines per
   shot.
+object: cardiac_2d@1
 sequence:
   level: S2
   capabilities: [spin_echo, grase, epi]
@@ -14,3 +15,4 @@ sequence:
   readout:
     shots: 4
     echo_train_length: 8
+evaluation: s2@3

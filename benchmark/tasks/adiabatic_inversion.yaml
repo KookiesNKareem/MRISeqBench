@@ -1,13 +1,40 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: adiabatic_inversion
-objective: Apply a 10 ms hyperbolic-secant adiabatic inversion pulse followed by Cartesian
-  spoiled GRE, with inversion time 600 ms measured to the center-k-space echo.
+objective: Create an ECG-triggered cardiac adiabatic inversion-prepared Cartesian
+  bSSFP acquisition. Use a 10 ms hyperbolic-secant inversion pulse and TI 600 ms from
+  inversion-pulse center to the central-k-space echo. Every acquired ADC sample must
+  lie between 600 and 800 ms after its ECG R-wave trigger, using nominal RR 1000 ms
+  on physio1; preparations may precede that window. Use ordinary Cartesian reconstruction.
+  Complete magnetization preparation before the imaging window. Balance net gradient
+  area on all three axes in every readout TR; alternate excitation RF phase by 180
+  degrees between readout TRs and keep receiver phases coherent with that RF phase
+  cycle.
+object: cardiac_2d@1
+evaluation: s4@1
 sequence:
-  level: S5
-  capabilities: [spoiled_gre, cartesian, adiabatic, inversion]
-  matrix: [32, 32]
-  fov_mm: [200, 200]
+  level: S4
+  capabilities:
+  - bssfp
+  - cartesian
+  - adiabatic
+  - inversion
+  - triggering
+  - gating
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
   duration_s: 6
   application:
     preparation_duration_ms: 10
     inversion_time_ms: 600
+  temporal:
+    frames: 1
+    frame_duration_ms: 1000
+    ordering: sequential
+    trigger_source: ecg
+    rr_interval_ms: 1000
+    trigger_delay_ms: 600
+    acquisition_window_ms: 200

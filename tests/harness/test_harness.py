@@ -119,7 +119,10 @@ def test_infrastructure_failure_refunds_check(monkeypatch, tmp_path):
         tmp_path,
         max_submissions=1,
     ) as server:
-        _, result = server.handle("check", server.token, b"candidate")
+        status, result = server.handle("check", server.token, b"candidate")
+        assert status == 503
+        assert "status" not in result
+        assert "error" in result
         assert result["check_refunded"] is True
         assert server.checks_used == 0
 

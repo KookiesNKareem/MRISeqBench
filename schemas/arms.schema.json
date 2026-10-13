@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "version": {
+      "exclusiveMinimum": 0,
+      "title": "Version",
+      "type": "integer"
+    },
+    "language": {
+      "enum": [
+        "python",
+        "julia"
+      ],
+      "title": "Language",
+      "type": "string"
+    },
+    "authoring": {
+      "enum": [
+        "pypulseq",
+        "koma_base",
+        "pulseq_julia"
+      ],
+      "title": "Authoring",
+      "type": "string"
+    },
+    "pulse_designer": {
+      "default": false,
+      "title": "Pulse Designer",
+      "type": "boolean"
+    },
+    "unitful": {
+      "default": false,
+      "title": "Unitful",
+      "type": "boolean"
+    },
+    "simulator": {
+      "default": "none",
+      "enum": [
+        "none",
+        "mrzero",
+        "komamripy",
+        "koma"
+      ],
+      "title": "Simulator",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "version",
+    "language",
+    "authoring"
+  ],
+  "title": "Arm",
+  "type": "object"
+}

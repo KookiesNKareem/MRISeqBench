@@ -14,7 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def submission(tmp_path_factory):
     root = tmp_path_factory.mktemp("submission")
     catalog = Catalog(ROOT)
-    case = catalog.cases(catalog.get("suites", "smoke"))[0]
+    # This shared backend-protocol fixture must fit every active scanner and
+    # the stricter hardware used by isolated analytic regression controls.
+    case = catalog.resolve(
+        catalog.get("tasks", "pulseq_smoke"), hardware_ref="low_field"
+    )
     (root / "case.json").write_text(json.dumps(case))
     subprocess.run(
         [

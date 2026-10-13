@@ -712,13 +712,34 @@
       "type": "string"
     },
     "level": {
-      "enum": [
-        "P0",
-        "P2",
-        "P3"
+      "anyOf": [
+        {
+          "enum": [
+            "P0",
+            "P2",
+            "P3"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
       ],
-      "title": "Level",
-      "type": "string"
+      "default": null,
+      "title": "Level"
+    },
+    "reference_field_strength_T": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Field Strength T"
     },
     "effects": {
       "items": {
@@ -835,7 +856,6 @@
     "id",
     "version",
     "description",
-    "level",
     "effects"
   ],
   "title": "Physics",

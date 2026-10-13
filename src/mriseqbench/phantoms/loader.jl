@@ -14,7 +14,8 @@ end
 include(joinpath(@__DIR__, "..", "..", "..", "benchmark", "physics", "effects.jl"))
 
 function load_case(source::Dict)
-    obj,labels=build_phantom(source["object"]["phantom"])
+    field = get(get(source,"hardware",Dict()),"field_strength_T",nothing)
+    obj,labels=build_phantom(source["object"]["phantom"]; field_strength_T=field)
     effects=get(source["physics"],"effects",Any[])
     for e in effects
         kind=e["kind"]; model=e["model"]
@@ -32,7 +33,7 @@ function load_case(source::Dict)
     count(e->e["kind"]=="motion",effects)<=1 || error("One motion effect is supported per profile")
     return PhantomCase(obj,labels,effects,source)
 end
-load_case(filename::String)=load_case(JSON.parsefile(filename))
+load_case(filename::String)=load_case(JSON.parsefile(filename; dicttype=Dict{String,Any}))
 
 function materialize(c::PhantomCase,out::String)
     names=("phantom.phantom","fields.h5","manifest.json")

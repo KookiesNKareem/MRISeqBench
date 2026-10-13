@@ -85,6 +85,61 @@
       "title": "ApiProxyConfig",
       "type": "object"
     },
+    "ArmRuntime": {
+      "additionalProperties": false,
+      "properties": {
+        "author_image": {
+          "minLength": 1,
+          "pattern": "^[^\\s]+$",
+          "title": "Author Image",
+          "type": "string"
+        },
+        "simulator_image": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "^[^\\s]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Simulator Image"
+        },
+        "probe_timeout_s": {
+          "default": 120,
+          "exclusiveMinimum": 0,
+          "title": "Probe Timeout S",
+          "type": "number"
+        },
+        "simulation_timeout_s": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "title": "Simulation Timeout S",
+          "type": "number"
+        },
+        "julia_heap_size_hint_mb": {
+          "anyOf": [
+            {
+              "minimum": 32,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Julia Heap Size Hint Mb"
+        }
+      },
+      "required": [
+        "author_image"
+      ],
+      "title": "ArmRuntime",
+      "type": "object"
+    },
     "Backend": {
       "additionalProperties": false,
       "properties": {
@@ -153,6 +208,7 @@
             "auto",
             "macos",
             "bubblewrap",
+            "docker",
             "none"
           ],
           "title": "Backend",
@@ -265,6 +321,30 @@
       ],
       "title": "Submission Mode",
       "type": "string"
+    },
+    "arm": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Arm"
+    },
+    "arm_runtime": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArmRuntime"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [

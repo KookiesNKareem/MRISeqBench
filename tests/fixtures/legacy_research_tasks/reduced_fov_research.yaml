@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+id: reduced_fov_research
+objective: Make a reduced-field-of-view imaging sequence. Research the sequence and
+  choose an appropriate implementation.
+object: cardiac_2d@1
+sequence:
+  level: S3
+  capabilities:
+  - spoiled_gre
+  - cartesian
+  - reduced_fov
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 6
+prompt_mode: research
+identity_requirements:
+- Spatial selection restricts the excited imaging volume and phase-encode coverage
+  is consistent with the reduced extent.
+evaluation: s3@2

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+id: elliptical_kspace_research
+objective: Make an imaging sequence with elliptical k-space sampling. Research the
+  sequence and choose an appropriate implementation.
+sequence:
+  level: S3
+  capabilities:
+  - spoiled_gre
+  - cartesian
+  - elliptical_kspace
+  matrix:
+  - 32
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  - 200
+  duration_s: 12
+object: cardiac_3d@1
+prompt_mode: research
+identity_requirements:
+- The acquired Cartesian phase-encode support follows an elliptical boundary.
+evaluation: s3@2

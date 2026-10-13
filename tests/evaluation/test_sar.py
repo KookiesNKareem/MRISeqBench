@@ -13,7 +13,7 @@ from mriseqbench.models import Hardware
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def case_for(hardware="standard"):
+def case_for(hardware="high_performance"):
     catalog = Catalog(ROOT)
     return catalog.resolve(
         catalog.get("tasks", "pulseq_smoke"),
@@ -45,7 +45,7 @@ def test_field_strength_and_analytic_constant_rf(tmp_path):
     path, seq = high_duty_submission(tmp_path)
     values = {}
     for hardware, passes in [
-        ("standard", False),
+        ("high_performance", False),
         ("standard_1_5t", True),
         ("low_field", True),
     ]:
@@ -56,8 +56,10 @@ def test_field_strength_and_analytic_constant_rf(tmp_path):
         assert check["passed"] is passes
         assert result["status"] == ("smoke_passed" if passes else "failed")
         assert next(c for c in result["checks"] if c["name"] == "peak_b1")["passed"]
-    assert values["standard"] / values["standard_1_5t"] == pytest.approx(4)
-    assert values["low_field"] / values["standard"] == pytest.approx((0.55 / 3) ** 2)
+    assert values["high_performance"] / values["standard_1_5t"] == pytest.approx(4)
+    assert values["low_field"] / values["high_performance"] == pytest.approx(
+        (0.55 / 3) ** 2
+    )
     load = case_for()["hardware"]["sar"]
     coefficient = (
         load["conductivity_S_per_m"]
@@ -66,7 +68,7 @@ def test_field_strength_and_analytic_constant_rf(tmp_path):
         / (5 * load["density_kg_per_m3"])
     )
     expected = coefficient * (2e-6) ** 2 * 0.5 / seq.duration()[0]
-    assert values["standard"] == pytest.approx(expected, rel=1e-6)
+    assert values["high_performance"] == pytest.approx(expected, rel=1e-6)
 
 
 def test_sar_never_runs_or_leaks_in_feedback(tmp_path, monkeypatch):

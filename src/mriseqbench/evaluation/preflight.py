@@ -63,14 +63,41 @@ def preflight(submission, case, *, hardware_limits=True):
         )
         adc_count, rf_count, rf_peak_hz = 0, 0, 0.0
         finite_events = True
+        finite_adc = True
         unsupported_events = []
         for number in seq.block_events:
             block = seq.get_block(number)
             if block.adc is not None:
                 adc_count += block.adc.num_samples
+                finite_adc &= all(
+                    np.isfinite(getattr(block.adc, name, 0.0)).all()
+                    for name in (
+                        "dwell",
+                        "delay",
+                        "freq_offset",
+                        "phase_offset",
+                        "freq_ppm",
+                        "phase_ppm",
+                    )
+                )
+                modulation = getattr(block.adc, "phase_modulation", None)
+                finite_adc &= modulation is None or np.isfinite(modulation).all()
             if block.rf is not None:
                 rf_count += 1
-                finite_events &= bool(np.isfinite(block.rf.signal).all())
+                finite_events &= bool(
+                    np.isfinite(block.rf.signal).all() and np.isfinite(block.rf.t).all()
+                )
+                finite_events &= all(
+                    np.isfinite(getattr(block.rf, name, 0.0)).all()
+                    for name in (
+                        "delay",
+                        "shape_dur",
+                        "freq_offset",
+                        "phase_offset",
+                        "freq_ppm",
+                        "phase_ppm",
+                    )
+                )
                 rf_peak_hz = max(rf_peak_hz, float(np.max(np.abs(block.rf.signal))))
             # These extensions require a scanner/platform model, absent here.
             for name in ("soft_delay", "rf_shim"):
@@ -84,7 +111,16 @@ def preflight(submission, case, *, hardware_limits=True):
             adc_count > 0 and rf_count > 0,
             {"adc_samples": adc_count, "rf_events": rf_count},
         )
-        check("finite_rf", finite_events, "RF samples must be finite")
+        check(
+            "finite_rf",
+            finite_events,
+            "RF samples, times, frequency and phase must be finite",
+        )
+        check(
+            "finite_adc",
+            finite_adc,
+            "ADC timing, frequency, phase and modulation must be finite",
+        )
         b1 = rf_peak_hz / system.gamma * 1e6
         if hardware_limits:
             check(

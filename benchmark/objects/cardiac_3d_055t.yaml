@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=../../schemas/objects.schema.json
+schema_version: 1
+id: cardiac_3d_055t
+version: 1
+description: Static cardiac volume at 0.55 T with field-specific tissue relaxation and fat chemical shift.
+phantom: cardiac_3d_055t@1

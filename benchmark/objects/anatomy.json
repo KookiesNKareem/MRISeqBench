@@ -1,0 +1,293 @@
+{
+  "schema_version": 1,
+  "source": {
+    "path": "assets/cardiac_source.phantom",
+    "sha256": "ae8ac62589ca9093bf24f0c5201174b58f71b4ec1ce7df8d23d3b1cec8a25bdf",
+    "original_name": "Cardiac 3 T case 01, static 10x-z, fat shift, no B0 map",
+    "source_spins": 3466834,
+    "source_center_m": [
+      0.0,
+      0.0,
+      0.019999997690320015
+    ],
+    "coordinate_normalization": "Subtract the midpoint of each source coordinate axis; replace float32 spacing roundoff with the declared 1.5 x 1.5 x 0.15 mm uniform spacing. No crop, scale, deformation, or motion."
+  },
+  "materials": [
+    "fat",
+    "myocardium",
+    "blood"
+  ],
+  "properties_columns": [
+    "proton_density",
+    "T1_s",
+    "T2_s",
+    "chemical_shift_hz_at_3T"
+  ],
+  "properties": [
+    [
+      0.10000000149011612,
+      0.38199999928474426,
+      0.06800000369548798,
+      -434.2902819118434
+    ],
+    [
+      0.10000000149011612,
+      1.121999979019165,
+      0.052000001072883606,
+      0.0
+    ],
+    [
+      0.10000000149011612,
+      1.9320000410079956,
+      0.2750000059604645,
+      0.0
+    ]
+  ],
+  "objects": {
+    "cardiac_2d@1": {
+      "path": "assets/cardiac_2d.h5",
+      "sha256": "8151af633cae6968de61be446a11313786baf808bf93a13ed0f7ab25bdd3bfb8",
+      "dimensions": 2,
+      "grid": [
+        90,
+        89
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015
+      ],
+      "center_m": [
+        0,
+        0
+      ],
+      "slice_index_zero_based": 545,
+      "field_profile": "3t"
+    },
+    "cardiac_3d@1": {
+      "path": "assets/cardiac_3d.h5",
+      "sha256": "f2a1dfd33677e0c2f985330295f9cdefd5428d853d157728949250b446a367de",
+      "dimensions": 3,
+      "grid": [
+        90,
+        89,
+        1090
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015,
+        0.00015
+      ],
+      "center_m": [
+        0,
+        0,
+        0
+      ],
+      "slice_index_zero_based": null,
+      "field_profile": "3t"
+    },
+    "cardiac_2d_055t@1": {
+      "path": "assets/cardiac_2d.h5",
+      "sha256": "8151af633cae6968de61be446a11313786baf808bf93a13ed0f7ab25bdd3bfb8",
+      "dimensions": 2,
+      "grid": [
+        90,
+        89
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015
+      ],
+      "center_m": [
+        0,
+        0
+      ],
+      "slice_index_zero_based": 545,
+      "field_profile": "055t"
+    },
+    "cardiac_2d_15t@1": {
+      "path": "assets/cardiac_2d.h5",
+      "sha256": "8151af633cae6968de61be446a11313786baf808bf93a13ed0f7ab25bdd3bfb8",
+      "dimensions": 2,
+      "grid": [
+        90,
+        89
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015
+      ],
+      "center_m": [
+        0,
+        0
+      ],
+      "slice_index_zero_based": 545,
+      "field_profile": "15t"
+    },
+    "cardiac_2d_3t@1": {
+      "path": "assets/cardiac_2d.h5",
+      "sha256": "8151af633cae6968de61be446a11313786baf808bf93a13ed0f7ab25bdd3bfb8",
+      "dimensions": 2,
+      "grid": [
+        90,
+        89
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015
+      ],
+      "center_m": [
+        0,
+        0
+      ],
+      "slice_index_zero_based": 545,
+      "field_profile": "3t"
+    },
+    "cardiac_3d_055t@1": {
+      "path": "assets/cardiac_3d.h5",
+      "sha256": "f2a1dfd33677e0c2f985330295f9cdefd5428d853d157728949250b446a367de",
+      "dimensions": 3,
+      "grid": [
+        90,
+        89,
+        1090
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015,
+        0.00015
+      ],
+      "center_m": [
+        0,
+        0,
+        0
+      ],
+      "slice_index_zero_based": null,
+      "field_profile": "055t"
+    },
+    "cardiac_3d_15t@1": {
+      "path": "assets/cardiac_3d.h5",
+      "sha256": "f2a1dfd33677e0c2f985330295f9cdefd5428d853d157728949250b446a367de",
+      "dimensions": 3,
+      "grid": [
+        90,
+        89,
+        1090
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015,
+        0.00015
+      ],
+      "center_m": [
+        0,
+        0,
+        0
+      ],
+      "slice_index_zero_based": null,
+      "field_profile": "15t"
+    },
+    "cardiac_3d_3t@1": {
+      "path": "assets/cardiac_3d.h5",
+      "sha256": "f2a1dfd33677e0c2f985330295f9cdefd5428d853d157728949250b446a367de",
+      "dimensions": 3,
+      "grid": [
+        90,
+        89,
+        1090
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015,
+        0.00015
+      ],
+      "center_m": [
+        0,
+        0,
+        0
+      ],
+      "slice_index_zero_based": null,
+      "field_profile": "3t"
+    }
+  },
+  "field_profiles": {
+    "3t": {
+      "field_strength_T": 3.0,
+      "properties": [
+        [
+          0.10000000149011612,
+          0.38199999928474426,
+          0.06800000369548798,
+          -434.2902819118434
+        ],
+        [
+          0.10000000149011612,
+          1.121999979019165,
+          0.052000001072883606,
+          0.0
+        ],
+        [
+          0.10000000149011612,
+          1.9320000410079956,
+          0.2750000059604645,
+          0.0
+        ]
+      ],
+      "provenance": "Exact supplied source contrast values.",
+      "literature_profile": "3.0"
+    },
+    "15t": {
+      "field_strength_T": 1.5,
+      "properties": [
+        [
+          0.10000000149011612,
+          0.343,
+          0.058,
+          -434.2902819118434
+        ],
+        [
+          0.10000000149011612,
+          0.955,
+          0.049,
+          0.0
+        ],
+        [
+          0.10000000149011612,
+          1.441,
+          0.29,
+          0.0
+        ]
+      ],
+      "provenance": "Literature-derived fixed benchmark values; see docs/CARDIAC_PHANTOM.md. Proton density and 3T chemical shift retained from supplied source.",
+      "literature_profile": "1.5"
+    },
+    "055t": {
+      "field_strength_T": 0.55,
+      "properties": [
+        [
+          0.10000000149011612,
+          0.187,
+          0.093,
+          -434.2902819118434
+        ],
+        [
+          0.10000000149011612,
+          0.701,
+          0.058,
+          0.0
+        ],
+        [
+          0.10000000149011612,
+          1.122,
+          0.263,
+          0.0
+        ]
+      ],
+      "provenance": "Literature-derived fixed benchmark values; see docs/CARDIAC_PHANTOM.md. Proton density and 3T chemical shift retained from supplied source.",
+      "literature_profile": "0.55"
+    }
+  },
+  "literature": {
+    "path": "tissue_relaxation_sources.json",
+    "sha256": "1c3d3e89c111221789d5c5f2d5985d1a8534ff19f9c3852e963729542b22bfab"
+  }
+}

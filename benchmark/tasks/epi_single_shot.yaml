@@ -2,6 +2,7 @@
 id: epi_single_shot
 objective: Acquire a complete 32 x 32 Cartesian image in one excitation using an alternating-polarity
   EPI readout.
+object: cardiac_2d@1
 sequence:
   level: S2
   capabilities: [epi, cartesian]
@@ -9,3 +10,4 @@ sequence:
   fov_mm: [200, 200]
   te_ms: {target: 30, tolerance: 3}
   duration_s: 1
+evaluation: s2@3

@@ -26,5 +26,5 @@ provenance:
   accessed_on: '2026-10-09'
   notes: 'Published values: field_strength_T, max_gradient_mT_per_m and max_slew_T_per_m_per_s.
     Gradient limits are per axis, not vector sums. max_b1_uT, dead times and rasters
-    are shared benchmark assumptions copied from standard@1, not manufacturer specifications.
+    are shared benchmark assumptions shared synthetic benchmark assumptions, not manufacturer specifications.
     This is a limit profile, not a complete scanner model.'

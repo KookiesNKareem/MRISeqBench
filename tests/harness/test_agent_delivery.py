@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from mriseqbench.catalog import Catalog
+from mriseqbench.catalog import Catalog, load_yaml
 from mriseqbench.harness.feedback import FeedbackServer
-from mriseqbench.harness.prepare import prepare, prompt
+from mriseqbench.harness.prepare import evaluation_summary, prepare, prompt, task_brief
 from mriseqbench.harness.proxy import ApiProxy
 from mriseqbench.harness.runner import run
-from mriseqbench.models import ApiProxyConfig, FeedbackConfig, SandboxConfig
+from mriseqbench.models import ApiProxyConfig, FeedbackConfig, SandboxConfig, Task
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -59,7 +59,7 @@ def test_real_pi_receives_task_and_submits_without_paid_api(tmp_path, monkeypatc
         "c=json.loads(pathlib.Path('case.json').read_text()); "
         "t=yaml.safe_load(pathlib.Path('task.yaml').read_text()); "
         "assert t['objective']==c['task']['objective']; "
-        "assert c['case_id']=='pulseq_smoke-v1--ideal-v1'; "
+        "assert c['case_id']=='pulseq_smoke-v1--static_b0-v1'; "
         "assert c['task']['objective'] in pathlib.Path('PROMPT.md').read_text(); "
         "subprocess.run([sys.executable,sys.argv[1],'--case','case.json',"
         "'--output','sequence.seq'],check=True); "
@@ -226,7 +226,108 @@ def test_prompt_uses_resolved_contract():
     assert requirements["sequence"]["te_ms"] == {"target": 5, "tolerance": 1}
     assert "null" not in text
     assert "schema_version" not in text
-    assert "physical scoring is pending" in text
+    assert "finite-RF Bloch replay" in text
+    assert "Evaluation (s1@3):" in text
+    assert "uncalibrated" not in text
+    assert "ideal-control imaging is diagnostic only" in text
+    assert "EVALUATION.md" in text
+    assert "isochromats" not in text
+    assert "jackknife" not in text
+
+
+@pytest.mark.parametrize("physics", ["ideal", "b0_smooth", "fields_and_motion"])
+@pytest.mark.parametrize("task_id", ["gre_t1w", "gre_t1w_research"])
+def test_minimal_prompt_preserves_contract_and_optional_scoring(
+    tmp_path, physics, task_id
+):
+    from types import SimpleNamespace
+
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(
+        (
+            Task.model_validate(
+                load_yaml(ROOT / f"tests/fixtures/legacy_research_tasks/{task_id}.yaml")
+            )
+            if task_id.endswith("_research")
+            else catalog.get("tasks", task_id)
+        ),
+        catalog.get("physics", physics),
+    )
+    prepare(
+        tmp_path,
+        case,
+        catalog.get("experiments", "pi"),
+        SimpleNamespace(root=ROOT, port=1234, token="test"),
+    )
+    text = (tmp_path / "PROMPT.md").read_text()
+    inline = yaml.safe_load(text.split("```yaml\n", 1)[1].split("```", 1)[0])
+    brief = task_brief(case)
+    brief.pop("objective")
+    assert inline == brief
+    details = (tmp_path / "EVALUATION.md").read_text()
+    assert (
+        evaluation_summary(
+            case["evaluation"], case.get("image_policy", case.get("object_level"))
+        )
+        in details
+    )
+    assert "360 s" in details and "10 s" in details
+    if case.get("image_policy", case.get("object_level")) in ("static", "P2", "P3"):
+        assert "ideal-control imaging is diagnostic only" in text
+        assert "wrapped phase RMS" in details
+    else:
+        assert "ideal-control images (B0/motion robustness is diagnostic only)" in text
+    if task_id.endswith("_research"):
+        assert "identity_requirements" not in details
+        assert "te_ms" not in inline["sequence"]
+
+
+@pytest.mark.parametrize("submissions", [1, 2, 3])
+@pytest.mark.parametrize("feedback", ["none", "preflight"])
+@pytest.mark.parametrize("submission_mode", ["submit", "file"])
+def test_prompt_submission_rules_match_available_feedback(
+    tmp_path, submissions, feedback, submission_mode
+):
+    from types import SimpleNamespace
+
+    catalog = Catalog(ROOT)
+    experiment = copy.deepcopy(catalog.get("experiments", "pi"))
+    experiment.max_submissions = submissions
+    experiment.feedback.mode = feedback
+    experiment.feedback.max_checks = 2
+    experiment.submission_mode = submission_mode
+    case = catalog.resolve(
+        catalog.get("tasks", "gre_t1w"), catalog.get("physics", "ideal")
+    )
+    prepare(
+        tmp_path,
+        case,
+        experiment,
+        SimpleNamespace(root=ROOT, port=1234, token="test"),
+    )
+    text = (tmp_path / "PROMPT.md").read_text()
+    assert f"Time budget: {experiment.agent.timeout_s:g} s of agent runtime" in text
+    assert text.count("excluding submission grading") == 1
+    assert "All other work counts. The harness tracks time automatically." in text
+    if submissions > 1:
+        assert f"up to {submissions} attempts; only the last counts" in text
+        assert "neither consumes submissions or scores SAR/images" in text
+        assert "Wait in the foreground; grading can take minutes" in text
+        assert "Save each JSON response; resubmitting consumes another attempt" in text
+        assert "`retry_required`: use the failure feedback to revise" in text
+        assert "`submitted`: run finished; stop" in text
+        assert "feedback is disabled" not in text
+    elif feedback == "none":
+        assert "Lint/check feedback is disabled" in text
+        assert "`./bin/check`:" not in text
+    else:
+        assert "unlimited file/timing checks" in text
+        assert "at most 2 charged checks" in text
+    if submission_mode == "submit":
+        assert "You must run `./bin/submit` before your time expires" in text
+    else:
+        assert "exit successfully for one final evaluation without revision" in text
+    assert "do not stop while submissions remain" not in text
 
 
 def test_hardware_provenance_stays_out_of_agent_context(tmp_path):
@@ -245,7 +346,7 @@ def test_hardware_provenance_stays_out_of_agent_context(tmp_path):
         catalog.get("experiments", "smoke"),
         SimpleNamespace(root=ROOT, port=12345, token="test-token"),
     )
-    for filename in ("PROMPT.md", "task.yaml", "case.json"):
+    for filename in ("PROMPT.md", "task.yaml", "case.json", "EVALUATION.md"):
         text = (tmp_path / filename).read_text()
         assert "provenance" not in text
         assert "source_url" not in text

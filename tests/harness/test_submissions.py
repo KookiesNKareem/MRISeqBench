@@ -8,6 +8,7 @@ import pytest
 
 from mriseqbench.catalog import Catalog
 from mriseqbench.harness.feedback import FeedbackServer
+from mriseqbench.harness.grading import EvaluationIncomplete
 from mriseqbench.harness.runner import run
 from mriseqbench.models import Experiment, FeedbackConfig
 
@@ -122,16 +123,20 @@ def test_first_pass_ends_run_and_invalid_transport_does_not_consume_attempt(
         assert server.attempts[0]["blind"]
 
 
-def test_evaluator_error_is_not_reported_as_submission_failure(monkeypatch, tmp_path):
+def test_interrupted_evaluator_leaves_frozen_submission_without_verdict(
+    monkeypatch, tmp_path
+):
     monkeypatch.setattr(
         "mriseqbench.harness.feedback.execute",
         lambda *args, **kwargs: {"status": "timeout"},
     )
     with FeedbackServer(smoke_case(), FeedbackConfig(), ROOT, tmp_path) as server:
-        result = server.handle("submit", server.token, b"candidate")[1]
-        assert result["status"] == "submitted"
-        assert server.submitted.is_set()
-        assert server.attempts[0]["evaluation"]["status"] == "evaluator_error"
+        with pytest.raises(EvaluationIncomplete):
+            server.handle("submit", server.token, b"candidate")
+        assert server.attempts == []
+        attempt = tmp_path / "submissions/attempt-001"
+        assert (attempt / "sequence.seq").read_bytes() == b"candidate"
+        assert not (attempt / "result.json").exists()
 
 
 @pytest.mark.parametrize("failures", [1, 2])

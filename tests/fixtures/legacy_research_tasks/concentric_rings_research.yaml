@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+id: concentric_rings_research
+objective: Make a concentric-rings imaging sequence. Research the sequence and choose
+  an appropriate implementation.
+object: cardiac_2d@1
+sequence:
+  level: S2
+  capabilities:
+  - spoiled_gre
+  - concentric_rings
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 6
+prompt_mode: research
+identity_requirements:
+- ADC samples trace concentric circular k-space trajectories spanning the image bandwidth.
+evaluation: s2@3

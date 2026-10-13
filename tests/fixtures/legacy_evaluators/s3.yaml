@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../schemas/evaluators.schema.json
+schema_version: 1
+id: s3
+version: 1
+scope: benchmark
+calibrated: false
+reconstruction: sampling_sense@1
+spatial_samples: 32768
+spatial_replicates: 8
+spatial_max_samples: 131072
+spatial_seed: 1729
+image_precision:
+  normalized_squared_error: 0.0008
+  signal_fraction: 0.005
+  outside_object_energy_fraction: 0.005
+  wm_gm_ratio: 0.02
+  normalized_squared_magnitude_error: 0.001
+  normalized_squared_phase_error: 0.002
+  min_tissue_signal_fraction: 0.01
+  contrast_retention: 0.02
+metrics:
+- name: ideal_complex_image_nrmse
+  max: 0.3
+- name: ideal_signal_fraction
+  min: 0.5
+- name: ideal_outside_object_energy_fraction
+  max: 0.25
+case_image_criteria:
+  P2:
+    complex_nrmse_max: 0.45
+    magnitude_nrmse_max: 0.35
+    phase_rms_rad_max: 0.35
+    tissue_signal_fraction_min: 0.5
+    contrast_retention_min: 0.5
+    outside_energy_fraction_max: 0.25
+  P3:
+    complex_nrmse_max: 0.6
+    magnitude_nrmse_max: 0.45
+    phase_rms_rad_max: 0.52
+    tissue_signal_fraction_min: 0.4
+    contrast_retention_min: 0.4
+    outside_energy_fraction_max: 0.3

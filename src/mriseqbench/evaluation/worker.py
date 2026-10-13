@@ -19,6 +19,7 @@ def main():
     p.add_argument("--root", required=True, type=Path)
     p.add_argument("--workspace", required=True, type=Path)
     p.add_argument("--backend", type=Path)
+    p.add_argument("--time-budget-s", type=float)
     args = p.parse_args()
     case = json.loads(args.case.read_text())
     if args.mode in ("lint", "preflight"):
@@ -44,6 +45,7 @@ def main():
             args.workspace / "physical",
             backend,
             feedback=args.mode == "feedback",
+            time_budget_s=args.time_budget_s,
         )
     write_json(args.workspace / "result.json", result)
 

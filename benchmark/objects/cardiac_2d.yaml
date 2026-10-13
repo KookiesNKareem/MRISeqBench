@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=../../schemas/objects.schema.json
+schema_version: 1
+id: cardiac_2d
+version: 1
+description: Static cardiac short-axis slice with myocardium, blood and fat; intrinsic fat chemical shift at the scanner field.
+phantom: cardiac_2d@1

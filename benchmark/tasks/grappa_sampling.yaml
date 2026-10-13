@@ -1,7 +1,9 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: grappa_sampling
-objective: Acquire every second Cartesian phase-encode line plus eight contiguous central
-  autocalibration lines for GRAPPA reconstruction.
+objective: 'Acquire every second Cartesian phase-encode line plus eight contiguous central autocalibration
+  lines for GRAPPA reconstruction. Grid indices are zero based: retain even ky indices and add
+  central indices 12 through 19.'
+object: cardiac_2d@1
 sequence:
   level: S3
   capabilities: [spoiled_gre, cartesian, undersampling, grappa]
@@ -12,3 +14,4 @@ sequence:
     acceleration: 2
     calibration_lines: 8
     pattern: uniform
+evaluation: s3@2

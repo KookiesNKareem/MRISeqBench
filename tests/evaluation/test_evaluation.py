@@ -7,15 +7,14 @@ import pytest
 from mriseqbench.catalog import Catalog
 from mriseqbench.evaluation import evaluate
 from mriseqbench.models import Backend
+from tests.fixtures.legacy_catalog import resolve_legacy_case
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def gre_case():
     catalog = Catalog(ROOT)
-    return catalog.resolve(
-        catalog.get("tasks", "gre_t1w"), catalog.get("physics", "ideal")
-    )
+    return resolve_legacy_case(catalog, "gre_t1w")
 
 
 def test_selected_hardware_enforces_real_gradient_limit(tmp_path):
@@ -69,14 +68,26 @@ def fake_backend(case, **changes):
     result = {
         "schema_version": 1,
         "case_id": case["case_id"],
-        "reconstruction": "cartesian_fft@1",
+        "reconstruction": case["evaluation"]["reconstruction"],
         "requirements": {
             k: True
             for k in ["spoiled_gre", "cartesian", "matrix", "fov_mm", "te_ms", "tr_ms"]
         },
         "effects": [],
-        "metrics": {"wm_gm_ratio": 1.3, "outside_object_energy_fraction": 0.1},
+        "metrics": {
+            "ideal_complex_image_nrmse": 0.05,
+            "ideal_signal_fraction": 1.0,
+            "ideal_outside_object_energy_fraction": 0.1,
+        },
     }
+    if case["evaluation"]["reconstruction"].startswith("bart_"):
+        result["reconstruction_provenance"] = {
+            "engine": "BART",
+            "version": "contract-fixture-only",
+            "binary_sha256": "a" * 64,
+            "source_commit": None,
+            "commands": [{"argv": ["fft", "-i", "3", "input", "output"], "calls": 1}],
+        }
     result.update(changes)
     script = "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text(sys.argv[2])"
     return Backend(
@@ -93,12 +104,117 @@ def test_real_pulseq_smoke(submission, tmp_path):
     assert all(c["passed"] for c in result["checks"])
 
 
-def test_no_backend_cannot_pass(submission, tmp_path):
-    assert evaluate(submission, gre_case(), ROOT, tmp_path)["status"] == "incomplete"
+@pytest.mark.parametrize("provenance", [None, {}, {"engine": "MRIReco"}])
+def test_current_cardiac_backend_requires_bart_evidence(
+    submission, tmp_path, provenance
+):
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(catalog.get("tasks", "gre_t1w"))
+    backend = fake_backend(case, reconstruction_provenance=provenance)
+    with pytest.raises(RuntimeError, match="BART reconstruction provenance"):
+        evaluate(submission, case, ROOT, tmp_path, backend)
+
+
+def test_reduced_fov_public_brief_requires_a_spin_echo():
+    from mriseqbench.harness.prepare import task_brief
+
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(catalog.get("tasks", "reduced_fov"))
+    assert task_brief(case)["sequence"]["capabilities"] == [
+        "spin_echo",
+        "cartesian",
+        "reduced_fov",
+    ]
+
+
+@pytest.mark.parametrize("spin_echo", [None, False, True])
+def test_reduced_fov_external_backend_requires_spin_echo(
+    submission, tmp_path, spin_echo
+):
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(catalog.get("tasks", "reduced_fov"))
+    requirements = {
+        name: True
+        for name in (
+            "cartesian",
+            "reduced_fov",
+            "matrix",
+            "fov_mm",
+            "sampling",
+            "spatial_selection",
+            "numerical_convergence",
+        )
+    }
+    if spin_echo is None:
+        requirements["spoiled_gre"] = True
+    else:
+        requirements["spin_echo"] = spin_echo
+    backend = fake_backend(
+        case,
+        requirements=requirements,
+        effects=sorted({effect["kind"] for effect in case["physics"]["effects"]}),
+        metrics={
+            "case_complex_image_nrmse": 0.1,
+            "case_magnitude_image_nrmse": 0.1,
+            "case_phase_error_rad": 0.1,
+            "case_min_tissue_signal_fraction": 0.9,
+            "case_contrast_retention": 0.9,
+            "case_outside_object_energy_fraction": 0.1,
+            "case_phase_reference_coverage": 1.0,
+            "selection_leakage_ratio": 0.05,
+            "diagnostic_signal_fraction": 0.1,
+        },
+    )
+    if spin_echo is None:
+        with pytest.raises(RuntimeError, match="omitted requirements.*spin_echo"):
+            evaluate(submission, case, ROOT, tmp_path, backend)
+    else:
+        result = evaluate(submission, case, ROOT, tmp_path, backend)
+        expected = "passed" if case["evaluation"]["calibrated"] else "uncalibrated"
+        assert result["status"] == (expected if spin_echo else "failed")
+
+
+def test_native_s4_rejects_submission_without_ecg_trigger(submission, tmp_path):
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(catalog.get("tasks", "adiabatic_inversion"))
+    result = evaluate(submission, case, ROOT, tmp_path)
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "ecg_trigger_events" and not check["passed"]
+        for check in result["checks"]
+    )
+
+
+def test_external_s3_backend_cannot_replace_case_metrics_with_ideal_metrics(
+    submission, tmp_path
+):
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(catalog.get("tasks", "partial_fourier"))
+    requirements = {
+        name: True
+        for name in [
+            *case["task"]["sequence"]["capabilities"],
+            "matrix",
+            "fov_mm",
+            "sampling",
+            "numerical_convergence",
+        ]
+    }
+    backend = fake_backend(
+        case,
+        reconstruction=case["evaluation"]["reconstruction"],
+        requirements=requirements,
+        effects=["b0"],
+    )
+    with pytest.raises(
+        RuntimeError, match="backend omitted metric: case_complex_image_nrmse"
+    ):
+        evaluate(submission, case, ROOT, tmp_path, backend)
 
 
 def test_uncalibrated_cannot_pass(submission, tmp_path):
     case = gre_case()
+    case["evaluation"]["calibrated"] = False
     assert (
         evaluate(submission, case, ROOT, tmp_path, fake_backend(case))["status"]
         == "uncalibrated"
@@ -107,7 +223,7 @@ def test_uncalibrated_cannot_pass(submission, tmp_path):
 
 def test_calibrated_contract_pass_and_fail(submission, tmp_path):
     case = gre_case()
-    case["evaluation"]["calibrated"] = True  # test fixture, not a released calibration
+    case["evaluation"]["calibrated"] = True
     assert (
         evaluate(submission, case, ROOT, tmp_path / "pass", fake_backend(case))[
             "status"
@@ -115,7 +231,12 @@ def test_calibrated_contract_pass_and_fail(submission, tmp_path):
         == "passed"
     )
     backend = fake_backend(
-        case, metrics={"wm_gm_ratio": 0.9, "outside_object_energy_fraction": 0.1}
+        case,
+        metrics={
+            "ideal_complex_image_nrmse": 0.9,
+            "ideal_signal_fraction": 1.0,
+            "ideal_outside_object_energy_fraction": 0.1,
+        },
     )
     assert (
         evaluate(submission, case, ROOT, tmp_path / "fail", backend)["status"]
@@ -142,12 +263,8 @@ def test_calibrated_contract_pass_and_fail(submission, tmp_path):
 )
 def test_backend_cannot_silently_omit_contract(submission, tmp_path, changes):
     case = gre_case()
-    assert (
-        evaluate(submission, case, ROOT, tmp_path, fake_backend(case, **changes))[
-            "status"
-        ]
-        == "evaluator_error"
-    )
+    with pytest.raises(RuntimeError, match="Physical backend returned invalid output"):
+        evaluate(submission, case, ROOT, tmp_path, fake_backend(case, **changes))
 
 
 def test_invalid_and_missing_submissions(tmp_path):
@@ -160,6 +277,38 @@ def test_invalid_and_missing_submissions(tmp_path):
         ]
         == "failed"
     )
+
+
+@pytest.mark.parametrize("level", ["P2", "P3"])
+@pytest.mark.parametrize("case_error", [0.1, 0.9, None])
+def test_external_s1_backend_must_supply_case_metrics(
+    submission, tmp_path, level, case_error
+):
+    catalog = Catalog(ROOT)
+    case = resolve_legacy_case(
+        catalog, "gre_t1w", physics="b0_offset" if level == "P2" else "b0_drift"
+    )
+    metrics = {"ideal_complex_image_nrmse": 0.9}
+    if case_error is not None:
+        metrics.update(
+            case_complex_image_nrmse=case_error,
+            case_magnitude_image_nrmse=0.1,
+            case_phase_error_rad=0.1,
+            case_min_tissue_signal_fraction=0.8,
+            case_contrast_retention=0.8,
+            case_outside_object_energy_fraction=0.1,
+        )
+    backend = fake_backend(
+        case,
+        metrics=metrics,
+        effects=sorted({e["kind"] for e in case["physics"]["effects"]}),
+    )
+    if case_error is None:
+        with pytest.raises(RuntimeError, match="backend omitted metric"):
+            evaluate(submission, case, ROOT, tmp_path, backend)
+    else:
+        result = evaluate(submission, case, ROOT, tmp_path, backend)
+        assert result["status"] == ("passed" if case_error == 0.1 else "failed")
 
 
 def test_hardware_failure(submission, tmp_path):
@@ -178,3 +327,52 @@ def test_raster_header_cannot_relax_hardware(submission, tmp_path):
     assert path.read_text() != submission.read_text()
     result = evaluate(path, gre_case(), ROOT, tmp_path / "evaluation")
     assert result["status"] == "failed"
+
+
+def test_research_requires_identity_and_suitable_parameters_not_reference_timing(
+    submission, tmp_path
+):
+    catalog = Catalog(ROOT)
+    case = resolve_legacy_case(catalog, "gre_t1w_research")
+    requirements = {
+        k: True
+        for k in (
+            "spoiled_gre",
+            "cartesian",
+            "matrix",
+            "fov_mm",
+            "sequence_identity",
+            "reasonable_parameters",
+        )
+    }
+    # These are backend-contract fixtures, not evidence of physical sequence correctness.
+    assert (
+        evaluate(
+            submission,
+            case,
+            ROOT,
+            tmp_path / "valid",
+            fake_backend(case, requirements=requirements),
+        )["status"]
+        == "passed"
+    )
+    requirements["sequence_identity"] = False
+    assert (
+        evaluate(
+            submission,
+            case,
+            ROOT,
+            tmp_path / "wrong_identity",
+            fake_backend(case, requirements=requirements),
+        )["status"]
+        == "failed"
+    )
+    requirements.pop("sequence_identity")
+    with pytest.raises(RuntimeError, match="backend omitted requirements"):
+        evaluate(
+            submission,
+            case,
+            ROOT,
+            tmp_path / "omitted",
+            fake_backend(case, requirements=requirements),
+        )

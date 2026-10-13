@@ -78,7 +78,7 @@ function snapshot(c::PhantomCase,t::Real=0.0)
             end
         end
     end
-    obj.Δw .= 2π .* b0
+    obj.Δw .= c.phantom.Δw .+ 2π .* b0
     all(b1 .> 0) || error("B1 scale must remain positive")
     return obj,b1
 end

@@ -8,5 +8,5 @@ sequence:
   matrix: [32, 32]
   fov_mm: [200, 200]
   duration_s: 1
-object: uniform_disc@1
+object: cardiac_2d@1
 evaluation: pulseq_preflight@1

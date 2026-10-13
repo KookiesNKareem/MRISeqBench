@@ -1,5 +1,113 @@
 {
   "$defs": {
+    "CaseImageCriteria": {
+      "additionalProperties": false,
+      "description": "S1/S2/S3 case-physics quality requirements; all errors have fixed conventions.",
+      "properties": {
+        "complex_nrmse_max": {
+          "exclusiveMaximum": 2,
+          "exclusiveMinimum": 0,
+          "title": "Complex Nrmse Max",
+          "type": "number"
+        },
+        "magnitude_nrmse_max": {
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "title": "Magnitude Nrmse Max",
+          "type": "number"
+        },
+        "phase_rms_rad_max": {
+          "exclusiveMaximum": 3.141593,
+          "exclusiveMinimum": 0,
+          "title": "Phase Rms Rad Max",
+          "type": "number"
+        },
+        "tissue_signal_fraction_min": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Tissue Signal Fraction Min",
+          "type": "number"
+        },
+        "contrast_retention_min": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Contrast Retention Min",
+          "type": "number"
+        },
+        "outside_energy_fraction_max": {
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "title": "Outside Energy Fraction Max",
+          "type": "number"
+        }
+      },
+      "required": [
+        "complex_nrmse_max",
+        "magnitude_nrmse_max",
+        "phase_rms_rad_max",
+        "tissue_signal_fraction_min",
+        "contrast_retention_min",
+        "outside_energy_fraction_max"
+      ],
+      "title": "CaseImageCriteria",
+      "type": "object"
+    },
+    "ImagePrecision": {
+      "additionalProperties": false,
+      "description": "Absolute numerical error targets, independent of acceptance cutoffs.",
+      "properties": {
+        "normalized_squared_error": {
+          "default": 0.0008,
+          "exclusiveMinimum": 0,
+          "title": "Normalized Squared Error",
+          "type": "number"
+        },
+        "signal_fraction": {
+          "default": 0.005,
+          "exclusiveMinimum": 0,
+          "title": "Signal Fraction",
+          "type": "number"
+        },
+        "outside_object_energy_fraction": {
+          "default": 0.005,
+          "exclusiveMinimum": 0,
+          "title": "Outside Object Energy Fraction",
+          "type": "number"
+        },
+        "wm_gm_ratio": {
+          "default": 0.02,
+          "exclusiveMinimum": 0,
+          "title": "Wm Gm Ratio",
+          "type": "number"
+        },
+        "normalized_squared_magnitude_error": {
+          "default": 0.001,
+          "exclusiveMinimum": 0,
+          "title": "Normalized Squared Magnitude Error",
+          "type": "number"
+        },
+        "normalized_squared_phase_error": {
+          "default": 0.002,
+          "exclusiveMinimum": 0,
+          "title": "Normalized Squared Phase Error",
+          "type": "number"
+        },
+        "min_tissue_signal_fraction": {
+          "default": 0.01,
+          "exclusiveMinimum": 0,
+          "title": "Min Tissue Signal Fraction",
+          "type": "number"
+        },
+        "contrast_retention": {
+          "default": 0.02,
+          "exclusiveMinimum": 0,
+          "title": "Contrast Retention",
+          "type": "number"
+        }
+      },
+      "title": "ImagePrecision",
+      "type": "object"
+    },
     "Metric": {
       "additionalProperties": false,
       "properties": {
@@ -71,11 +179,21 @@
     },
     "reconstruction": {
       "enum": [
+        "bart_cartesian_fft@1",
+        "bart_readout@1",
+        "bart_sampling_sense@1",
         "cartesian_fft@1",
+        "noncartesian_direct@1",
+        "sampling_sense@1",
         "none"
       ],
       "title": "Reconstruction",
       "type": "string"
+    },
+    "intrinsic_tissue_response": {
+      "default": false,
+      "title": "Intrinsic Tissue Response",
+      "type": "boolean"
     },
     "metrics": {
       "items": {
@@ -83,6 +201,153 @@
       },
       "title": "Metrics",
       "type": "array"
+    },
+    "spatial_samples": {
+      "anyOf": [
+        {
+          "maximum": 1048576,
+          "minimum": 4096,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spatial Samples"
+    },
+    "spatial_replicates": {
+      "anyOf": [
+        {
+          "maximum": 32,
+          "minimum": 4,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spatial Replicates"
+    },
+    "spatial_max_samples": {
+      "anyOf": [
+        {
+          "maximum": 1048576,
+          "minimum": 4096,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spatial Max Samples"
+    },
+    "spatial_seed": {
+      "anyOf": [
+        {
+          "maximum": 2147483616,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spatial Seed"
+    },
+    "image_precision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ImagePrecision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "temporal_refinement": {
+      "anyOf": [
+        {
+          "enum": [
+            0,
+            1
+          ],
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Temporal Refinement"
+    },
+    "case_image_criteria": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/CaseImageCriteria"
+          },
+          "propertyNames": {
+            "enum": [
+              "static",
+              "P2",
+              "P3"
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Case Image Criteria"
+    },
+    "preparation_effect_fraction_min": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Preparation Effect Fraction Min"
+    },
+    "mapping_relative_error_max": {
+      "anyOf": [
+        {
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mapping Relative Error Max"
+    },
+    "mapping_relative_error_precision": {
+      "anyOf": [
+        {
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mapping Relative Error Precision"
     }
   },
   "required": [

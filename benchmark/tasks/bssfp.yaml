@@ -3,6 +3,7 @@ id: bssfp
 objective: Create Cartesian balanced SSFP with alternating 0/180-degree RF phase and zero
   net gradient area on every axis each TR. Use a 35-degree flip angle, TE 2.5 ms and TR 5
   ms.
+object: cardiac_2d@1
 sequence:
   level: S1
   capabilities: [bssfp, cartesian]
@@ -12,3 +13,4 @@ sequence:
   te_ms: {target: 2.5, tolerance: 0.25}
   tr_ms: {target: 5, tolerance: 0.25}
   flip_angle_deg: 35
+evaluation: s1@3

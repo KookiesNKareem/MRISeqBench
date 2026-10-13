@@ -44,20 +44,6 @@ SEQUENCE_CATEGORIES = {
         "elliptical_kspace",
     ),
     "S4": (
-        "kt_blast",
-        "kt_sense",
-        "kt_pca",
-        "low_rank_sparse",
-        "interleaved",
-        "golden_angle",
-        "view_sharing",
-        "twist",
-        "keyhole",
-        "cine",
-        "real_time",
-        "dynamic",
-    ),
-    "S5": (
         "tailored_rf",
         "cest",
         "tone",
@@ -165,12 +151,38 @@ class TemporalSpec(Strict):
     ordering: Literal["sequential", "interleaved", "golden_angle"]
     view_sharing_window: Annotated[int, Field(gt=0)] | None = None
     center_fraction: Annotated[float, Field(gt=0, le=1)] | None = None
+    trigger_source: Literal["ecg"] | None = None
+    rr_interval_ms: Positive | None = None
+    trigger_delay_ms: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None = None
+    acquisition_window_ms: Positive | None = None
+
+    @model_validator(mode="after")
+    def cardiac_window(self):
+        cardiac = (
+            self.trigger_source,
+            self.rr_interval_ms,
+            self.trigger_delay_ms,
+            self.acquisition_window_ms,
+        )
+        if any(value is not None for value in cardiac):
+            if any(value is None for value in cardiac):
+                raise ValueError(
+                    "ECG triggering requires source, RR, trigger delay and acquisition window"
+                )
+            if self.trigger_delay_ms + self.acquisition_window_ms > self.rr_interval_ms:
+                raise ValueError(
+                    "cardiac acquisition window must end within the RR interval"
+                )
+        return self
 
 
 class ApplicationSpec(Strict):
     inversion_time_ms: Positive | None = None
     inversion_times_ms: list[Positive] = Field(default_factory=list)
     preparation_duration_ms: Positive | None = None
+    preparation_durations_ms: list[
+        Annotated[float, Field(ge=0, allow_inf_nan=False)]
+    ] = Field(default_factory=list)
     saturation_offset_hz: Finite | None = None
     diffusion_b_s_per_mm2: Annotated[float, Field(ge=0)] | None = None
     labeling_duration_ms: Positive | None = None
@@ -191,11 +203,18 @@ class ApplicationSpec(Strict):
             raise ValueError("flip angle and TR schedule lengths must match")
         if any(a >= b for a, b in zip(self.echo_times_ms, self.echo_times_ms[1:])):
             raise ValueError("echo times must strictly increase")
+        if any(
+            a >= b
+            for a, b in zip(
+                self.preparation_durations_ms, self.preparation_durations_ms[1:]
+            )
+        ):
+            raise ValueError("preparation durations must strictly increase")
         return self
 
 
 class SequenceSpec(Strict):
-    level: Literal["S1", "S2", "S3", "S4", "S5"]
+    level: Literal["S1", "S2", "S3", "S4"]
     capabilities: Annotated[list[Capability], Field(min_length=1)]
     matrix: Grid
     fov_mm: Extent
@@ -227,10 +246,65 @@ class Task(Document):
     version: Annotated[int, Field(gt=0)] = 1
     objective: Annotated[str, Field(min_length=1)]
     sequence: SequenceSpec
-    object: Reference = "tissue_discs@1"
-    hardware: Reference = "standard@1"
+    prompt_mode: Literal["detailed", "research"] = "detailed"
+    identity_requirements: list[Annotated[str, Field(min_length=1)]] = Field(
+        default_factory=list
+    )
+    object: Reference = "cardiac_2d@1"
+    hardware: Reference = "high_performance@1"
     evaluation: Reference = "image_fidelity@1"
     submission: Submission = Field(default_factory=Submission)
+
+    @model_validator(mode="after")
+    def cardiac_application_contract(self):
+        if self.sequence.level == "S4":
+            if not {"triggering", "gating"} <= set(self.sequence.capabilities):
+                raise ValueError(
+                    "S4 cardiac applications require triggering and gating capabilities"
+                )
+            if self.prompt_mode == "detailed" and (
+                self.sequence.temporal is None
+                or self.sequence.temporal.trigger_source != "ecg"
+            ):
+                raise ValueError(
+                    "detailed S4 cardiac applications require an ECG timing contract"
+                )
+            if (
+                self.prompt_mode == "detailed"
+                and {"inversion", "t2_preparation"} & set(self.sequence.capabilities)
+                and (
+                    "bssfp" not in self.sequence.capabilities
+                    or "spoiled_gre" in self.sequence.capabilities
+                )
+            ):
+                raise ValueError(
+                    "detailed S4 magnetization preparations require bSSFP readouts"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def research_contract(self):
+        if self.prompt_mode == "research":
+            if not self.identity_requirements:
+                raise ValueError(
+                    "research tasks require sequence identity requirements"
+                )
+            if any(
+                getattr(self.sequence, field) is not None
+                for field in (
+                    "te_ms",
+                    "tr_ms",
+                    "flip_angle_deg",
+                    "readout",
+                    "sampling",
+                    "temporal",
+                    "application",
+                )
+            ):
+                raise ValueError(
+                    "research tasks cannot impose hidden numerical design targets"
+                )
+        return self
 
 
 class Asset(Strict):
@@ -261,7 +335,7 @@ class Asset(Strict):
 
 class Object(Document):
     description: str
-    level: Literal["P0", "P1"]
+    level: Literal["P0", "P1"] | None = None
     phantom: Reference
 
 
@@ -412,7 +486,8 @@ Effect = Annotated[B0Effect | MotionEffect | TimeVariation, Field(discriminator=
 
 class Physics(Document):
     description: str
-    level: Literal["P0", "P2", "P3"]
+    level: Literal["P0", "P2", "P3"] | None = None
+    reference_field_strength_T: Positive | None = None
     effects: list[Effect]
 
     @model_validator(mode="after")
@@ -425,7 +500,7 @@ class Physics(Document):
             if {"motion", "time_variation"}.intersection(kinds)
             else ("P2" if kinds else "P0")
         )
-        if self.level != expected:
+        if self.level is not None and self.level != expected:
             raise ValueError(f"effects imply {expected}, not {self.level}")
         return self
 
@@ -477,14 +552,145 @@ class Metric(Strict):
         return self
 
 
+class ImagePrecision(Strict):
+    """Absolute numerical error targets, independent of acceptance cutoffs."""
+
+    normalized_squared_error: Positive = 0.0008
+    signal_fraction: Positive = 0.005
+    outside_object_energy_fraction: Positive = 0.005
+    wm_gm_ratio: Positive = 0.02
+    normalized_squared_magnitude_error: Positive = 0.001
+    normalized_squared_phase_error: Positive = 0.002
+    min_tissue_signal_fraction: Positive = 0.01
+    contrast_retention: Positive = 0.02
+
+
+class CaseImageCriteria(Strict):
+    """S1/S2/S3 case-physics quality requirements; all errors have fixed conventions."""
+
+    complex_nrmse_max: Annotated[float, Field(gt=0, lt=2)]
+    magnitude_nrmse_max: Annotated[float, Field(gt=0, lt=1)]
+    phase_rms_rad_max: Annotated[float, Field(gt=0, lt=3.141593)]
+    tissue_signal_fraction_min: Annotated[float, Field(gt=0, le=1)]
+    contrast_retention_min: Annotated[float, Field(gt=0, le=1)]
+    outside_energy_fraction_max: Annotated[float, Field(gt=0, lt=1)]
+
+
 class Evaluation(Document):
     scope: Literal["benchmark", "smoke"]
     calibrated: StrictBool
-    reconstruction: Literal["cartesian_fft@1", "none"]
+    reconstruction: Literal[
+        "bart_cartesian_fft@1",
+        "bart_readout@1",
+        "bart_sampling_sense@1",
+        "cartesian_fft@1",
+        "noncartesian_direct@1",
+        "sampling_sense@1",
+        "none",
+    ]
+    intrinsic_tissue_response: StrictBool = False
     metrics: list[Metric]
+    spatial_samples: Annotated[int, Field(ge=4096, le=1048576)] | None = None
+    spatial_replicates: Annotated[int, Field(ge=4, le=32)] | None = None
+    spatial_max_samples: Annotated[int, Field(ge=4096, le=1048576)] | None = None
+    spatial_seed: Annotated[int, Field(ge=0, le=2147483616)] | None = None
+    image_precision: ImagePrecision | None = None
+    temporal_refinement: Literal[0, 1] | None = None
+    case_image_criteria: (
+        dict[Literal["static", "P2", "P3"], CaseImageCriteria] | None
+    ) = None
+    preparation_effect_fraction_min: Annotated[float, Field(gt=0, le=1)] | None = None
+    mapping_relative_error_max: Annotated[float, Field(gt=0, lt=1)] | None = None
+    mapping_relative_error_precision: Annotated[float, Field(gt=0, lt=1)] | None = None
 
     @model_validator(mode="after")
     def contract(self):
+        cardiac_reconstructions = {
+            "s1": "bart_cartesian_fft@1",
+            "s2": "bart_readout@1",
+            "s3": "bart_sampling_sense@1",
+            "s4": "bart_cartesian_fft@1",
+        }
+        if (
+            self.intrinsic_tissue_response
+            and self.id in cardiac_reconstructions
+            and self.reconstruction != cardiac_reconstructions[self.id]
+        ):
+            raise ValueError(
+                "cardiac evaluation requires its fixed BART reconstruction"
+            )
+        if self.case_image_criteria is not None and (
+            self.id not in {"s1", "s2", "s3", "s4"}
+            or (self.id == "s1" and self.version < 2)
+            or set(self.case_image_criteria) not in ({"static"}, {"P2", "P3"})
+        ):
+            raise ValueError(
+                "case image criteria require s1 version >=2 or s2/s3/s4 and a static policy (or legacy P2/P3 policies)"
+            )
+        if (
+            (self.id == "s1" and self.version >= 2) or self.id in {"s2", "s3", "s4"}
+        ) and self.case_image_criteria is None:
+            raise ValueError(
+                "s1 version >=2 and s2/s3/s4 require explicit case image criteria"
+            )
+        if self.spatial_samples is not None and (
+            self.id not in {"s1", "s2", "s3", "s4"}
+            or self.spatial_samples & (self.spatial_samples - 1)
+        ):
+            raise ValueError(
+                "spatial_samples requires s1, s2, s3 or s4 and a power of two"
+            )
+        if self.spatial_replicates is not None and self.id not in {
+            "s1",
+            "s2",
+            "s3",
+            "s4",
+        }:
+            raise ValueError("spatial_replicates requires s1, s2, s3 or s4")
+        if self.spatial_max_samples is not None and (
+            self.id not in {"s1", "s2", "s3", "s4"}
+            or self.spatial_max_samples & (self.spatial_max_samples - 1)
+            or self.spatial_max_samples < (self.spatial_samples or 32768)
+        ):
+            raise ValueError(
+                "spatial_max_samples requires s1, s2, s3 or s4, a power of two, and >= spatial_samples"
+            )
+        if (
+            self.spatial_seed is not None
+            or self.image_precision is not None
+            or self.temporal_refinement is not None
+        ) and self.id not in {"s1", "s2", "s3", "s4"}:
+            raise ValueError("numerical precision settings require s1, s2, s3 or s4")
+        if self.id == "s4" and (
+            self.preparation_effect_fraction_min is None
+            or self.mapping_relative_error_max is None
+            or self.mapping_relative_error_precision is None
+        ):
+            raise ValueError(
+                "s4 requires explicit preparation, mapping acceptance and numerical precision criteria"
+            )
+        if (
+            self.mapping_relative_error_precision is not None
+            and self.mapping_relative_error_max is not None
+            and self.mapping_relative_error_precision >= self.mapping_relative_error_max
+        ):
+            raise ValueError(
+                "mapping numerical precision must be below its acceptance limit"
+            )
+        if self.id == "s4" and (
+            set(self.case_image_criteria or {}) != {"static"}
+            or self.reconstruction != "bart_cartesian_fft@1"
+            or not self.intrinsic_tissue_response
+        ):
+            raise ValueError(
+                "s4 requires intrinsic tissue response, the static cardiac policy and BART Cartesian FFT"
+            )
+        if self.id != "s4" and (
+            self.preparation_effect_fraction_min is not None
+            or self.mapping_relative_error_max is not None
+            or self.mapping_relative_error_precision is not None
+        ):
+            raise ValueError("preparation and mapping criteria require s4")
         if self.scope == "benchmark" and (
             not self.metrics or self.reconstruction == "none"
         ):
@@ -517,7 +723,7 @@ class Backend(Strict):
 
 
 class SandboxConfig(Strict):
-    backend: Literal["auto", "macos", "bubblewrap", "none"] = "auto"
+    backend: Literal["auto", "macos", "bubblewrap", "docker", "none"] = "auto"
     read_paths: list[str] = Field(default_factory=list)
     deny_paths: list[str] = Field(default_factory=list)
     network_ports: list[Annotated[int, Field(ge=1, le=65535)]] = Field(
@@ -578,6 +784,46 @@ class Agent(Strict):
     model: str = ""
 
 
+class Arm(Document):
+    language: Literal["python", "julia"]
+    authoring: Literal["pypulseq", "koma_base", "pulseq_julia"]
+    pulse_designer: StrictBool = False
+    unitful: StrictBool = False
+    simulator: Literal["none", "mrzero", "komamripy", "koma"] = "none"
+
+    @model_validator(mode="after")
+    def consistent_tools(self):
+        languages = {
+            "pypulseq": "python",
+            "koma_base": "julia",
+            "pulseq_julia": "julia",
+        }
+        if self.language != languages[self.authoring]:
+            raise ValueError("authoring package and language disagree")
+        if self.pulse_designer != (self.authoring == "pulseq_julia"):
+            raise ValueError("PulseDesigner is enabled only for pulseq_julia")
+        if self.unitful and self.authoring != "pulseq_julia":
+            raise ValueError("Unitful requires pulseq_julia")
+        allowed = {
+            "python": {"none", "mrzero", "komamripy"},
+            "julia": {"none", "koma"},
+        }
+        if self.simulator not in allowed[self.language]:
+            raise ValueError("simulator is incompatible with arm language")
+        return self
+
+
+class ArmRuntime(Strict):
+    # Tags are resolved to immutable local image IDs before any case is run.
+    author_image: Annotated[str, Field(min_length=1, pattern=r"^[^\s]+$")]
+    simulator_image: Annotated[str, Field(min_length=1, pattern=r"^[^\s]+$")] | None = (
+        None
+    )
+    probe_timeout_s: Positive = 120
+    simulation_timeout_s: Positive = 300
+    julia_heap_size_hint_mb: Annotated[int, Field(ge=32)] | None = None
+
+
 class Experiment(Document):
     suite: Reference
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)] = 42
@@ -588,6 +834,34 @@ class Experiment(Document):
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     api_proxy: ApiProxyConfig | None = None
     submission_mode: Literal["file", "submit"] = "submit"
+    arm: Reference | None = None
+    arm_runtime: ArmRuntime | None = None
+
+    @model_validator(mode="after")
+    def arm_isolation(self):
+        if (self.arm is None) != (self.arm_runtime is None):
+            raise ValueError("arm and arm_runtime must be configured together")
+        if self.arm is None and self.agent.sandbox.backend == "docker":
+            raise ValueError("docker isolation requires an arm and arm_runtime")
+        if self.arm is not None:
+            if self.agent.sandbox.backend not in {"auto", "docker"}:
+                raise ValueError("restricted arms require auto or docker isolation")
+            if (
+                self.agent.sandbox.read_paths
+                or self.agent.sandbox.deny_paths
+                or self.agent.sandbox.network_ports
+            ):
+                raise ValueError(
+                    "restricted arms cannot add host read grants or network ports"
+                )
+            for name in self.agent.environment:
+                if name in {"PATH", "HOME", "TMP", "TEMP", "TMPDIR"} or name.startswith(
+                    ("PYTHON", "JULIA", "MATLAB", "LD_", "DYLD_")
+                ):
+                    raise ValueError(
+                        f"restricted arm cannot override runtime variable {name}"
+                    )
+        return self
 
 
 MODELS = {
@@ -598,4 +872,5 @@ MODELS = {
     "evaluators": Evaluation,
     "suites": Suite,
     "experiments": Experiment,
+    "arms": Arm,
 }

@@ -11,4 +11,5 @@ sequence:
   tr_ms: {target: 12, tolerance: 0.6000000000000001}
   readout:
     spokes: 48
-object: volume_ellipsoids@1
+object: cardiac_3d@1
+evaluation: s2@3

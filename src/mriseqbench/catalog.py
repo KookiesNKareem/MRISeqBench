@@ -63,6 +63,11 @@ class Catalog:
         if not self.documents["tasks"]:
             raise ValueError(f"no tasks found in {self.root}/benchmark/tasks")
         self.validate_references()
+        anatomy = self.root / "benchmark/objects/anatomy.json"
+        if anatomy.exists():
+            from .evaluation.s1_anatomy import validate_assets
+
+            validate_assets(self.root)
 
     def get(self, kind, ref):
         # CLI convenience: a bare id is accepted only when it is unambiguous.
@@ -91,6 +96,14 @@ class Catalog:
             self.cases(suite)
         for experiment in self.documents["experiments"].values():
             self.get("suites", experiment.suite)
+            if experiment.arm:
+                arm = self.get("arms", experiment.arm)
+                if (arm.simulator == "none") != (
+                    experiment.arm_runtime.simulator_image is None
+                ):
+                    raise ValueError(
+                        "simulator_image must be supplied exactly for simulation-enabled arms"
+                    )
 
     def validate_asset(self, asset):
         path = (self.root / asset.path).resolve()
@@ -119,14 +132,33 @@ class Catalog:
             raise ValueError(f"{task.id}: phantom extends beyond FOV")
 
     def resolve(
-        self, task: Task, physics: Physics, object_ref=None, seed=42, hardware_ref=None
+        self,
+        task: Task,
+        physics: Physics | None = None,
+        object_ref=None,
+        seed=42,
+        hardware_ref=None,
     ):
+        if physics is None:
+            profile = "static_b0_3d" if len(task.sequence.matrix) == 3 else "static_b0"
+            physics = self.get("physics", profile)
         obj = self.get("objects", object_ref or task.object)
         hardware = self.get("hardware", hardware_ref or task.hardware)
-        self.validate_geometry(task, object_ref)
+        if obj.id.startswith("cardiac_"):
+            fields = {0.55: "055t", 1.5: "15t", 3.0: "3t"}
+            if hardware.field_strength_T not in fields:
+                raise ValueError(
+                    "No validated cardiac tissue profile for scanner field strength"
+                )
+            dimensions = self.phantoms[obj.phantom].dimensions
+            field_ref = f"cardiac_{dimensions}d_{fields[hardware.field_strength_T]}@1"
+            if obj.id not in {"cardiac_2d", "cardiac_3d"} and obj.phantom != field_ref:
+                raise ValueError(
+                    "Cardiac tissue profile and scanner field strength must match"
+                )
+            obj = self.get("objects", field_ref)
+        self.validate_geometry(task, f"{obj.id}@{obj.version}")
         evaluator = self.get("evaluators", task.evaluation)
-        if evaluator.scope == "smoke" and physics.effects:
-            raise ValueError("smoke tasks require ideal physics; no simulator is run")
         # Validate object, field and motion dimensions.
         for effect in physics.effects:
             dimensions = None
@@ -167,22 +199,75 @@ class Catalog:
             case_id += f"--object-{obj.id}-v{obj.version}"
         if f"{hardware.id}@{hardware.version}" != task.hardware:
             case_id += f"--hardware-{hardware.id}-v{hardware.version}"
+        object_contract = obj.model_dump(mode="json", exclude_none=True)
+        if obj.id.startswith("cardiac_"):
+            from .evaluation.s1_anatomy import load_anatomy
+
+            anatomy = load_anatomy(str(self.root), obj.phantom)
+            object_contract["field_strength_T"] = hardware.field_strength_T
+            object_contract["tissue_properties"] = {
+                name: {
+                    "proton_density": float(values[0]),
+                    "T1_s": float(values[1]),
+                    "T2_s": float(values[2]),
+                    "chemical_shift_hz": float(
+                        values[3] * hardware.field_strength_T / 3.0
+                    ),
+                }
+                for name, values in zip(
+                    anatomy.materials, anatomy.properties, strict=True
+                )
+            }
+            object_contract["source_sha256"] = anatomy.source_sha256
         task_contract = task.model_dump(mode="json")
         task_contract["object"] = f"{obj.id}@{obj.version}"
         task_contract["hardware"] = f"{hardware.id}@{hardware.version}"
+        physics_contract = physics.model_dump(mode="json", exclude_none=True)
+        if physics.reference_field_strength_T is not None:
+            scale = hardware.field_strength_T / physics.reference_field_strength_T
+            for effect in physics_contract["effects"]:
+                if effect["kind"] != "b0" or effect["model"] not in {
+                    "linear",
+                    "gaussian",
+                    "constant",
+                }:
+                    raise ValueError(
+                        "field-scaled profiles require static parametric B0"
+                    )
+                for name in ("offset_hz", "amplitude_hz"):
+                    if name in effect:
+                        effect[name] *= scale
+                if "gradient_hz_per_m" in effect:
+                    effect["gradient_hz_per_m"] = [
+                        v * scale for v in effect["gradient_hz_per_m"]
+                    ]
+            physics_contract["field_strength_T"] = hardware.field_strength_T
+            physics_contract["field_scale"] = scale
+        legacy_levels = {}
+        if obj.level is not None and physics.level is not None:
+            legacy_levels = {
+                "object_level": f"P{max(int(obj.level[1:]), int(physics.level[1:]))}",
+                "geometry_level": obj.level,
+                "physics_level": physics.level,
+            }
+        image_policy = (
+            "static"
+            if obj.id.startswith("cardiac_")
+            or "static" in (evaluator.case_image_criteria or {})
+            else legacy_levels.get("object_level")
+        )
         return {
             "case_id": case_id,
             "sequence_level": task.sequence.level,
-            "object_level": f"P{max(int(obj.level[1:]), int(physics.level[1:]))}",
-            "geometry_level": obj.level,
-            "physics_level": physics.level,
+            **legacy_levels,
+            "image_policy": image_policy,
             "task": task_contract,
             "seed": seed,
             "object": {
-                **obj.model_dump(mode="json"),
+                **object_contract,
                 "definition": self.phantoms[obj.phantom].model_dump(mode="json"),
             },
-            "physics": physics.model_dump(mode="json"),
+            "physics": physics_contract,
             "hardware": hardware.model_dump(mode="json", exclude_none=True),
             "evaluation": self.get("evaluators", task.evaluation).model_dump(
                 mode="json"
@@ -193,6 +278,20 @@ class Catalog:
         cases, seen = [], set()
         for entry in suite.cases:
             task = self.get("tasks", entry.task)
+            if f"{suite.id}@{suite.version}" in self.documents["suites"]:
+                expected = (
+                    "static_b0_3d@1"
+                    if len(task.sequence.matrix) == 3
+                    else "static_b0@1"
+                )
+                if entry.objects is not None or not task.object.startswith("cardiac_"):
+                    raise ValueError(
+                        "benchmark suites require fixed cardiac anatomy without an object axis"
+                    )
+                if entry.physics != [expected]:
+                    raise ValueError(
+                        "benchmark suites require one dimension-matched static B0 profile"
+                    )
             for object_ref in entry.objects or [task.object]:
                 for ref in entry.physics:
                     for hardware_ref in entry.hardware or [task.hardware]:

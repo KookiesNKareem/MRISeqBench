@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+id: epi_multishot_research
+objective: Make a multishot echo-planar imaging sequence. Research the sequence and
+  choose an appropriate implementation.
+object: cardiac_2d@1
+sequence:
+  level: S2
+  capabilities:
+  - epi
+  - cartesian
+  - multi_shot
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 6
+prompt_mode: research
+identity_requirements:
+- Multiple excitations acquire complementary segments of Cartesian k-space using alternating-polarity
+  echo-planar readouts.
+evaluation: s2@3

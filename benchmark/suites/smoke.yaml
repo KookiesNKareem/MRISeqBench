@@ -5,4 +5,4 @@ version: 1
 cases:
 - task: pulseq_smoke@1
   physics:
-  - ideal@1
+  - static_b0@1

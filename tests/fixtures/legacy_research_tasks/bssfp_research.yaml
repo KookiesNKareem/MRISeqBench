@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+id: bssfp_research
+objective: Make a balanced steady-state free-precession imaging sequence. Research
+  the sequence and choose an appropriate implementation.
+object: cardiac_2d@1
+sequence:
+  level: S1
+  capabilities:
+  - bssfp
+  - cartesian
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 6
+prompt_mode: research
+identity_requirements:
+- Gradient moments are balanced on every axis over each TR, with a coherent RF phase
+  cycle and an echo positioned consistently within TR.
+evaluation: s1@3

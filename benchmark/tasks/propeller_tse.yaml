@@ -2,6 +2,7 @@
 id: propeller_tse
 objective: Acquire 16 equally rotated Cartesian PROPELLER blades, each containing eight adjacent
   k-space lines acquired with a refocused echo train.
+object: cardiac_2d@1
 sequence:
   level: S2
   capabilities: [spin_echo, tse, propeller]
@@ -15,3 +16,4 @@ sequence:
     echo_train_length: 8
     blade_width_lines: 8
     echo_spacing_ms: 10
+evaluation: s2@3

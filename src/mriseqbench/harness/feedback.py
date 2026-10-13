@@ -7,11 +7,13 @@ import secrets
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 from ..io import write_json
 from ..process import execute
+from .grading import EvaluationIncomplete, grade_frozen
 from .proxy import QuietHTTPServer
 
 
@@ -37,6 +39,13 @@ class FeedbackServer:
         self.max_submissions = max_submissions
         self.attempts = []
         self.submissions_started = 0
+        self.evaluation_failure = None
+        self.numerical_retries = 0
+        self.retry_seconds = 0.0
+        self.retry_started = None
+        self.grading_seconds = 0.0
+        self.grading_started = None
+        self.retry_time_lock = threading.Lock()
         self.submission_path = self.directory / "accepted.seq"
         self.httpd = QuietHTTPServer(("127.0.0.1", 0), self._handler())
         self.port = self.httpd.server_address[1]
@@ -64,7 +73,49 @@ class FeedbackServer:
             "submitted": self.submitted.is_set(),
             "submissions_used": self.submissions_started,
             "max_submissions": self.max_submissions,
+            "numerical_retries": self.numerical_retries,
+            "numerical_retry_wall_s": round(self.retry_credit(), 6),
+            "grading_wall_s": round(self.grading_credit(), 6),
         }
+
+    def retry_credit(self):
+        """Only trusted numerical-retry time is excluded from the agent deadline."""
+        with self.retry_time_lock:
+            started = self.retry_started
+            return self.retry_seconds + (
+                time.monotonic() - started if started is not None else 0.0
+            )
+
+    def grading_credit(self):
+        """Submission grading, including numerical retries, is excluded from the agent deadline."""
+        with self.retry_time_lock:
+            started = self.grading_started
+            return self.grading_seconds + (
+                time.monotonic() - started if started is not None else 0.0
+            )
+
+    @contextmanager
+    def grading(self):
+        with self.retry_time_lock:
+            self.grading_started = time.monotonic()
+        try:
+            yield
+        finally:
+            with self.retry_time_lock:
+                self.grading_seconds += time.monotonic() - self.grading_started
+                self.grading_started = None
+
+    @contextmanager
+    def numerical_retry(self):
+        self.numerical_retries += 1
+        with self.retry_time_lock:
+            self.retry_started = time.monotonic()
+        try:
+            yield
+        finally:
+            with self.retry_time_lock:
+                self.retry_seconds += time.monotonic() - self.retry_started
+                self.retry_started = None
 
     def _submit(self, body):
         """Called under the run lock; grade the frozen bytes before any disclosure."""
@@ -83,45 +134,24 @@ class FeedbackServer:
             "accepted_at_unix_s": time.time(),
         }
         write_json(directory / "receipt.json", receipt)
-        command = [
-            sys.executable,
-            "-m",
-            "mriseqbench.evaluation.worker",
-            "--mode",
-            "evaluation",
-            "--case",
-            str(self.directory / "case.json"),
-            "--submission",
-            str(snapshot),
-            "--root",
-            str(self.root),
-            "--workspace",
-            str(directory),
-        ]
-        if self.backend_path:
-            command += ["--backend", str(self.backend_path)]
         started = time.monotonic()
-        execution = execute(
-            command,
-            directory,
-            self.config.timeout_s,
-            directory / "worker",
-            stop_when=self.closed,
-        )
-        self.seconds += time.monotonic() - started
         try:
-            result = json.loads((directory / "result.json").read_text())
-            if execution["status"] != "completed":
-                raise ValueError("submission evaluator did not complete")
-        except (OSError, ValueError):
-            result = {
-                "case_id": self.case["case_id"],
-                "status": "evaluator_error",
-                "checks": [],
-                "metrics": {},
-                "reason": f"submission worker {execution['status']} or invalid output",
-            }
-            write_json(directory / "result.json", result)
+            with self.grading():
+                result = grade_frozen(
+                    snapshot,
+                    self.case,
+                    self.root,
+                    directory,
+                    self.config.timeout_s,
+                    execute,
+                    backend_path=self.backend_path,
+                    stop_when=self.closed,
+                )
+        except EvaluationIncomplete as exc:
+            self.evaluation_failure = exc
+            self.submitted.set()
+            raise
+        self.seconds += time.monotonic() - started
         record = {**receipt, "evaluation": result, "directory": str(directory)}
         self.attempts.append(record)
         write_json(self.directory / "submissions.json", self.attempts)
@@ -226,23 +256,18 @@ class FeedbackServer:
             )
             self.seconds += time.monotonic() - started
             try:
-                result = (
-                    json.loads((request_dir / "result.json").read_text())
-                    if execution["status"] == "completed"
-                    else {
-                        "status": "evaluator_error",
-                        "reason": f"feedback worker {execution['status']}",
-                    }
-                )
-            except (OSError, ValueError):
-                result = {
-                    "status": "evaluator_error",
-                    "reason": "feedback worker returned no valid result",
-                }
-            refunded = kind == "check" and result["status"] in (
-                "evaluator_error",
-                "incomplete",
-            )
+                if execution["status"] != "completed":
+                    raise ValueError(f"feedback worker {execution['status']}")
+                result = json.loads((request_dir / "result.json").read_text())
+                if not isinstance(result, dict) or result.get("status") not in {
+                    "lint_passed",
+                    "preflight_passed",
+                    "failed",
+                }:
+                    raise ValueError("feedback worker returned no valid result")
+            except (OSError, ValueError) as exc:
+                result = {"error": str(exc)}
+            refunded = kind == "check" and "error" in result
             if refunded:
                 self.checks_used -= 1
             self._log(
@@ -254,7 +279,11 @@ class FeedbackServer:
                     **self.stats(),
                 }
             )
-            return 200, {**result, "check_refunded": refunded, "budget": self.stats()}
+            return 503 if "error" in result else 200, {
+                **result,
+                "check_refunded": refunded,
+                "budget": self.stats(),
+            }
 
     def _handler(server):
         class Handler(BaseHTTPRequestHandler):
@@ -281,11 +310,13 @@ class FeedbackServer:
                         return self.reply(400, {"status": "invalid_body"})
                 except (OSError, ValueError):
                     return self.reply(400, {"status": "invalid_body"})
-                self.reply(
-                    *server.handle(
+                try:
+                    reply = server.handle(
                         self.path[1:], self.headers.get("X-MRISeqBench-Token", ""), body
                     )
-                )
+                except EvaluationIncomplete as exc:
+                    return self.reply(503, {"error": str(exc)})
+                self.reply(*reply)
 
             def log_message(self, *args):
                 pass

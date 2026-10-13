@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: gre_t1w
 objective: Create a Cartesian spoiled GRE acquisition for T1-weighted imaging using the declared
-  matrix, FOV and timing. On tissue_discs, white-matter signal must exceed gray-matter signal.
+  matrix, FOV and timing.
+object: cardiac_2d@1
 sequence:
   level: S1
   capabilities: [spoiled_gre, cartesian]
@@ -10,4 +11,4 @@ sequence:
   te_ms: {target: 5, tolerance: 1}
   tr_ms: {max: 24}
   duration_s: 6
-evaluation: t1_contrast@1
+evaluation: s1@3

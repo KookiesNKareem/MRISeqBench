@@ -21,12 +21,20 @@
       "type": "string"
     },
     "level": {
-      "enum": [
-        "P0",
-        "P1"
+      "anyOf": [
+        {
+          "enum": [
+            "P0",
+            "P1"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
       ],
-      "title": "Level",
-      "type": "string"
+      "default": null,
+      "title": "Level"
     },
     "phantom": {
       "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
@@ -39,7 +47,6 @@
     "id",
     "version",
     "description",
-    "level",
     "phantom"
   ],
   "title": "Object",

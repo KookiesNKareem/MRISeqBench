@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "profile": "Fixed synthetic, well-shimmed cardiac B0; not a measured field map from the supplied phantom",
+  "reference_field_T": 3.0,
+  "gradient_hz_per_m": {"2d": [1000, 0], "3d": [1000, 0, 300]},
+  "field_scaling": "Frequency offsets scale by scanner field strength / 3 T, consistent with susceptibility offsets at fixed geometry and shim quality",
+  "central_slice_myocardial_sd_hz_at_3T": 33.02826639473322,
+  "sd_definition": "Unweighted native occupied myocardial cell centres in the supplied cardiac central slice; this statistic describes the synthetic profile, not a clinical measurement",
+  "sources": [
+    {
+      "authors": "Schar, Vonken, Stuber",
+      "year": 2010,
+      "doi": "10.1002/mrm.22234",
+      "pmid": "20099330",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/20099330/",
+      "population": "7 healthy adult subjects, 3 T",
+      "reported_heart_B0_sd_hz": {"conventional_preparation": 60, "localized_higher_order_shimming": 35},
+      "use": "Order-of-magnitude context for the fixed well-shimmed profile; does not prescribe a linear field shape"
+    },
+    {
+      "authors": "Kellman, Herzka, Arai, Hansen",
+      "year": 2013,
+      "doi": "10.1186/1532-429X-15-63",
+      "url": "https://link.springer.com/article/10.1186/1532-429X-15-63",
+      "population": "18 subjects at each field, midventricular LV after local second-order shim",
+      "reported_maximum_LV_off_resonance_hz_mean_sd": {"1.5T": [61.8, 15.5], "3T": [125.0, 40.6]},
+      "use": "Clinical context and field-strength dependence; these maxima are not SDs, peak-to-peak ranges or the benchmark gradient. Localized susceptibility patterns can differ from the fixed linear profile"
+    }
+  ]
+}

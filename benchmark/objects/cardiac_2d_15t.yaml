@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=../../schemas/objects.schema.json
+schema_version: 1
+id: cardiac_2d_15t
+version: 1
+description: Static cardiac short-axis slice at 1.5 T with field-specific tissue relaxation and fat chemical shift.
+phantom: cardiac_2d_15t@1

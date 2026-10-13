@@ -2,6 +2,7 @@
 id: ute_radial
 objective: Acquire 48 center-out radial spokes using a nonselective short excitation. Achieve
   TE 0.5 ms while respecting RF and ADC dead times.
+object: cardiac_2d@1
 sequence:
   level: S2
   capabilities: [spoiled_gre, ute, radial]
@@ -12,3 +13,4 @@ sequence:
   readout:
     spokes: 48
     center_out: true
+evaluation: s2@3

@@ -2,6 +2,7 @@
 id: epi_multishot
 objective: Acquire the complete 32 x 32 Cartesian grid in four excitations, interleaving phase-encode
   lines across four alternating-polarity EPI shots.
+object: cardiac_2d@1
 sequence:
   level: S2
   capabilities: [epi, cartesian, multi_shot]
@@ -11,3 +12,4 @@ sequence:
   te_ms: {target: 20, tolerance: 2.0}
   readout:
     shots: 4
+evaluation: s2@3

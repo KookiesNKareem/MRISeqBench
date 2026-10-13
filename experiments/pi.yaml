@@ -10,7 +10,7 @@ agent:
   adapter: pi
   model: REPLACE_WITH_OPENROUTER_MODEL_ID
   command: [pi, --provider, openrouter, --model, '{model}', --thinking, medium, --session-dir, '{workspace}/transcript', --mode, json, -p, '{prompt_text}']
-  timeout_s: 600
+  timeout_s: 1200
   sandbox:
     backend: auto
     read_paths: ['~/.nvm']

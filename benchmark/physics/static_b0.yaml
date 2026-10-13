@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: static_b0
+version: 1
+description: Static scanner-frame B0 variation at a 3 T reference field; Hz offsets
+  scale linearly with the selected scanner B0. Intrinsic fat chemical shift is supplied
+  separately by the cardiac phantom.
+reference_field_strength_T: 3
+effects:
+- kind: b0
+  model: linear
+  offset_hz: 0
+  gradient_hz_per_m:
+  - 1000
+  - 0

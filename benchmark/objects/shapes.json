@@ -1,0 +1,26 @@
+{
+  "materials": {
+    "water": [1.0, 1.0, 0.1], "wm": [0.7, 0.8, 0.08],
+    "gm": [0.8, 1.3, 0.1], "csf": [1.0, 4.0, 2.0],
+    "fat": [0.9, 0.25, 0.06], "background": [0.8, 1.2, 0.09],
+    "inclusion": [1.0, 0.7, 0.06]
+  },
+  "objects": {
+    "uniform_disc@1": [{"kind": "ellipsoid", "center_mm": [0, 0], "radii_mm": [60, 60], "material": "water"}],
+    "uniform_sphere@1": [{"kind": "ellipsoid", "center_mm": [0, 0, 0], "radii_mm": [60, 60, 60], "material": "water"}],
+    "tissue_discs@1": [
+      {"kind": "ellipsoid", "center_mm": [-35, 30], "radii_mm": [24, 24], "material": "wm"},
+      {"kind": "ellipsoid", "center_mm": [35, 30], "radii_mm": [24, 24], "material": "gm"},
+      {"kind": "ellipsoid", "center_mm": [0, -40], "radii_mm": [23, 23], "material": "csf"},
+      {"kind": "ellipsoid", "center_mm": [-45, -45], "radii_mm": [12, 12], "material": "fat"}
+    ],
+    "nested_ellipses@1": [
+      {"kind": "ellipsoid", "center_mm": [0, 0], "radii_mm": [75, 60], "material": "background"},
+      {"kind": "ellipsoid", "center_mm": [25, 10], "radii_mm": [17.5, 25], "material": "inclusion"}
+    ],
+    "volume_ellipsoids@1": [
+      {"kind": "ellipsoid", "center_mm": [0, 0, 0], "radii_mm": [75, 60, 40], "material": "background"},
+      {"kind": "box", "center_mm": [20, 0, 0], "radii_mm": [15, 12.5, 10], "material": "inclusion"}
+    ]
+  }
+}

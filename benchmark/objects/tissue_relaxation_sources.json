@@ -1,0 +1,144 @@
+{
+  "status": "Recommended canonical benchmark parameters, not scanner ground truth",
+  "checked_date": "2026-10-13",
+  "profiles": {
+    "0.55": {
+      "myocardium": {
+        "t1_ms": 701,
+        "t2_ms": 58,
+        "reported_t1_sd_ms": 24,
+        "reported_t2_sd_ms": 6,
+        "source": "campbell_washburn_2019"
+      },
+      "blood": {
+        "t1_ms": 1122,
+        "t2_ms": 263,
+        "reported_t1_sd_ms": 85,
+        "reported_t2_sd_ms": 27,
+        "source": "campbell_washburn_2019"
+      },
+      "fat": {
+        "t1_ms": 187,
+        "t2_ms": 93,
+        "reported_t1_sd_ms": 10,
+        "reported_t2_sd_ms": 16,
+        "source": "campbell_washburn_2019"
+      }
+    },
+    "1.5": {
+      "myocardium": {
+        "t1_ms": 955,
+        "t2_ms": 49,
+        "reported_t1_sd_ms": 19,
+        "reported_t2_sd_ms": 3,
+        "source": "varghese_2020"
+      },
+      "blood": {
+        "t1_ms": 1441,
+        "t2_ms": 290,
+        "reported_t1_sd_ms": 120,
+        "reported_t2_sd_ms": 30,
+        "source": "stanisz_2005"
+      },
+      "fat": {
+        "t1_ms": 343,
+        "t2_ms": 58,
+        "reported_t1_sd_ms": 37,
+        "reported_t2_sd_ms": 4,
+        "source": "de_bazelaire_2004"
+      }
+    },
+    "3.0": {
+      "myocardium": {
+        "t1_ms": 1122,
+        "t2_ms": 52,
+        "reported_t1_sd_ms": 57,
+        "reported_t2_sd_ms": 6,
+        "source": "roy_2017"
+      },
+      "blood": {
+        "t1_ms": 1932,
+        "t2_ms": 275,
+        "reported_t1_sd_ms": 85,
+        "reported_t2_sd_ms": 50,
+        "source": "stanisz_2005"
+      },
+      "fat": {
+        "t1_ms": 382,
+        "t2_ms": 68,
+        "reported_t1_sd_ms": 13,
+        "reported_t2_sd_ms": 4,
+        "source": "de_bazelaire_2004"
+      }
+    }
+  },
+  "sources": {
+    "campbell_washburn_2019": {
+      "doi": "10.1148/radiol.2019190452",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6823617/",
+      "location": "Published Table 1",
+      "table_image_url": "https://cdn.ncbi.nlm.nih.gov/pmc/blobs/4da2/6823617/5130a9abf447/radiol.2019190452.tbl1.jpg",
+      "verification": "Published table image visually inspected; final rounded values used, not conference values",
+      "population": "Human in vivo; myocardium/blood n=22, fat n=7"
+    },
+    "varghese_2020": {
+      "doi": "10.1002/nbm.4317",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/32363644/",
+      "location": "Abstract results, 1.5 T arm",
+      "verification": "Primary abstract verified using official Europe PMC resultType=core API",
+      "population": "Six healthy volunteers, field-comparison study"
+    },
+    "roy_2017": {
+      "doi": "10.1186/s12968-017-0371-5",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/28934962/",
+      "location": "Abstract results",
+      "verification": "PubMed primary abstract read",
+      "population": "75 healthy adults, MOLLI T1 and 8-echo SE T2"
+    },
+    "stanisz_2005": {
+      "doi": "10.1002/mrm.20605",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/16086319/",
+      "location": "Table 1, blood row, this-study columns",
+      "table_pdf_url": "https://mri-q.com/uploads/3/4/5/7/34572113/stanisz_et_al-2005-magnetic_resonance_in_medicine.pdf",
+      "verification": "Primary paper Table 1 indexed text verified",
+      "population": "Human blood in vitro at 37 degrees C; not in-vivo chamber-specific reference"
+    },
+    "de_bazelaire_2004": {
+      "doi": "10.1148/radiol.2303021331",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/14990831/",
+      "location": "Table 1 T1 and Table 2 T2, subcutaneous-fat rows",
+      "table_pdf_url": "https://dash.harvard.edu/bitstreams/40e213b7-1731-479f-b6c3-1224f9b5c4da/download",
+      "verification": "3 T primary abstract read; both field strengths exact primary table rows verified through indexed Harvard author-PDF text. Direct Harvard fetch returned HTTP 429.",
+      "population": "Six healthy volunteers, abdominal/pelvic subcutaneous fat"
+    },
+    "hamilton_2011": {
+      "doi": "10.1002/nbm.1622",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3860876/",
+      "location": "Table 3",
+      "verification": "Primary Table 3 indexed text read",
+      "population": "Liver triglyceride spectra, 121 humans; fat-depot spectral weights are not automatically epicardial-fat weights"
+    }
+  },
+  "off_resonance": {
+    "susceptibility_rule": "For fixed anatomy, orientation and shim assumptions, scale an existing susceptibility field in Hz by B0/reference_B0; ppm remains fixed. Actual scanner shim fields are not guaranteed to scale this way.",
+    "empirical_source": "https://cds.ismrm.org/protected/19MProceedings/PDFfiles/1214.html",
+    "fat_dominant_peak_ppm_relative_to_water": -3.4,
+    "chemical_shift_source": "hamilton_2011",
+    "frequency_rule": "delta_f_Hz = chemical_shift_ppm * gamma_Hz_per_T * B0_T * 1e-6",
+    "gamma_hz_per_t": 42577478.92,
+    "fat_dominant_shift_hz": {
+      "0.55": -79.6198855804,
+      "1.5": -217.14514249199996,
+      "3.0": -434.2902849839999
+    },
+    "multi_peak_caveat": "Hamilton Table 3 six liver-fat peaks are at absolute ppm [5.3,4.2,2.75,2.1,1.3,0.9] relative to water4.7, fractions [.047,.039,.006,.120,.700,.088]. These are liver-fat spectral weights, not measured epicardial-fat weights. A one-peak fat model must be explicitly labelled as such."
+  },
+  "caveats": [
+    "Means are deliberately selected from measurements; no interpolation or assumed monotonic T2 scaling.",
+    "Different sequence methods and cohorts introduce bias; these fixed values are simulation conventions.",
+    "Blood properties depend strongly on oxygenation and hematocrit; same canonical compartment is currently assigned to both chamber labels unless an arterial/venous model is separately introduced.",
+    "Fat measurements are subcutaneous/body-fat proxies rather than directly measured epicardial fat.",
+    "Do not multiply T2 by field-strength ratio or model T2* by reducing T2 when static B0 is explicitly simulated.",
+    "Original supplied 3 T asset bytes should remain immutable; derived field-specific assets must have their own hashes/provenance."
+  ]
+}

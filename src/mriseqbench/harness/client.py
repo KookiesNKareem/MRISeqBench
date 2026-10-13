@@ -19,7 +19,7 @@ def main():
         print("sequence.seq exceeds the submission size limit", file=sys.stderr)
         return 1
     req = urllib.request.Request(
-        f"http://127.0.0.1:{config['port']}/{kind}",
+        f"http://127.0.0.1:{config['port']}{config.get('route_prefix', '')}/{kind}",
         data=path.read_bytes(),
         method="POST",
         headers={
@@ -28,7 +28,9 @@ def main():
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=config["timeout_s"] + 5) as response:
+        with urllib.request.urlopen(
+            req, timeout=None if kind == "submit" else config["timeout_s"] + 5
+        ) as response:
             result = json.loads(response.read())
         print(json.dumps(result, indent=2))
         return (

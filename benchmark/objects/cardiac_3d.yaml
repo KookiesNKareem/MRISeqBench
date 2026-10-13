@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=../../schemas/objects.schema.json
+schema_version: 1
+id: cardiac_3d
+version: 1
+description: Static cardiac volume with myocardium, blood and fat; intrinsic fat chemical shift at the scanner field.
+phantom: cardiac_3d@1

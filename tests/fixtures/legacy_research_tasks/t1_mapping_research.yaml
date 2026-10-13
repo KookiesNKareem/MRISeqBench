@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+id: t1_mapping_research
+objective: Make an ECG-triggered cardiac t1 mapping acquisition. Research the sequence
+  and choose an expert-quality implementation and cardiac timing.
+object: cardiac_2d@1
+sequence:
+  level: S4
+  capabilities:
+  - spoiled_gre
+  - cartesian
+  - inversion
+  - multi_contrast
+  - mapping
+  - triggering
+  - gating
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 16
+prompt_mode: research
+identity_requirements:
+- Multiple distinct T1-sensitive contrasts are acquired with recorded preparation
+  timings suitable for T1 estimation.
+- ECG R-wave triggers establish a consistent cardiac acquisition phase. Emit Pulseq
+  trigger events on physio1 and record the chosen RR interval, trigger delay, acquisition
+  window and preparation timings in Pulseq definitions. All imaging ADCs remain within
+  the declared cardiac window; choose expert-quality timing for the specified phantom
+  and hardware.

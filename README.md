@@ -6,80 +6,44 @@
   </picture>
 </p>
 
-MRI sequence programming tasks spanning sequence complexity and object/physics complexity.
-Agents submit Pulseq `sequence.seq` files using versioned KomaMRI phantoms.
+MRISeqBench evaluates an agent's ability to write expert-quality MRI sequences.
+Agents submit Pulseq `sequence.seq` files for physical waveform checks, Bloch
+simulation, BART reconstruction and image-quality evaluation.
 
-## Current task grid
+| Difficulty | Focus |
+|---|---|
+| S1 · Basic | GRE, spin echo and bSSFP |
+| S2 · Readout | EPI, non-Cartesian readouts and echo trains |
+| S3 · Sampling | Parallel imaging, partial Fourier and undersampling |
+| S4 · Cardiac application | ECG-triggered adiabatic inversion, T2 preparation and T1/T2 mapping with bSSFP readouts |
 
-**40 sequence tasks, 1,840 cases** in the [full suite](benchmark/suites/full.yaml),
-covering 460 object/physics combinations on each of four hardware profiles.
-Each checkmark means every task in that row has cases in that object/physics category.
+Every task uses static cardiac anatomy with fat and off-resonance. Each scanner
+field strength has its own tissue T1/T2 profile; fat chemical shift and B0
+inhomogeneity follow scanner strength. There are no phantom difficulty levels or
+motion. All image reconstruction uses standard BART methods with fixed settings. See the
+[cardiac phantom](docs/CARDIAC_PHANTOM.md) for inputs and property sources.
 
-| Sequence | Tasks | P0 | P1 | P2 | P3 |
-|---|---|:---:|:---:|:---:|:---:|
-| S1 · Basic | T1/T2* GRE, spin echo, bSSFP, geometry GRE, 3D GRE | ✓ | ✓ | ✓ | ✓ |
-| S2 · Readout | Single/multishot EPI, radial, spiral, rosette, rings, stack-of-stars, PROPELLER, UTE, TSE, GRASE | ✓ | ✓ | ✓ | ✓ |
-| S3 · Sampling | SENSE, GRAPPA, CAIPIRINHA, compressed sensing, variable density, partial Fourier, asymmetric echo, reduced FOV, elliptical k-space | ✓ | ✓ | ✓ | ✓ |
-| S4 · Temporal | Radial/interleaved cine, real-time radial, keyhole, k-t BLAST, k-t SENSE, TWIST | ✓ | ✓ | ✓ | ✓ |
-| S5 · Application | Inversion recovery, adiabatic inversion, T2 preparation, multi-echo GRE, T1/T2 mapping, MRF | ✓ | ✓ | ✓ | ✓ |
-
-**P0:** uniform ideal object. **P1:** richer ideal geometry/tissues.
-**P2:** B0 inhomogeneity only. **P3:** motion or time-varying properties.
-
-The full suite combines each sequence with compatible uniform and multi-tissue
-phantoms, ideal fields, B0 inhomogeneity, motion, and B0 plus motion.
-2D and 3D cases use matching phantom and physics definitions.
-
-## Hardware
-
-Gradient amplitude and slew limits are **per axis**. The three sourced profiles use
-published field strengths and gradient limits from real systems:
-
-| Profile | System/configuration | B0 (T) | Gradient (mT/m) | Slew (T/m/s) |
-|---|---|---:|---:|---:|
-| `standard@1` | Existing generic benchmark baseline | 3 | 32 | 80 |
-| `low_field@1` | [Siemens Free.Max, B80](https://academy.siemens-healthineers.com/_/en-us/magnetom-free-max-system-overview/) | 0.55 | 26 | 45 |
-| `standard_1_5t@1` | [Siemens Sola, XJ](https://www.siemens-healthineers.com/en-us/magnetic-resonance-imaging/0-35-to-1-5t-mri-scanner/magnetom-sola) | 1.5 | 33 | 125 |
-| `high_performance@1` | [Siemens Prisma, XR](https://www.siemens-healthineers.com/en-au/magnetic-resonance-imaging/3t-mri-scanner/magnetom-prisma) | 3 | 80 | 200 |
-
-Suite entries can select `hardware: [low_field@1, standard_1_5t@1, high_performance@1]`
-alongside objects and physics. Each combination gets a distinct case ID;
-the task's default hardware keeps its original ID. The full suite includes all
-four profiles; core and smoke retain their default hardware.
-
-## Submissions and feedback
-
-Agents get **up to three submissions** via `./bin/submit`, with failure feedback
-and a chance to revise. Each submission runs the full evaluator, including SAR
-and image scoring. The run ends on a pass, the submission limit, an evaluation
-error or the time limit.
-
-Before submitting, agents can freely run `./bin/lint` for format and timing checks
-or `./bin/check` to also check RF and gradient limits. These consume no submissions
-and reveal no SAR or image scores.
-
-Each attempt's sequence, SHA-256 receipt and verdict are saved under
-`control/submissions/attempt-NNN/`. Reports retain every attempt and distinguish
-first-submission performance from later success; the final result uses the last
-recorded verdict.
+The full suite contains 25 tasks across three scanner profiles (75 cases).
+All four tiers have native evaluation, qualified across all 75 task/scanner cases.
 
 ## Run
 
 ```bash
 uv sync --locked --group dev
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
+bash runtimes/bart/install.sh  # pinned BART v1.0.00; dependency notes in script
 uv run mriseqbench validate
 uv run mriseqbench list --suite full
-uv run mriseqbench describe spiral_gre --physics b0_smooth
-uv run mriseqbench describe spiral_gre --hardware low_field
-uv run mriseqbench run --experiment experiments/sandbox_smoke.yaml
+uv run mriseqbench describe spiral_gre
+uv run mriseqbench run --experiment experiments/pi.yaml
 ```
 
-Set the model and suite in [experiments/pi.yaml](experiments/pi.yaml) for agent runs.
-Task definitions live in [benchmark/tasks/](benchmark/tasks/), combinations in
-[benchmark/suites/](benchmark/suites/), and execution settings in [experiments/](experiments/).
+Agents can use `./bin/lint` for timing checks and `./bin/check` for hardware checks.
+These are non-consuming; `./bin/submit` performs full evaluation, with up to three
+submissions per task.
 
-Tasks specify an `id`, `objective`, and `sequence` requirements. Defaults: version 1,
-`tissue_discs@1`, `standard@1` hardware, `image_fidelity@1` evaluation, and `sequence.seq`
-output; override these in the task YAML. Agents receive a compact brief and `task.yaml`;
-the full resolved contract remains in `case.json`.
+Task definitions: [tasks](benchmark/tasks/) · [suites](benchmark/suites/) ·
+[experiments](experiments/).
+Evaluation: [S1](docs/S1_EVALUATION.md) · [S2](docs/S2_EVALUATION.md) ·
+[S3](docs/S3_EVALUATION.md) · [S4](docs/S4_EVALUATION.md). Runtime: [authoring arms](docs/ARMS.md).
+Run retention, deduplication and checkpoint recovery: [storage](docs/RUN_STORAGE.md).

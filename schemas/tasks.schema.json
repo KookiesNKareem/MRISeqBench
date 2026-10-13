@@ -37,6 +37,14 @@
           "default": null,
           "title": "Preparation Duration Ms"
         },
+        "preparation_durations_ms": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "title": "Preparation Durations Ms",
+          "type": "array"
+        },
         "saturation_offset_hz": {
           "anyOf": [
             {
@@ -421,8 +429,7 @@
             "S1",
             "S2",
             "S3",
-            "S4",
-            "S5"
+            "S4"
           ],
           "title": "Level",
           "type": "string"
@@ -462,18 +469,6 @@
               "asymmetric_echo",
               "reduced_fov",
               "elliptical_kspace",
-              "kt_blast",
-              "kt_sense",
-              "kt_pca",
-              "low_rank_sparse",
-              "interleaved",
-              "golden_angle",
-              "view_sharing",
-              "twist",
-              "keyhole",
-              "cine",
-              "real_time",
-              "dynamic",
               "tailored_rf",
               "cest",
               "tone",
@@ -743,6 +738,58 @@
           ],
           "default": null,
           "title": "Center Fraction"
+        },
+        "trigger_source": {
+          "anyOf": [
+            {
+              "const": "ecg",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trigger Source"
+        },
+        "rr_interval_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rr Interval Ms"
+        },
+        "trigger_delay_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trigger Delay Ms"
+        },
+        "acquisition_window_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Acquisition Window Ms"
         }
       },
       "required": [
@@ -827,14 +874,31 @@
     "sequence": {
       "$ref": "#/$defs/SequenceSpec"
     },
+    "prompt_mode": {
+      "default": "detailed",
+      "enum": [
+        "detailed",
+        "research"
+      ],
+      "title": "Prompt Mode",
+      "type": "string"
+    },
+    "identity_requirements": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Identity Requirements",
+      "type": "array"
+    },
     "object": {
-      "default": "tissue_discs@1",
+      "default": "cardiac_2d@1",
       "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
       "title": "Object",
       "type": "string"
     },
     "hardware": {
-      "default": "standard@1",
+      "default": "high_performance@1",
       "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
       "title": "Hardware",
       "type": "string"

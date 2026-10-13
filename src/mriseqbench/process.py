@@ -22,7 +22,9 @@ def expand(command, root, workspace, **paths):
     ]
 
 
-def execute(command, cwd, timeout_s, log_prefix, env=None, stop_when=None):
+def execute(
+    command, cwd, timeout_s, log_prefix, env=None, stop_when=None, timeout_credit=None
+):
     prefix = Path(log_prefix)
     with (
         prefix.with_suffix(".stdout.log").open("w") as out,
@@ -42,13 +44,21 @@ def execute(command, cwd, timeout_s, log_prefix, env=None, stop_when=None):
             return {"status": "launch_error", "error": str(exc)}
         timed_out = False
         submitted = False
-        deadline = time.monotonic() + timeout_s
+        deadline = time.monotonic() + timeout_s if timeout_s is not None else None
         try:
             while True:
                 if stop_when is not None and stop_when.is_set():
                     submitted, code = True, None
                     break
-                remaining = deadline - time.monotonic()
+                remaining = (
+                    (
+                        deadline
+                        + (timeout_credit() if timeout_credit else 0.0)
+                        - time.monotonic()
+                    )
+                    if deadline is not None
+                    else 0.1
+                )
                 if remaining <= 0:
                     timed_out, code = True, None
                     break

@@ -1,36 +1,69 @@
 const REGISTRY = JSON.parsefile(joinpath(@__DIR__, "registry.json"))
-const MATERIALS = Dict(
-    "water" => (1.0, 1.0, 0.1), "wm" => (0.7, 0.8, 0.08),
-    "gm" => (0.8, 1.3, 0.1), "csf" => (1.0, 4.0, 2.0),
-    "fat" => (0.9, 0.25, 0.06), "background" => (0.8, 1.2, 0.09),
-    "inclusion" => (1.0, 0.7, 0.06))
+const SHAPES = JSON.parsefile(joinpath(@__DIR__, "shapes.json"))
+const MATERIALS = Dict(k => Tuple(v) for (k,v) in SHAPES["materials"])
+const ANATOMY = JSON.parsefile(joinpath(@__DIR__, "anatomy.json"))
+
+function anatomical_phantom(ref; field_strength_T=nothing)
+    if ref in ("cardiac_2d@1", "cardiac_3d@1")
+        field = isnothing(field_strength_T) ? 3.0 : field_strength_T
+        suffix = get(Dict(0.55=>"055t", 1.5=>"15t", 3.0=>"3t"), field, nothing)
+        isnothing(suffix) && error("No cardiac tissue profile for scanner field strength")
+        ref = replace(ref, "@1"=>"_" * suffix * "@1")
+    end
+    meta = ANATOMY["objects"][ref]
+    profile = ANATOMY["field_profiles"][meta["field_profile"]]
+    field_strength_T = isnothing(field_strength_T) ? profile["field_strength_T"] : field_strength_T
+    field_strength_T == profile["field_strength_T"] || error("Cardiac tissue profile and scanner field strength must match")
+    isabspath(meta["path"]) && error("Anatomical asset path must be relative")
+    path = realpath(joinpath(@__DIR__, meta["path"]))
+    relative = relpath(path, realpath(@__DIR__))
+    (relative == ".." || startswith(relative, "../") || startswith(relative, "..\\")) && error("Anatomical asset path escapes benchmark/objects")
+    bytes2hex(sha256(read(path))) == meta["sha256"] || error("Anatomical asset SHA-256 mismatch: $path")
+    labels, spacing, center = h5open(path, "r") do file
+        # HDF5.jl reverses multidimensional dataset axes relative to h5py.
+        array = read(file["labels"])
+        (permutedims(array, reverse(1:ndims(array))), read(file["voxel_size_m"]), read(file["center_m"]))
+    end
+    shape = size(labels)
+    profile = ANATOMY["field_profiles"][meta["field_profile"]]
+    properties = profile["properties"]
+    isnothing(properties) && error("Field-specific tissue properties are not configured: $ref")
+    count = sum(labels .!= 0)
+    x = zeros(count); y = zeros(count); z = zeros(count)
+    rho = zeros(count); t1 = zeros(count); t2 = zeros(count); delta = zeros(count)
+    names = Vector{String}(undef, count)
+    position = 0
+    for index in CartesianIndices(labels)
+        value = labels[index]
+        value == 0 && continue
+        position += 1
+        for axis in 1:ndims(labels)
+            (x,y,z)[axis][position] = center[axis] + (index[axis] - .5 - shape[axis]/2)*spacing[axis]
+        end
+        names[position] = ANATOMY["materials"][value]
+        rho[position],t1[position],t2[position],delta[position] = properties[value]
+    end
+    obj = Phantom(name=ref, x=x, y=y, z=z, ρ=rho, T1=t1, T2=t2,
+                  Δw=2π .* delta .* (field_strength_T/3))
+    return obj, names
+end
 
 function material_at(ref, p)
-    x, y, z = p .* 1000
-    if ref == "uniform_disc@1"
-        return x^2 + y^2 <= 60^2 ? "water" : ""
-    elseif ref == "uniform_sphere@1"
-        return x^2 + y^2 + z^2 <= 60^2 ? "water" : ""
-    elseif ref == "tissue_discs@1"
-        for (name, cx, cy, r) in (("wm",-35,30,24), ("gm",35,30,24),
-                                  ("csf",0,-40,23), ("fat",-45,-45,12))
-            (x-cx)^2 + (y-cy)^2 <= r^2 && return name
-        end
-        return ""
-    elseif ref == "nested_ellipses@1"
-        (x/75)^2 + (y/60)^2 > 1 && return ""
-        return ((x-25)/17.5)^2 + ((y-10)/25)^2 <= 1 ? "inclusion" : "background"
-    elseif ref == "volume_ellipsoids@1"
-        # Inclusion overwrites background, matching ordered shape semantics.
-        abs(x-20) <= 15 && abs(y) <= 12.5 && abs(z) <= 10 && return "inclusion"
-        return (x/75)^2 + (y/60)^2 + (z/40)^2 <= 1 ? "background" : ""
+    haskey(SHAPES["objects"], ref) || error("Unknown phantom: $ref")
+    label = ""
+    for shape in SHAPES["objects"][ref]
+        n = length(shape["center_mm"])
+        q = (p[1:n] .* 1000 .- shape["center_mm"]) ./ shape["radii_mm"]
+        inside = shape["kind"] == "box" ? all(abs.(q) .<= 1) : sum(q.^2) <= 1
+        inside && (label = shape["material"])
     end
-    error("Unknown phantom: $ref")
+    return label
 end
 
 """Return a native Phantom and material labels, sampled at fixed voxel centers."""
-function build_phantom(ref::String)
+function build_phantom(ref::String; field_strength_T=nothing)
     haskey(REGISTRY, ref) || error("Unknown phantom: $ref")
+    haskey(ANATOMY["objects"], ref) && return anatomical_phantom(ref; field_strength_T)
     meta = REGISTRY[ref]
     axes = [((collect(0:n-1) .+ 0.5) ./ n .- 0.5) .* (fov/1000)
             for (n,fov) in zip(meta["grid"], meta["fov_mm"])]

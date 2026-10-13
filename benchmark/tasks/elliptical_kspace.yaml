@@ -13,4 +13,5 @@ sequence:
   flip_angle_deg: 20
   sampling:
     pattern: elliptical
-object: volume_ellipsoids@1
+object: cardiac_3d@1
+evaluation: s3@2

@@ -135,5 +135,237 @@
     "materials": [
       "water"
     ]
+  },
+  "cardiac_2d@1": {
+    "dimensions": 2,
+    "grid": [
+      90,
+      89
+    ],
+    "fov_mm": [
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -67.5,
+        67.5
+      ],
+      [
+        -66.75,
+        66.75
+      ]
+    ],
+    "materials": [
+      "fat",
+      "myocardium",
+      "blood"
+    ]
+  },
+  "cardiac_3d@1": {
+    "dimensions": 3,
+    "grid": [
+      90,
+      89,
+      1090
+    ],
+    "fov_mm": [
+      200,
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -67.5,
+        67.5
+      ],
+      [
+        -66.75,
+        66.75
+      ],
+      [
+        -81.74999999999999,
+        81.74999999999999
+      ]
+    ],
+    "materials": [
+      "fat",
+      "myocardium",
+      "blood"
+    ]
+  },
+  "cardiac_2d_055t@1": {
+    "dimensions": 2,
+    "grid": [
+      90,
+      89
+    ],
+    "fov_mm": [
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -67.5,
+        67.5
+      ],
+      [
+        -66.75,
+        66.75
+      ]
+    ],
+    "materials": [
+      "fat",
+      "myocardium",
+      "blood"
+    ]
+  },
+  "cardiac_2d_15t@1": {
+    "dimensions": 2,
+    "grid": [
+      90,
+      89
+    ],
+    "fov_mm": [
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -67.5,
+        67.5
+      ],
+      [
+        -66.75,
+        66.75
+      ]
+    ],
+    "materials": [
+      "fat",
+      "myocardium",
+      "blood"
+    ]
+  },
+  "cardiac_2d_3t@1": {
+    "dimensions": 2,
+    "grid": [
+      90,
+      89
+    ],
+    "fov_mm": [
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -67.5,
+        67.5
+      ],
+      [
+        -66.75,
+        66.75
+      ]
+    ],
+    "materials": [
+      "fat",
+      "myocardium",
+      "blood"
+    ]
+  },
+  "cardiac_3d_055t@1": {
+    "dimensions": 3,
+    "grid": [
+      90,
+      89,
+      1090
+    ],
+    "fov_mm": [
+      200,
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -67.5,
+        67.5
+      ],
+      [
+        -66.75,
+        66.75
+      ],
+      [
+        -81.74999999999999,
+        81.74999999999999
+      ]
+    ],
+    "materials": [
+      "fat",
+      "myocardium",
+      "blood"
+    ]
+  },
+  "cardiac_3d_15t@1": {
+    "dimensions": 3,
+    "grid": [
+      90,
+      89,
+      1090
+    ],
+    "fov_mm": [
+      200,
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -67.5,
+        67.5
+      ],
+      [
+        -66.75,
+        66.75
+      ],
+      [
+        -81.74999999999999,
+        81.74999999999999
+      ]
+    ],
+    "materials": [
+      "fat",
+      "myocardium",
+      "blood"
+    ]
+  },
+  "cardiac_3d_3t@1": {
+    "dimensions": 3,
+    "grid": [
+      90,
+      89,
+      1090
+    ],
+    "fov_mm": [
+      200,
+      200,
+      200
+    ],
+    "bounds_mm": [
+      [
+        -67.5,
+        67.5
+      ],
+      [
+        -66.75,
+        66.75
+      ],
+      [
+        -81.74999999999999,
+        81.74999999999999
+      ]
+    ],
+    "materials": [
+      "fat",
+      "myocardium",
+      "blood"
+    ]
   }
 }

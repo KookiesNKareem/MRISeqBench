@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+id: propeller_tse_research
+objective: Make a PROPELLER turbo spin-echo imaging sequence. Research the sequence
+  and choose an appropriate implementation.
+object: cardiac_2d@1
+sequence:
+  level: S2
+  capabilities:
+  - spin_echo
+  - tse
+  - propeller
+  matrix:
+  - 32
+  - 32
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 20
+prompt_mode: research
+identity_requirements:
+- Rotated overlapping Cartesian blades are acquired with turbo spin-echo trains and
+  share central k-space.
+evaluation: s2@3
