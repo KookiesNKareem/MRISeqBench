@@ -18,6 +18,8 @@ from pathlib import Path
 
 import numpy as np
 
+QUALIFIED_VERSION = "v1.0.00"
+QUALIFIED_SOURCE_COMMIT = "37f3c5f0feaf0a19a7fca85c926ad74101f4a034"
 NONCART_REGULARIZATION = 0.001
 NONCART_MAX_ITERATIONS = 50
 LOCAL_INSTALL = Path.home() / ".local/share/mriseqbench-bart-v1.0.00"
@@ -40,7 +42,10 @@ def executable():
     )
     for candidate in candidates:
         if candidate and Path(candidate).is_file() and os.access(candidate, os.X_OK):
-            return str(Path(candidate).resolve())
+            binary = Path(candidate).resolve()
+            stat = binary.stat()
+            _binary_identity(str(binary), stat.st_size, stat.st_mtime_ns)
+            return str(binary)
     raise RuntimeError(
         "BART is required for all reconstruction; install BART v1.0.00 or set MRISEQBENCH_BART"
     )
@@ -126,8 +131,12 @@ def run(command, arrays, *, output="out", timeout=300):
 def _binary_identity(path, size, mtime_ns):
     binary = Path(path)
     version = subprocess.run(
-        [path, "version"], capture_output=True, text=True, check=True
+        [path, "version"], capture_output=True, text=True, check=True, timeout=10
     ).stdout.strip()
+    if version != QUALIFIED_VERSION:
+        raise RuntimeError(
+            f"BART {QUALIFIED_VERSION} is required by the calibrated evaluator; found {version!r}"
+        )
     commit = None
     if (binary.parent / ".git").is_dir():
         commit = subprocess.run(
@@ -135,7 +144,12 @@ def _binary_identity(path, size, mtime_ns):
             capture_output=True,
             text=True,
             check=True,
+            timeout=10,
         ).stdout.strip()
+        if commit != QUALIFIED_SOURCE_COMMIT:
+            raise RuntimeError(
+                "BART source checkout does not match the qualified release"
+            )
     return {
         "engine": "BART",
         "version": version,

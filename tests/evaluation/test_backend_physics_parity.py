@@ -53,7 +53,7 @@ def cardiac_fixture(family):
         "reconstruction": case["evaluation"]["reconstruction"],
         "reconstruction_provenance": {
             "engine": "BART",
-            "version": "protocol-fixture-only",
+            "version": "v1.0.00",
             "binary_sha256": "b" * 64,
             "commands": [{"argv": ["fft", "-i", "3", "input", "output"], "calls": 1}],
         },
@@ -170,3 +170,19 @@ def test_current_cardiac_backend_requires_resolved_numerics(
     assert report["numerically_converged"] is converged
     if not converged:
         assert report["imaging_success_under_case_physics"] is None
+
+
+def test_external_bart_version_is_bound_to_qualified_release():
+    from mriseqbench.evaluation.evaluate import validate_bart_provenance
+
+    proof = {
+        "engine": "BART",
+        "version": "v1.0.00",
+        "binary_sha256": "0" * 64,
+        "commands": [{"argv": ["fft", "-i", "3", "{data}", "{out}"], "calls": 1}],
+    }
+    assert validate_bart_provenance(proof) is proof
+    with pytest.raises(ValueError, match="qualified BART v1.0.00"):
+        validate_bart_provenance({**proof, "version": "v0.9.00"})
+    with pytest.raises(ValueError, match="source must match"):
+        validate_bart_provenance({**proof, "source_commit": {"malformed": True}})

@@ -90,7 +90,8 @@ def test_feedback_budget_refund_and_one_shot(monkeypatch, tmp_path):
     with FeedbackServer(
         smoke_case(), config, ROOT, tmp_path, max_submissions=1
     ) as server:
-        assert server.handle("check", "wrong", b"candidate")[0] == 403
+        for invalid_token in ("wrong", None, []):
+            assert server.handle("check", invalid_token, b"candidate")[0] == 403
         assert server.handle("lint", server.token, b"candidate")[0] == 200
         assert server.checks_used == 0
         assert server.handle("check", server.token, b"candidate")[0] == 200

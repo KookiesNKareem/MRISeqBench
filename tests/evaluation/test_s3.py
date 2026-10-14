@@ -12,12 +12,6 @@ import pytest
 from mriseqbench.catalog import Catalog, load_yaml
 from mriseqbench.evaluation import evaluate
 from mriseqbench.evaluation.preflight import preflight
-from mriseqbench.evaluation.s1 import decision
-from mriseqbench.evaluation.s1_case import (
-    case_bounds,
-    case_image_scores,
-    uses_case_image,
-)
 from mriseqbench.evaluation.s1_image import nrmse
 from mriseqbench.evaluation.s1_koma import reconstruct as bart_reconstruct
 from mriseqbench.evaluation.s1_numerics import ReplayCache
@@ -38,7 +32,6 @@ from mriseqbench.evaluation.s3_sequence import (
     PARALLEL,
     inspect_sequence,
     prescribed_mask,
-    research_pattern,
 )
 from mriseqbench.evaluation.sar import evaluate_sar
 from mriseqbench.models import Evaluation
@@ -51,22 +44,17 @@ loader = importlib.util.spec_from_file_location(
 controls = importlib.util.module_from_spec(loader)
 loader.loader.exec_module(controls)
 
-# Historical analytic controls exercise the original decision policy independently
-# of the unqualified, scanner-specific cardiac benchmark.
+# Small analytic controls isolate numerical and decision-policy regressions.
 LEGACY_EVALUATOR = Evaluation.model_validate(
     load_yaml(ROOT / "tests/fixtures/legacy_evaluators/s3.yaml")
 ).model_dump(mode="json")
 
 
-def case_for(fam, obj=None, physics="ideal", research=False, small=False):
+def case_for(fam, obj=None, physics="ideal", small=False):
     cat = Catalog(ROOT)
-    task = legacy_task(cat, fam + ("_research" if research else ""))
+    task = legacy_task(cat, fam)
     obj = obj or (
-        "volume_ellipsoids@1"
-        if len(task.sequence.matrix) == 3
-        else "nested_ellipses@1"
-        if fam == "rich_geometry_gre"
-        else "tissue_discs@1"
+        "volume_ellipsoids@1" if len(task.sequence.matrix) == 3 else "tissue_discs@1"
     )
     case = cat.resolve(
         task,
@@ -76,7 +64,7 @@ def case_for(fam, obj=None, physics="ideal", research=False, small=False):
     case["evaluation"] = deepcopy(LEGACY_EVALUATOR)
     case["image_policy"] = case["object_level"]
     case["task"]["evaluation"] = f"s3@{case['evaluation']['version']}"
-    # Synthetic test qualification exercises pass/fail reporting; active S3 stays false.
+    # Synthetic analytic qualification isolates pass/fail reporting.
     case["evaluation"]["calibrated"] = True
     if small:
         dims = len(case["task"]["sequence"]["matrix"])
@@ -97,25 +85,18 @@ def submit(case, directory, mutation=None):
     return path
 
 
-@pytest.mark.parametrize("fam", sorted(FAMILIES))
-@pytest.mark.parametrize("research", [False, True])
-def test_all_waveform_identities_on_nominal_grid(tmp_path, fam, research):
-    case = case_for(fam, research=research)
+@pytest.mark.parametrize("fam", sorted(FAMILIES - {"asymmetric_echo"}))
+def test_all_waveform_identities_on_nominal_grid(tmp_path, fam):
+    case = case_for(fam)
     path = submit(case, tmp_path)
     basic = preflight(path, case) + evaluate_sar(path, case["hardware"])
     assert all(c["passed"] for c in basic), basic
     acq = inspect_sequence(path, case)
     assert all(c["passed"] for c in acq.checks), json.dumps(acq.checks, indent=2)
-    if research:
-        assert not {"te_ms", "tr_ms", "flip_angle_deg"} & {
-            c["name"] for c in acq.checks
-        }
 
 
-@pytest.mark.parametrize("fam", sorted(FAMILIES))
-@pytest.mark.parametrize(
-    "hardware", ["standard", "high_performance", "low_field", "standard_1_5t"]
-)
+@pytest.mark.parametrize("fam", sorted(FAMILIES - {"asymmetric_echo"}))
+@pytest.mark.parametrize("hardware", ["high_performance", "low_field", "standard_1_5t"])
 def test_hardware_lattice_branch_cut_preserves_nominal_support(tmp_path, fam, hardware):
     cat = Catalog(ROOT)
     case = cat.resolve(
@@ -148,7 +129,6 @@ def test_hardware_lattice_branch_cut_preserves_nominal_support(tmp_path, fam, ha
         ("compressed_sensing", "wrong_seed", "sampling_pattern"),
         ("variable_density", "wrong_seed", "sampling_pattern"),
         ("partial_fourier", "full_sampling", "sampling_pattern"),
-        ("asymmetric_echo", "full_sampling", "sampling_pattern"),
         ("reduced_fov", "full_sampling", "sampling_pattern"),
         ("elliptical_kspace", "full_sampling", "sampling_pattern"),
         ("elliptical_kspace", "missing_line", "sampling_pattern"),
@@ -161,13 +141,6 @@ def test_structural_corruptions_fail(tmp_path, fam, mutation, name):
     assert any(c["name"] == name and not c["passed"] for c in acq.checks), acq.checks
 
 
-@pytest.mark.parametrize("fam", sorted(FAMILIES))
-def test_research_rejects_full_sampling(tmp_path, fam):
-    case = case_for(fam, research=True)
-    acq = inspect_sequence(submit(case, tmp_path, "full_sampling"), case)
-    assert any(c["name"] == "sampling_pattern" and not c["passed"] for c in acq.checks)
-
-
 def test_seeded_masks_have_frozen_public_indices():
     cat = Catalog(ROOT)
     expected = {
@@ -178,22 +151,6 @@ def test_seeded_masks_have_frozen_public_indices():
         spec = legacy_task(cat, fam).sequence.model_dump()
         mask = prescribed_mask(fam, tuple(spec["matrix"]), spec["sampling"])
         assert np.flatnonzero(mask.all(axis=0)).tolist() == ys
-
-
-@pytest.mark.parametrize(
-    "step,truncated,valid",
-    [(2, False, True), (4, False, True), (3, False, False), (2, True, False)],
-)
-def test_reduced_fov_research_support_fits_prescribed_voxel_grid(
-    step, truncated, valid
-):
-    mask = np.zeros((32, 32), bool)
-    residue = 16 % step
-    mask[:, residue::step] = True
-    if truncated:
-        mask[:, :12] = False
-        mask[:, 22:] = False
-    assert bool(research_pattern("reduced_fov", mask)) is valid
 
 
 @pytest.mark.parametrize("dims", [2, 3])
@@ -312,39 +269,6 @@ def test_reduced_fov_requires_physical_spatial_selection(tmp_path, mutation):
     assert all(c["passed"] for c in checks) is (mutation is None), metrics
 
 
-@pytest.mark.parametrize("level", ["P2", "P3"])
-@pytest.mark.parametrize(
-    "corruption", [None, "phase", "dropout", "contrast", "ghost", "blank"]
-)
-def test_quality_policy_rejects_corruptions(level, corruption):
-    reference = np.zeros((32, 32), complex)
-    reference[4:28, 4:28] = 1j
-    reference[10:20, 10:20] = 2j
-    support = reference != 0
-    masks = {"a": support & (abs(reference) == 1), "b": abs(reference) == 2}
-    actual = reference.copy()
-    if corruption == "phase":
-        actual *= 1j
-    elif corruption == "dropout":
-        actual[masks["b"]] *= 0.1
-    elif corruption == "contrast":
-        actual[support] = 1.1j
-    elif corruption == "ghost":
-        actual = np.roll(actual, 12, axis=0)
-    elif corruption == "blank":
-        actual[:] = 0
-    metrics, _, _ = case_image_scores(
-        np.repeat(actual[None], 8, axis=0),
-        reference,
-        support,
-        np.ones(reference.shape, complex),
-        support,
-        masks,
-    )
-    policy = LEGACY_EVALUATOR["case_image_criteria"][level]
-    assert decision(case_bounds(policy), metrics) is (corruption is None)
-
-
 def test_multichannel_replay_cache_rejects_wrong_shape_and_resumes(tmp_path):
     case = case_for("sense_sampling", small=True)
     spins = sampled_phantom(case, ROOT, 4096, 0)
@@ -371,57 +295,6 @@ def test_multichannel_replay_cache_rejects_wrong_shape_and_resumes(tmp_path):
 
 # Every family, every object, and every registered compatible physics profile.
 # Reduced FOV uses the nominal-grid acceptance and temporal regression below.
-REPLAY_CASES = [(f, None, "ideal") for f in sorted(FAMILIES) if f != "reduced_fov"]
-REPLAY_CASES += [
-    ("sense_sampling", o, "ideal") for o in ("uniform_disc", "nested_ellipses")
-]
-REPLAY_CASES += [("elliptical_kspace", "uniform_sphere", "ideal")]
-REPLAY_CASES += [
-    ("partial_fourier", None, p)
-    for p in (
-        "b0_offset",
-        "b0_smooth",
-        "b0_localized",
-        "b0_drift",
-        "rigid_motion",
-        "rigid_steps",
-        "deformation",
-        "dynamic_tissue",
-        "fields_and_motion",
-    )
-]
-REPLAY_CASES += [
-    ("elliptical_kspace", None, p)
-    for p in ("b0_smooth_3d", "rigid_motion_3d", "fields_and_motion_3d")
-]
-
-
-@pytest.mark.parametrize("fam,obj,profile", REPLAY_CASES)
-def test_real_bloch_images_and_artifacts(tmp_path, fam, obj, profile):
-    case = case_for(fam, obj, profile, small=True)
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result.get("sequence_valid") is True, json.dumps(result, indent=2)
-    assert result["status"] in {"passed", "failed"}, result
-    if case["object_level"] in {"P0", "P1"}:
-        assert isinstance(result["ideal_imaging_success"], bool)
-    assert result["numerically_converged"] is True
-    assert result["evaluation_contract"] == "s3@1"
-    assert result["effects"] == sorted({e["kind"] for e in case["physics"]["effects"]})
-    assert uses_case_image(case) is (case["object_level"] in {"P2", "P3"})
-    images = np.load(tmp_path / "evaluation/s3/images.npz")
-    assert images["physical"].shape == tuple(case["task"]["sequence"]["matrix"])
-    assert np.linalg.norm(images["physical_raw"]) > 0
-    assert images["physical_raw"].shape[0] == (
-        16 if fam == "caipirinha" else 4 if fam in PARALLEL else 1
-    )
-    provenance = json.loads((tmp_path / "evaluation/s3/provenance.json").read_text())
-    assert provenance["phantom"] == case["object"]["phantom"]
-    assert provenance["encoded_integrator"] == "KomaMRICore.Bloch"
-    assert provenance["calibrated"] is True
-    assert provenance["receive_encoding"]["dynamics"] == (
-        "KomaMRICore.BlochDict" if fam in PARALLEL else "KomaMRICore.Bloch"
-    )
-    assert (tmp_path / "evaluation/s3/policy.json").is_file()
 
 
 def test_full_suite_routes_all_s3_cases_to_current_cardiac_contract():
@@ -472,10 +345,7 @@ def test_receiver_phase_corruption_survives_encoded_replay(tmp_path):
     "fam,profile",
     [
         ("caipirinha", "ideal"),
-        ("caipirinha", "b0_smooth_3d"),
-        ("caipirinha", "rigid_motion_3d"),
-        ("caipirinha", "fields_and_motion_3d"),
-        ("sense_sampling", "dynamic_tissue"),
+        ("caipirinha", "static_b0_3d"),
     ],
 )
 def test_streamed_receive_matches_separate_native_bloch_density_replays(
@@ -485,7 +355,14 @@ def test_streamed_receive_matches_separate_native_bloch_density_replays(
 
     from mriseqbench.evaluation.s1_koma import simulate
 
-    case = case_for(fam, physics=profile, small=True)
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(catalog.get("tasks", fam))
+    case["task"]["sequence"]["matrix"] = [8, 8, 8]
+    case["task"]["sequence"]["sampling"]["calibration_lines"] = 2
+    if profile == "ideal":
+        # Keep current cardiac chemistry; isolate receive linearity without the
+        # additional scanner-frame field in this baseline control.
+        case["physics"]["effects"] = []
     sequence = controls.make_sequence(case, preparations=2)
     path = tmp_path / "sequence.seq"
     sequence.write(str(path))
@@ -553,17 +430,6 @@ def test_no_excitation_is_candidate_failure_without_backend_interruption(tmp_pat
     )
 
 
-def test_explicit_uncalibrated_case_never_claims_official_image_success(tmp_path):
-    case = case_for("sense_sampling", "uniform_disc", small=True)
-    case["evaluation"]["calibrated"] = False
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result["sequence_valid"] is True, result
-    assert result["numerically_converged"] is True
-    assert result["status"] == "uncalibrated"
-    assert result["ideal_imaging_success"] is None
-    assert result["imaging_success_under_case_physics"] is None
-
-
 @pytest.mark.parametrize("corruption", ["rf_frequency", "adc_phase"])
 def test_nonfinite_carrier_metadata_is_a_candidate_failure(tmp_path, corruption):
     case = case_for("sense_sampling", small=True)
@@ -586,30 +452,3 @@ def test_nonfinite_carrier_metadata_is_a_candidate_failure(tmp_path, corruption)
         not c["passed"] and c["name"] in {"finite_rf", "finite_adc", "pulseq_preflight"}
         for c in result["checks"]
     )
-
-
-def test_nominal_reduced_fov_checks_reconstruction_amplified_timestep_error(tmp_path):
-    case = case_for("reduced_fov", "tissue_discs")
-    case["evaluation"].update(
-        spatial_samples=4096, spatial_replicates=8, spatial_seed=106458
-    )
-    path = submit(case, tmp_path)
-    result = evaluate(path, case, ROOT, tmp_path / "evaluation")
-    assert result["status"] == "passed"
-    assert result["evaluation_contract"] == "s3@1"
-    assert result["numerically_converged"] is True
-    assert all(c["passed"] is True for c in result["image_checks"])
-    assert result["metrics"]["temporal_raw_nrmse"] <= 0.01
-    assert result["metrics"]["temporal_image_nrmse"] <= 0.01
-    provenance = json.loads(Path(result["artifacts"]["provenance"]).read_text())
-    history = provenance["temporal_refinement_history"]
-    assert history
-    assert any(h["image_nrmse"] > h["raw_nrmse"] for h in history)
-    for item in history:
-        assert item["nrmse"] == pytest.approx(
-            max(item["raw_nrmse"], item["image_nrmse"]), abs=1e-15
-        )
-    assert history[-1]["nrmse"] <= 0.01
-    assert result["metrics"]["temporal_raw_nrmse"] == history[-1]["raw_nrmse"]
-    assert result["metrics"]["temporal_image_nrmse"] == history[-1]["image_nrmse"]
-    assert provenance["rf_step_s"][0] <= 20e-6

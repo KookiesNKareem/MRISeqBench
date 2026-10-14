@@ -28,10 +28,14 @@ def validate_bart_provenance(value):
     """External judges must disclose the BART executable and actual commands."""
     import re
 
+    from .bart import QUALIFIED_SOURCE_COMMIT, QUALIFIED_VERSION
+
     if not isinstance(value, dict) or value.get("engine") != "BART":
         raise ValueError("backend must report BART reconstruction provenance")
-    if not isinstance(value.get("version"), str) or not value["version"].strip():
-        raise ValueError("backend must report its BART version")
+    if value.get("version") != QUALIFIED_VERSION:
+        raise ValueError(f"backend must use qualified BART {QUALIFIED_VERSION}")
+    if value.get("source_commit") not in (None, QUALIFIED_SOURCE_COMMIT):
+        raise ValueError("backend BART source must match the qualified release")
     if not re.fullmatch(r"[0-9a-f]{64}", str(value.get("binary_sha256", ""))):
         raise ValueError("backend must identify its BART executable by SHA-256")
     commands = value.get("commands")

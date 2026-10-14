@@ -1,6 +1,7 @@
 """Trusted, restartable evaluation of frozen bytes; interruptions have no verdict."""
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -57,22 +58,36 @@ def grade_frozen(
     }
     budget = None if adaptive else timeout_s
     result_path = directory / "result.json"
+    # A resumed invocation shares checkpoints, but must not overwrite the logs
+    # and diagnostics of the interrupted invocation.
+    prior_indices = [
+        int(match[1])
+        for path in directory.iterdir()
+        if (
+            match := re.fullmatch(
+                r"(?:worker(?:-execution|-diagnostic)?|previous-result)-(\d+)\..+",
+                path.name,
+            )
+        )
+    ]
+    first_index = max(prior_indices, default=-1) + 1
     for recovery in range(3):
+        index = first_index + recovery
         if stop_when is not None and stop_when.is_set():
             raise EvaluationIncomplete(
                 f"Grading interrupted; resume frozen submission at {directory}"
             )
         # Never consume a stale result after a crashed/restarted worker.
         if result_path.exists():
-            result_path.replace(directory / f"previous-result-{recovery:03d}.json")
+            result_path.replace(directory / f"previous-result-{index:03d}.json")
         execution = run_process(
             command,
             directory,
             budget,
-            directory / f"worker-{recovery:03d}",
+            directory / f"worker-{index:03d}",
             stop_when=stop_when,
         )
-        write_json(directory / f"worker-execution-{recovery:03d}.json", execution)
+        write_json(directory / f"worker-execution-{index:03d}.json", execution)
         try:
             result = json.loads(result_path.read_text())
             if execution["status"] != "completed":
@@ -85,9 +100,7 @@ def grade_frozen(
                 raise ValueError("submission evaluator returned no supported verdict")
         except (OSError, ValueError, TypeError) as exc:
             if result_path.exists():
-                result_path.replace(
-                    directory / f"worker-diagnostic-{recovery:03d}.json"
-                )
+                result_path.replace(directory / f"worker-diagnostic-{index:03d}.json")
             if recovery == 2 or (stop_when is not None and stop_when.is_set()):
                 raise EvaluationIncomplete(
                     f"Grading interrupted; resume frozen submission at {directory}: {exc}"

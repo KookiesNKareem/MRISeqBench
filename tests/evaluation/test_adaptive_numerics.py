@@ -23,16 +23,15 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.parametrize(
     "obj",
     [
-        "uniform_disc",
-        "tissue_discs",
         "nested_ellipses",
-        "uniform_sphere",
         "volume_ellipsoids",
     ],
 )
 def test_stratified_quadrature_matches_independent_analytic_encoding(obj):
     family = (
-        "volume_gre" if obj in {"uniform_sphere", "volume_ellipsoids"} else "gre_t2star"
+        "elliptical_kspace"
+        if obj in {"uniform_sphere", "volume_ellipsoids"}
+        else "gre_t2star"
     )
     case = resolve_legacy_case(Catalog(ROOT), family, object_ref=obj, physics="ideal")
     spins = sampled_phantom(case, ROOT, 32768, 0)

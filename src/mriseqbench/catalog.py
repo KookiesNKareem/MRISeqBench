@@ -91,6 +91,16 @@ class Catalog:
                 ("evaluators", task.evaluation),
             ]:
                 self.get(kind, ref)
+            if not self.get("objects", task.object).phantom.startswith("cardiac_"):
+                raise ValueError(f"{task.id}: active tasks require cardiac anatomy")
+            evaluator = self.get("evaluators", task.evaluation)
+            if (
+                evaluator.scope == "benchmark"
+                and evaluator.id != task.sequence.level.lower()
+            ):
+                raise ValueError(
+                    f"{task.id}: evaluator must match sequence tier {task.sequence.level}"
+                )
             self.validate_geometry(task)
         for suite in self.documents["suites"].values():
             self.cases(suite)
@@ -144,7 +154,7 @@ class Catalog:
             physics = self.get("physics", profile)
         obj = self.get("objects", object_ref or task.object)
         hardware = self.get("hardware", hardware_ref or task.hardware)
-        if obj.id.startswith("cardiac_"):
+        if obj.phantom.startswith("cardiac_"):
             fields = {0.55: "055t", 1.5: "15t", 3.0: "3t"}
             if hardware.field_strength_T not in fields:
                 raise ValueError(
@@ -152,7 +162,10 @@ class Catalog:
                 )
             dimensions = self.phantoms[obj.phantom].dimensions
             field_ref = f"cardiac_{dimensions}d_{fields[hardware.field_strength_T]}@1"
-            if obj.id not in {"cardiac_2d", "cardiac_3d"} and obj.phantom != field_ref:
+            if (
+                obj.phantom not in {"cardiac_2d@1", "cardiac_3d@1"}
+                and obj.phantom != field_ref
+            ):
                 raise ValueError(
                     "Cardiac tissue profile and scanner field strength must match"
                 )
@@ -200,7 +213,7 @@ class Catalog:
         if f"{hardware.id}@{hardware.version}" != task.hardware:
             case_id += f"--hardware-{hardware.id}-v{hardware.version}"
         object_contract = obj.model_dump(mode="json", exclude_none=True)
-        if obj.id.startswith("cardiac_"):
+        if obj.phantom.startswith("cardiac_"):
             from .evaluation.s1_anatomy import load_anatomy
 
             anatomy = load_anatomy(str(self.root), obj.phantom)
@@ -252,7 +265,7 @@ class Catalog:
             }
         image_policy = (
             "static"
-            if obj.id.startswith("cardiac_")
+            if obj.phantom.startswith("cardiac_")
             or "static" in (evaluator.case_image_criteria or {})
             else legacy_levels.get("object_level")
         )

@@ -3,6 +3,7 @@
 import importlib.util
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -62,9 +63,8 @@ def test_decisive_intervals_avoid_unnecessary_refinement(value, limits, expected
 
 
 def test_precision_and_sampling_contract_is_validated():
-    case = Catalog(ROOT).resolve(
-        Catalog(ROOT).get("tasks", "bssfp"), Catalog(ROOT).get("physics", "ideal")
-    )
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(catalog.get("tasks", "bssfp"))
     for patch in [
         {"spatial_max_samples": 65535},
         {"spatial_max_samples": 4096},
@@ -148,8 +148,21 @@ def test_pipeline_refines_on_precision_and_preserves_unresolved_checks(
     )
     monkeypatch.setattr(s1, "image_scores", scores)
     monkeypatch.setattr(s1, "versions", dict)
+    image_calls = []
+
+    def image_error(delta, *args):
+        image_calls.append(delta.copy())
+        # The encoded raw error settles first. Image amplification must keep
+        # integration refining until the separate image bound also settles.
+        return 0.04 if len(image_calls) <= 5 else 0.005
+
     result = s1.evaluate_s1(
-        path, deepcopy(case), ROOT, tmp_path / "evaluation", deadline=deadline
+        path,
+        deepcopy(case),
+        ROOT,
+        tmp_path / "evaluation",
+        deadline=deadline,
+        temporal_norm=image_error if temporal_steps else None,
     )
     assert seen == [n for n in (4096, 8192, 16384) if n <= resolve_at for _ in range(8)]
     assert result["spatial_sampling"]["stop_reason"] == "precision_target"
@@ -164,4 +177,38 @@ def test_pipeline_refines_on_precision_and_preserves_unresolved_checks(
         import json
 
         progress = json.loads((tmp_path / "evaluation/progress.json").read_text())
-        assert len(progress["temporal_refinement"]) > temporal_steps
+        history = progress["temporal_refinement"]
+        assert len(history) > temporal_steps
+        assert any(item["raw_nrmse"] <= 0.01 < item["image_nrmse"] for item in history)
+        assert all(
+            item["nrmse"] == max(item["raw_nrmse"], item["image_nrmse"])
+            for item in history
+        )
+        assert history[-1]["raw_nrmse"] <= 0.01
+        assert history[-1]["image_nrmse"] <= 0.01
+        assert result["metrics"]["temporal_image_nrmse"] == 0.005
+
+
+def test_bart_reduced_fov_amplifies_small_raw_timestep_error():
+    from mriseqbench.evaluation.s1_image import nrmse
+    from mriseqbench.evaluation.s3 import temporal_image_error
+
+    matrix = (8, 8)
+    mask = np.zeros(matrix, bool)
+    mask[:, ::2] = True
+    indices = np.argwhere(mask)
+    coordinates = (np.indices(matrix).reshape(2, -1).T + 0.5) / 8 - 0.5
+    encoder = np.exp(-2j * np.pi * ((indices - 4) @ coordinates.T))
+    reference = np.zeros(matrix, complex)
+    reference[:, 2:6] = 1
+    delta = (encoder @ (0.012 * reference).ravel())[None]
+    raw = (encoder @ np.ones(matrix).ravel())[None]
+    acquisition = SimpleNamespace(
+        indices=indices,
+        offset=np.zeros(2),
+        measurements={"family": "reduced_fov", "reduced_fov_fraction": 0.5},
+    )
+    assert nrmse(raw + delta, raw) < 0.01
+    error = temporal_image_error(delta, acquisition, matrix, reference)
+    assert error == pytest.approx(0.012, rel=2e-6)
+    assert error > 0.01

@@ -27,7 +27,7 @@ def make_sequence(
     water_selective_refocusing_order=0,
 ):
     h, spec = case["hardware"], case["task"]["sequence"]
-    fam = case["task"]["id"].removesuffix("_research")
+    fam = case["task"]["id"]
     system = Opts(
         B0=h["field_strength_T"],
         max_grad=h["max_gradient_mT_per_m"],
@@ -49,25 +49,8 @@ def make_sequence(
         or (spec.get("tr_ms") or {}).get("max")
         or 12.0
     ) / 1000
-    if case["task"].get("prompt_mode") == "research":
-        flip, te, tr = {
-            "gre_t1w": (30, 0.005, 0.024),
-            "gre_t2star": (20, 0.020, 0.030),
-            "spin_echo_t2w": (90, 0.080, 1.0),
-            "bssfp": (35, 0.0025, 0.005),
-            "rich_geometry_gre": (20, 0.004, 0.010),
-            "volume_gre": (15, 0.002, 0.005),
-        }[fam]
-    if fam == "volume_gre":
-        flip, te, tr = 15, 0.002, 0.005
-    if fam == "rich_geometry_gre":
-        # The short-TR control retained excess long-T2 coherence on tissue discs.
-        # Use the independently validated T1-GRE timing within the 6 s budget.
-        flip, te, tr = 30, 0.005, 0.024
     if echo_time is not None:
         te = echo_time
-    if mutation == "short_tr_coherence":
-        flip, te, tr = 30, 0.005, 0.012
     if mutation == "wrong_echo_time":
         te += 0.020 if se else 0.003
     rf = make_block_pulse(
@@ -80,7 +63,9 @@ def make_sequence(
 
     def binomial_rf(angle, order, use):
         if not se or order not in {1, 2}:
-            raise ValueError("Water-selective spin-echo control supports RF order 1 or 2")
+            raise ValueError(
+                "Water-selective spin-echo control supports RF order 1 or 2"
+            )
         fat_hz = abs(case["object"]["tissue_properties"]["fat"]["chemical_shift_hz"])
         raster = system.rf_raster_time
         lag = round(1 / (2 * fat_hz) / raster)
@@ -127,7 +112,7 @@ def make_sequence(
             if mutation == "missing_line" and y == ny - 1:
                 continue
             yy = 0 if y < 0 or mutation == "repeated_lines" else y - ny // 2
-            zz = 0 if mutation == "flat_volume" else z - (nz[0] // 2 if nz else 0)
+            zz = z - (nz[0] // 2 if nz else 0)
             pre_y = make_trapezoid(
                 "y", area=yy / fov[1], duration=0.0008, system=system
             )

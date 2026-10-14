@@ -43,13 +43,7 @@ def compact(value):
 
 def task_brief(case):
     """Agent requirements, without catalog metadata or expanded registry records."""
-    research = case["task"].get("prompt_mode") == "research"
-    fields = (
-        {"matrix", "fov_mm", "duration_s"}
-        if research
-        else set(case["task"]["sequence"]) - {"level"}
-    )
-    sequence = {k: v for k, v in case["task"]["sequence"].items() if k in fields}
+    sequence = {k: v for k, v in case["task"]["sequence"].items() if k != "level"}
     return compact(
         {
             "objective": case["task"]["objective"],
@@ -228,28 +222,19 @@ def evaluation_overview(case):
     )
 
 
-def prompt(case, *, arm=None):
+def prompt(case):
     task = case["task"]
-    research = task.get("prompt_mode") == "research"
     return (
         f"# {case['case_id']}\n\n{task['objective'].strip()}\n\n"
         f"Write `{task['submission']['file']}` in Pulseq format in this working directory.\n"
-        + (
-            "Choose design parameters that satisfy the named sequence's defining physics and structure.\n"
-            if research
-            else "Timing targets use the stated tolerance.\n"
-        )
+        + "Timing targets use the stated tolerance.\n"
         + "Duration and max values are upper limits; hardware and SAR limits apply.\n"
         + (
             "Use the supplied static cardiac phantom with scanner-specific tissue T1/T2, fat and off-resonance. Reconstruction is standard and fixed.\n"
             if case.get("image_policy") == "static"
             else ""
         )
-        + (
-            "Internet access is enabled; use normal tools as needed.\n"
-            if research and arm is None
-            else "There is no direct Internet access; use installed tools and documentation.\n"
-        )
+        + "There is no direct Internet access; use installed tools and documentation.\n"
         + "\n```yaml\n"
         + brief_yaml(case, include_objective=False)
         + "```\n\n"
@@ -312,9 +297,6 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
         **case,
         "hardware": {k: v for k, v in case["hardware"].items() if k != "provenance"},
     }
-    if case["task"].get("prompt_mode") == "research":
-        # Never expose hidden sequence identity checks via a secondary metadata file.
-        public_case = task_brief(case)
     write_json(workspace / "case.json", public_case)
     (workspace / "task.yaml").write_text(brief_yaml(case))
     (workspace / "EVALUATION.md").write_text(
@@ -328,7 +310,7 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
     )
     prepare_inputs(workspace, case, server.root, phantom_dir)
     python = "python3" if arm else sys.executable
-    instructions = prompt(case, arm=arm) + (
+    instructions = prompt(case) + (
         f"\n## Execution\n\nTime budget: {experiment.agent.timeout_s:g} s of agent runtime, excluding submission grading.\n"
         "All other work counts. The harness tracks time automatically.\n"
         "Work and write files only inside this working directory.\n"
@@ -432,14 +414,11 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
     )
 
 
-def prepare_pi(workspace, base_url, *, offline=True):
+def prepare_pi(workspace, base_url):
     directory = Path(workspace) / ".pi-agent"
     directory.mkdir()
     write_json(
         directory / "models.json", {"providers": {"openrouter": {"baseUrl": base_url}}}
     )
     write_json(directory / "settings.json", {"enableInstallTelemetry": False})
-    env = {"PI_CODING_AGENT_DIR": str(directory)}
-    if offline:
-        env["PI_OFFLINE"] = "1"
-    return env
+    return {"PI_CODING_AGENT_DIR": str(directory), "PI_OFFLINE": "1"}

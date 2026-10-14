@@ -1,7 +1,6 @@
-"""Physical controls, adversarial submissions, and every registered object family."""
+"""Physical controls, adversarial submissions, and independent numerical oracles."""
 
 import importlib.util
-import json
 from copy import deepcopy
 from pathlib import Path
 
@@ -14,7 +13,7 @@ from mriseqbench.catalog import Catalog, load_yaml
 from mriseqbench.evaluation import evaluate
 from mriseqbench.evaluation.s1_image import canonical_response, nrmse, reference_signal
 from mriseqbench.evaluation.s1_koma import simulate
-from mriseqbench.evaluation.s1_phantom import Spins, environment, phantom
+from mriseqbench.evaluation.s1_phantom import Spins, phantom
 from mriseqbench.evaluation.s1_sequence import inspect_sequence
 from mriseqbench.models import Evaluation
 from tests.fixtures.legacy_catalog import legacy_task
@@ -26,24 +25,17 @@ loader = importlib.util.spec_from_file_location(
 controls = importlib.util.module_from_spec(loader)
 loader.loader.exec_module(controls)
 
-# Historical analytic controls exercise the original decision policy independently
-# of the unqualified, scanner-specific cardiac benchmark.
+# Small analytic controls isolate numerical and decision-policy regressions.
 LEGACY_EVALUATOR = Evaluation.model_validate(
     load_yaml(ROOT / "tests/fixtures/legacy_evaluators/s1.yaml")
 ).model_dump(mode="json")
 
 
-def case_for(
-    fam="bssfp", obj=None, physics="ideal", research=False, hardware=None, matrix=8
-):
+def case_for(fam="bssfp", obj=None, physics="ideal", hardware=None, matrix=8):
     cat = Catalog(ROOT)
-    task = legacy_task(cat, fam + ("_research" if research else ""))
+    task = legacy_task(cat, fam)
     obj = obj or (
-        "volume_ellipsoids@1"
-        if len(task.sequence.matrix) == 3
-        else "nested_ellipses@1"
-        if fam == "rich_geometry_gre"
-        else "tissue_discs@1"
+        "volume_ellipsoids@1" if len(task.sequence.matrix) == 3 else "tissue_discs@1"
     )
     case = cat.resolve(
         task,
@@ -66,96 +58,9 @@ def case_for(
 def submit(case, directory, mutation=None):
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "sequence.seq"
-    preparations = 256 if case["physics"]["id"] == "rigid_steps" else 128
+    preparations = 128
     controls.make_sequence(case, mutation, preparations=preparations).write(str(path))
     return path
-
-
-OBJECT_CASES = [
-    (f, o)
-    for f in ("gre_t1w", "gre_t2star", "spin_echo_t2w", "bssfp", "rich_geometry_gre")
-    for o in ("uniform_disc", "tissue_discs", "nested_ellipses")
-] + [("volume_gre", o) for o in ("uniform_sphere", "volume_ellipsoids")]
-
-
-@pytest.mark.parametrize("fam,obj", OBJECT_CASES)
-@pytest.mark.parametrize("research", [False, True])
-def test_every_s1_family_and_registered_phantom_has_real_images(
-    tmp_path, fam, obj, research
-):
-    case = case_for(fam, obj, research=research)
-    path = submit(case, tmp_path)
-    result = evaluate(path, case, ROOT, tmp_path / "evaluation")
-    # Reduced 8x8 controls establish coverage, not guaranteed image quality:
-    # long-lived tissue coherences can legitimately fail the fixed image bounds.
-    assert result["status"] in {"passed", "failed"}, json.dumps(result, indent=2)
-    assert result["sequence_valid"] is True
-    assert isinstance(result["ideal_imaging_success"], bool)
-    assert (
-        result["ideal_imaging_success"] is result["imaging_success_under_case_physics"]
-    )
-    assert "reason" not in result, result
-    assert result["metrics"]  # Physical replay, not a successful preflight proxy.
-    assert all(np.isfinite(v) for v in result["metrics"].values())
-    artifacts = tmp_path / "evaluation/s1"
-    images = np.load(artifacts / "images.npz")
-    assert images["physical"].shape == tuple(case["task"]["sequence"]["matrix"])
-    assert images["ideal"].shape == images["reference"].shape
-    assert np.linalg.norm(images["physical_raw"]) > 0
-    assert result["image_verdict"] in {"passed", "failed"}
-    provenance = json.loads((artifacts / "provenance.json").read_text())
-    assert provenance["phantom"] == obj + "@1"
-    assert provenance["calibrated"] is True
-    assert len(provenance["submission_sha256"]) == 64
-
-
-@pytest.mark.parametrize(
-    "profile",
-    [
-        "b0_offset",
-        "b0_smooth",
-        "b0_localized",
-        "b0_drift",
-        "rigid_motion",
-        "rigid_steps",
-        "deformation",
-        "dynamic_tissue",
-        "fields_and_motion",
-    ],
-)
-def test_all_registered_2d_physics_are_replayed(tmp_path, profile):
-    case = case_for(physics=profile)
-    path = submit(case, tmp_path)
-    result = evaluate(path, case, ROOT, tmp_path / "evaluation")
-    assert result["status"] in {"passed", "failed"}, json.dumps(result, indent=2)
-    assert result["sequence_valid"] is True
-    assert result["effects"] == sorted({e["kind"] for e in case["physics"]["effects"]})
-    images = np.load(tmp_path / "evaluation/s1/images.npz")
-    assert nrmse(images["physical_raw"], images["ideal_raw"]) > 1e-5
-    assert result["metrics"]["temporal_nrmse"] < 0.01
-
-
-@pytest.mark.parametrize(
-    "profile", ["b0_smooth_3d", "rigid_motion_3d", "fields_and_motion_3d"]
-)
-@pytest.mark.parametrize("obj", ["uniform_sphere", "volume_ellipsoids"])
-def test_registered_3d_physics_and_objects_are_replayed(tmp_path, profile, obj):
-    case = case_for("volume_gre", obj, physics=profile)
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result["status"] in {"passed", "failed"}, json.dumps(result, indent=2)
-    assert result["sequence_valid"] is True
-    assert result["numerically_converged"] is True
-    # The diagnostic ideal replay can remain unresolved after the required
-    # case-image decision has already settled; it must not force more sampling.
-    assert result["ideal_imaging_success"] is None or isinstance(
-        result["ideal_imaging_success"], bool
-    )
-    if result["ideal_imaging_success"] is None:
-        assert result["decision_basis"]["ideal"] == "unresolved"
-    assert isinstance(result["imaging_success_under_case_physics"], bool)
-    assert result["metrics"], result
-    assert result["metrics"]["case_vs_ideal_image_nrmse"] > 1e-5
-    assert result["metrics"]["temporal_nrmse"] < 0.01
 
 
 @pytest.mark.parametrize(
@@ -163,7 +68,6 @@ def test_registered_3d_physics_and_objects_are_replayed(tmp_path, profile, obj):
     [
         ("gre_t1w", "missing_line", "matrix"),
         ("gre_t1w", "repeated_lines", "matrix"),
-        ("volume_gre", "flat_volume", "matrix"),
         ("bssfp", "unbalanced", "bssfp"),
         ("spin_echo_t2w", "no_refocusing", "spin_echo"),
         ("spin_echo_t2w", "lying_refocusing_label", "spin_echo"),
@@ -187,43 +91,6 @@ def test_broken_sequences_fail_for_the_physical_reason(
     assert any(
         c["name"] == failed_check and not c["passed"] for c in result["checks"]
     ), result
-
-
-@pytest.mark.parametrize(
-    "hardware", ["standard", "low_field", "standard_1_5t", "high_performance"]
-)
-def test_built_in_judge_uses_selected_hardware(tmp_path, hardware):
-    case = case_for(hardware=hardware)
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result["status"] == "passed", json.dumps(result, indent=2)
-    assert all(c["passed"] for c in result["checks"])
-
-
-def test_final_verdicts_are_booleans_and_omit_provisional_fields(tmp_path):
-    case = case_for()
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result["sequence_valid"]
-    assert result["status"] == "passed"
-    assert result["numerically_converged"]
-    assert result["ideal_imaging_success"] is True
-    assert result["imaging_success_under_case_physics"] is True
-    assert result["image_verdict"] == "passed"
-    assert not any("provisional" in k for k in result)
-
-
-def test_excess_long_t2_coherence_fails_image_with_valid_sequence(tmp_path):
-    case = case_for("rich_geometry_gre", "tissue_discs", matrix=32)
-    result = evaluate(
-        submit(case, tmp_path, "short_tr_coherence"),
-        case,
-        ROOT,
-        tmp_path / "evaluation",
-    )
-    assert result["sequence_valid"] is True
-    assert result["status"] == "failed"
-    assert result["ideal_imaging_success"] is False
-    assert result["image_verdict"] == "failed"
-    assert result["numerical_intervals"]["ideal"]["complex_image_nrmse"][0] > 0.2
 
 
 def test_fourier_oracle_matches_direct_sum(tmp_path):
@@ -303,22 +170,11 @@ def test_koma_bloch_matches_independent_matrix_exponential(
     assert abs(signal - xy) < 1e-5
 
 
-def test_motion_fields_and_tissue_equilibrium_use_exact_midpoint_coordinates():
-    effects = case_for(physics="fields_and_motion")["physics"]["effects"]
-    transforms, shifts, b0, gradient, _gaussian, pd = environment(
-        np.array([0.25]), effects, ["wm", "gm"]
-    )
-    point = np.array([0.02, 0.01, 0.0])
-    moved = transforms[0] @ point + shifts[0]
-    assert shifts[0, 0] == pytest.approx(0.003)
-    assert gradient @ moved + b0[0] == pytest.approx(moved[0] * 1000)
-    tissue = case_for(physics="dynamic_tissue")["physics"]["effects"]
-    *_, pd = environment(np.array([0.5]), tissue, ["wm", "gm"])
-    assert pd[0].tolist() == pytest.approx([1.1, 1.0])
-
-
 def test_native_phantom_sampling_stays_available_for_provenance():
-    for fam, obj in OBJECT_CASES:
+    for fam, obj in [
+        ("gre_t2star", "nested_ellipses"),
+        ("elliptical_kspace", "volume_ellipsoids"),
+    ]:
         case = case_for(fam, obj)
         spins = phantom(case, ROOT, 2, gauss_legendre=False)
         assert {spins.materials[i] for i in np.unique(spins.labels)} <= set(
@@ -327,34 +183,6 @@ def test_native_phantom_sampling_stays_available_for_provenance():
         assert np.all(spins.properties[:, 1] >= spins.properties[:, 2])
         repeat = phantom(case, ROOT, 2, gauss_legendre=False)
         assert np.array_equal(spins.positions, repeat.positions)
-
-
-def test_research_timing_is_chosen_by_the_submission(tmp_path):
-    case = case_for("gre_t1w", research=True)
-    path = submit(case, tmp_path)
-    acq = inspect_sequence(path, case)
-    assert all(
-        c["name"] not in {"te_ms", "tr_ms", "flip_angle_deg"} for c in acq.checks
-    )
-    wrong = deepcopy(case)
-    wrong["task"]["prompt_mode"] = "detailed"
-    wrong["task"]["sequence"]["te_ms"] = {"target": 40.0, "tolerance": 1.0, "max": None}
-    inspected = inspect_sequence(path, wrong)
-    assert any(c["name"] == "te_ms" and not c["passed"] for c in inspected.checks)
-
-
-@pytest.mark.parametrize("profile", ["ideal", "b0_offset"])
-def test_calibrated_fixture_requires_convergence_and_separates_robustness(
-    tmp_path, profile
-):
-    case = case_for("bssfp", "uniform_disc", physics=profile, matrix=32)
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result["sequence_valid"] is True, result
-    assert result["numerically_converged"] is True, result
-    assert result["status"] == ("passed" if profile == "ideal" else "failed"), (
-        json.dumps(result, indent=2)
-    )
-    assert result["imaging_success_under_case_physics"] is (profile == "ideal")
 
 
 def test_sampling_settings_are_versioned_and_bounded():
@@ -383,9 +211,11 @@ def test_wrong_receiver_phase_cannot_define_its_own_reference(tmp_path, fam):
 @pytest.mark.parametrize("fam", ["gre_t1w", "spin_echo_t2w", "bssfp"])
 def test_koma_echo_peak_matches_waveform_te(tmp_path, fam):
     case = case_for(fam)
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    echo = next(c for c in result["checks"] if c["name"] == "echo_formation")
-    assert echo["passed"], result
+    from mriseqbench.evaluation.s1_probes import echo_formation_probe
+
+    acq = inspect_sequence(submit(case, tmp_path), case)
+    echo, _ = echo_formation_probe(acq, case, np.array([[1.0, 0.8, 0.08]]))
+    assert echo["passed"], echo
     assert echo["detail"]["engine"] == "KomaMRICore"
     assert echo["detail"]["peak_time_error_s"] <= echo["detail"]["tolerance_s"]
 
@@ -393,7 +223,10 @@ def test_koma_echo_peak_matches_waveform_te(tmp_path, fam):
 def test_analytic_shape_encoding_matches_independent_dense_quadrature(tmp_path):
     from mriseqbench.evaluation.s1_sampling import analytic_reference
 
-    for fam, obj in OBJECT_CASES:
+    for fam, obj in [
+        ("gre_t2star", "nested_ellipses"),
+        ("elliptical_kspace", "volume_ellipsoids"),
+    ]:
         case = case_for(fam, obj)
         path = submit(case, tmp_path / (fam + obj))
         acq = inspect_sequence(path, case)

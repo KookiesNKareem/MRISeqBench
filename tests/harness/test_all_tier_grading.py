@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from mriseqbench.catalog import Catalog
-from mriseqbench.harness.grading import grade_frozen
+from mriseqbench.harness.grading import EvaluationIncomplete, grade_frozen
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -72,3 +72,28 @@ def test_smoke_grading_keeps_its_finite_budget(tmp_path):
     )
     assert result["status"] == "smoke_passed"
     assert budgets == [0.01]
+
+
+def test_resuming_grading_preserves_all_previous_worker_evidence(tmp_path):
+    directory = tmp_path / "grade"
+    case = {"evaluation": {"id": "s1"}}
+
+    def interrupted(command, cwd, budget, prefix, **kwargs):
+        prefix.with_suffix(".stderr.log").write_text(prefix.name)
+        (cwd / "result.json").write_text(json.dumps({"status": "evaluator_error"}))
+        return {"status": "error"}
+
+    with pytest.raises(EvaluationIncomplete):
+        grade_frozen(tmp_path / "sequence.seq", case, ROOT, directory, 1, interrupted)
+    original = {path: path.read_bytes() for path in directory.iterdir()}
+
+    def completed(command, cwd, budget, prefix, **kwargs):
+        assert prefix.name == "worker-003"
+        (cwd / "result.json").write_text(json.dumps({"status": "passed"}))
+        return {"status": "completed"}
+
+    assert grade_frozen(
+        tmp_path / "sequence.seq", case, ROOT, directory, 1, completed
+    ) == {"status": "passed"}
+    assert all(path.read_bytes() == content for path, content in original.items())
+    assert len(list(directory.glob("worker-execution-*.json"))) == 4

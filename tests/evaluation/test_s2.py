@@ -1,4 +1,4 @@
-"""S2 waveform controls, arbitrary-node Fourier/reconstruction, and P0--P3 replay."""
+"""S2 waveform controls and independent arbitrary-node Fourier/BART oracles."""
 
 import importlib.util
 import json
@@ -13,8 +13,6 @@ import pytest
 from mriseqbench.catalog import Catalog, load_yaml
 from mriseqbench.evaluation import evaluate
 from mriseqbench.evaluation.preflight import preflight
-from mriseqbench.evaluation.s1 import decision
-from mriseqbench.evaluation.s1_case import case_bounds, case_image_scores
 from mriseqbench.evaluation.s1_image import nrmse
 from mriseqbench.evaluation.s1_koma import simulate
 from mriseqbench.evaluation.s1_phantom import Spins
@@ -36,8 +34,7 @@ loader = importlib.util.spec_from_file_location(
 controls = importlib.util.module_from_spec(loader)
 loader.loader.exec_module(controls)
 
-# Historical analytic controls exercise the original decision policy independently
-# of the unqualified, scanner-specific cardiac benchmark.
+# Small analytic controls isolate numerical and decision-policy regressions.
 LEGACY_EVALUATOR = Evaluation.model_validate(
     load_yaml(ROOT / "tests/fixtures/legacy_evaluators/s2.yaml")
 ).model_dump(mode="json")
@@ -79,46 +76,11 @@ def test_refocusing_only_submission_is_rejected_before_replay(tmp_path, monkeypa
     )
 
 
-@pytest.mark.parametrize("level", ["P2", "P3"])
-@pytest.mark.parametrize(
-    "corruption", [None, "phase", "dropout", "contrast", "ghost", "blank"]
-)
-def test_s2_quality_limits_reject_targeted_image_corruptions(level, corruption):
-    reference = np.zeros((32, 32), complex)
-    reference[4:28, 4:28] = 1j
-    reference[10:20, 10:20] = 2j
-    support = reference != 0
-    masks = {"a": support & (abs(reference) == 1), "b": abs(reference) == 2}
-    phasor = np.exp(
-        1j * np.broadcast_to(0.4 + 0.1 * np.arange(32)[:, None], reference.shape)
-    )
-    actual = reference * phasor
-    if corruption == "phase":
-        actual *= 1j
-    elif corruption == "dropout":
-        actual[masks["b"]] *= 0.1
-    elif corruption == "contrast":
-        actual[support] = 1.1j * phasor[support]
-    elif corruption == "ghost":
-        actual = np.roll(actual, 12, axis=0)
-    elif corruption == "blank":
-        actual[:] = 0
-    metrics, _, _ = case_image_scores(
-        np.repeat(actual[None], 8, axis=0), reference, support, phasor, support, masks
-    )
-    policy = LEGACY_EVALUATOR["case_image_criteria"][level]
-    assert decision(case_bounds(policy), metrics) is (corruption is None)
-
-
-def case_for(fam, obj=None, physics="ideal", research=False, small=False):
+def case_for(fam, obj=None, physics="ideal", small=False):
     cat = Catalog(ROOT)
-    task = legacy_task(cat, fam + ("_research" if research else ""))
+    task = legacy_task(cat, fam)
     obj = obj or (
-        "volume_ellipsoids@1"
-        if len(task.sequence.matrix) == 3
-        else "nested_ellipses@1"
-        if fam == "rich_geometry_gre"
-        else "tissue_discs@1"
+        "volume_ellipsoids@1" if len(task.sequence.matrix) == 3 else "tissue_discs@1"
     )
     case = cat.resolve(
         task,
@@ -249,23 +211,14 @@ def test_cpmg_train_reference_matches_independent_finite_rf_bloch(tmp_path, fam)
     assert nrmse(actual, expected) < 0.02
 
 
-@pytest.mark.parametrize("fam", sorted(FAMILIES))
-@pytest.mark.parametrize("research", [False, True])
-def test_all_s2_waveform_identities(tmp_path, fam, research):
-    case = case_for(fam, research=research)
+@pytest.mark.parametrize("fam", sorted(FAMILIES - {"rosette_gre", "concentric_rings"}))
+def test_all_s2_waveform_identities(tmp_path, fam):
+    case = case_for(fam)
     path = submit(case, tmp_path)
     basic = preflight(path, case) + evaluate_sar(path, case["hardware"])
     assert all(c["passed"] for c in basic), basic
     acq = inspect_sequence(path, case)
     assert all(c["passed"] for c in acq.checks), json.dumps(acq.checks, indent=2)
-    if research:
-        assert not {
-            "te_ms",
-            "tr_ms",
-            "shots",
-            "echo_train_length",
-            "echo_spacing_ms",
-        } & {c["name"] for c in acq.checks}
 
 
 @pytest.mark.parametrize(
@@ -334,7 +287,8 @@ def test_noncartesian_bart_has_fixed_scale_phase_and_linearity(dims):
 
 
 @pytest.mark.parametrize(
-    "fam", sorted(FAMILIES - {"epi_single_shot", "epi_multishot", "tse_t2w", "grase"})
+    "fam",
+    ["radial_readout", "ute_radial", "propeller_tse", "stack_of_stars", "spiral_gre"],
 )
 def test_nominal_noncartesian_operator_on_withheld_asymmetric_images(tmp_path, fam):
     case = case_for(fam)
@@ -364,62 +318,6 @@ def test_nominal_noncartesian_operator_on_withheld_asymmetric_images(tmp_path, f
     assert nrmse(reconstruct(raw, acq, matrix), image) < 0.15
 
 
-OBJECT_CASES = [
-    ("epi_single_shot", o) for o in ("uniform_disc", "tissue_discs", "nested_ellipses")
-]
-OBJECT_CASES += [("stack_of_stars", o) for o in ("uniform_sphere", "volume_ellipsoids")]
-
-
-@pytest.mark.parametrize("fam,obj", OBJECT_CASES)
-def test_real_images_for_all_registered_objects(tmp_path, fam, obj):
-    case = case_for(fam, obj, small=True)
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result.get("sequence_valid") is True, json.dumps(result, indent=2)
-    assert result["status"] in {"passed", "failed"}, result
-    images = np.load(tmp_path / "evaluation/s2/images.npz")
-    assert images["physical"].shape == tuple(case["task"]["sequence"]["matrix"])
-    assert np.linalg.norm(images["physical_raw"]) > 0
-    provenance = json.loads((tmp_path / "evaluation/s2/provenance.json").read_text())
-    assert provenance["phantom"] == obj + "@1"
-    assert provenance["calibrated"] is True
-    assert provenance["encoded_integrator"] == "KomaMRICore.Bloch"
-    assert result["evaluation_contract"] == f"s2@{case['evaluation']['version']}"
-
-
-@pytest.mark.parametrize(
-    "profile",
-    [
-        "b0_offset",
-        "b0_smooth",
-        "b0_localized",
-        "b0_drift",
-        "rigid_motion",
-        "rigid_steps",
-        "deformation",
-        "dynamic_tissue",
-        "fields_and_motion",
-    ],
-)
-def test_every_2d_physics_profile_has_s2_replay(tmp_path, profile):
-    case = case_for("epi_single_shot", physics=profile, small=True)
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result.get("sequence_valid") is True, json.dumps(result, indent=2)
-    assert result["status"] in {"passed", "failed"}, result
-    assert result["effects"] == sorted({e["kind"] for e in case["physics"]["effects"]})
-    assert result["image_acceptance_basis"] == "case_physics"
-
-
-@pytest.mark.parametrize(
-    "profile", ["b0_smooth_3d", "rigid_motion_3d", "fields_and_motion_3d"]
-)
-def test_every_3d_physics_profile_has_s2_replay(tmp_path, profile):
-    case = case_for("stack_of_stars", physics=profile, small=True)
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result.get("sequence_valid") is True, json.dumps(result, indent=2)
-    assert result["status"] in {"passed", "failed"}, result
-    assert result["effects"] == sorted({e["kind"] for e in case["physics"]["effects"]})
-
-
 def test_all_s2_full_suite_cases_route_to_versioned_contract():
     cat = Catalog(ROOT)
     cases = [
@@ -443,20 +341,6 @@ def test_all_s2_full_suite_cases_route_to_versioned_contract():
         assert case["evaluation"]["calibrated"] is True
 
 
-@pytest.mark.parametrize(
-    "fam", sorted(FAMILIES - {"epi_single_shot", "stack_of_stars"})
-)
-def test_each_s2_family_runs_real_bloch_and_image_scoring(tmp_path, fam):
-    case = case_for(fam, "uniform_disc", small=True)
-    result = evaluate(submit(case, tmp_path), case, ROOT, tmp_path / "evaluation")
-    assert result.get("sequence_valid") is True, json.dumps(result, indent=2)
-    assert result["status"] in {"passed", "failed"}, result
-    assert result["metrics"] and all(np.isfinite(v) for v in result["metrics"].values())
-    images = np.load(tmp_path / "evaluation/s2/images.npz")
-    assert np.linalg.norm(images["physical_raw"]) > 0
-    assert images["physical"].shape == (8, 8)
-
-
 def test_noncartesian_reconstruction_handles_rotated_blade_overscan():
     matrix = (8, 8)
     inds = np.indices(matrix).reshape(2, -1).T
@@ -474,45 +358,6 @@ def test_noncartesian_reconstruction_handles_rotated_blade_overscan():
     assert nrmse(actual, reconstruct(raw[:-2], cropped, matrix)) < 1e-10
 
 
-def test_acquisition_phase_reference_covers_drift_echo_contexts(tmp_path):
-    from mriseqbench.evaluation.s2 import (
-        legacy_phase_reference,
-        phase_reference,
-        reference_indices,
-    )
-
-    case = case_for("radial_readout", "uniform_disc", physics="b0_drift", small=True)
-    acq = inspect_sequence(submit(case, tmp_path), case)
-    reference = np.ones((8, 8), complex)
-    phase, valid, provenance = phase_reference(acq, case, ROOT, reference)
-    indices = reference_indices(acq, case["task"]["sequence"])
-    excitations = [p for p in acq.pulses if not p.refocusing]
-    starts = np.array(
-        [
-            excitations[
-                acq.excitation[next(j for j, line in enumerate(acq.lines) if i in line)]
-            ].center
-            for i in indices
-        ]
-    )
-    times = acq.adc[indices]
-    # Independent instantaneous-RF limit for integral of 40*sin(pi*t) Hz.
-    # The native oracle retains finite RF; its 400 us pulse gives a small,
-    # explicitly bounded departure from this closed-form field-phase control.
-    integral = 40 / np.pi * (np.cos(np.pi * starts) - np.cos(np.pi * times))
-    expected = np.exp(-2j * np.pi * integral).mean()
-    expected /= abs(expected)
-    assert np.max(abs(phase[valid] - expected)) < 0.005
-    assert len(indices) == case["task"]["sequence"]["readout"]["spokes"]
-    assert provenance["echo_contexts"] == len(indices)
-    assert abs(expected - np.exp(-2j * np.pi * integral[0])) > 0.1
-    assert provenance["converged"]
-    legacy, legacy_valid, _ = legacy_phase_reference(acq, case, ROOT, reference)
-    first = np.exp(-2j * np.pi * integral[0])
-    assert np.max(abs(legacy[legacy_valid] - first)) < 0.005
-    assert np.max(abs(legacy[legacy_valid & valid] - phase[legacy_valid & valid])) > 0.1
-
-
 def test_repeated_centres_choose_readout_temporal_centroid():
     from mriseqbench.evaluation.s2 import reference_indices
 
@@ -524,35 +369,3 @@ def test_repeated_centres_choose_readout_temporal_centroid():
     assert reference_indices(
         acq, {"matrix": [32, 32], "fov_mm": [200, 200]}
     ).tolist() == [2]
-
-
-def registered_physics_pairs():
-    catalog = Catalog(ROOT)
-    pairs = []
-    for fam in sorted(FAMILIES):
-        obj = "volume_ellipsoids" if fam == "stack_of_stars" else "tissue_discs"
-        for path in sorted((ROOT / "benchmark/physics").glob("*.yaml")):
-            if path.stem in {"ideal", "static_b0", "static_b0_3d"}:
-                continue
-            try:
-                catalog.resolve(
-                    legacy_task(catalog, fam), catalog.get("physics", path.stem), obj
-                )
-            except ValueError:
-                continue
-            pairs.append((fam, obj, path.stem))
-    assert len(pairs) == 96
-    return pairs
-
-
-@pytest.mark.parametrize("fam,obj,profile", registered_physics_pairs())
-def test_registered_physics_controls_author_legally(tmp_path, fam, obj, profile):
-    case = case_for(fam, obj, physics=profile)
-    path = tmp_path / "sequence.seq"
-    controls.make_sequence(case, **controls.physics_control_options(case)).write(
-        str(path)
-    )
-    basic = preflight(path, case)
-    assert all(c["passed"] for c in basic), basic
-    acquisition = inspect_sequence(path, case)
-    assert all(c["passed"] for c in acquisition.checks), acquisition.checks

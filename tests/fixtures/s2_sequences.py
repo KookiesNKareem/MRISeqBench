@@ -15,9 +15,7 @@ def make_sequence(
     epi_spacing=0.0016,
     spiral_power=1.0,
     curved_te=None,
-    rosette_winding=None,
     interleave_partitions=False,
-    exact_rosette_center=False,
     receiver_frequency=0.0,
     cartesian_flat=None,
     grase_offset=0.001,
@@ -36,7 +34,7 @@ def make_sequence(
     centric_tse=False,
 ):
     spec, h = case["task"]["sequence"], case["hardware"]
-    fam = case["task"]["id"].removesuffix("_research")
+    fam = case["task"]["id"]
     n = spec["matrix"][0]
     fov = np.asarray(spec["fov_mm"]) / 1000
     read = spec.get("readout") or {}
@@ -317,9 +315,7 @@ def make_sequence(
                     )
                 if fam == "tse_t2w" and centric_tse:
                     central = min(3, etl - 1)
-                    priority = sorted(
-                        range(etl), key=lambda e: (abs(e - central), -e)
-                    )
+                    priority = sorted(range(etl), key=lambda e: (abs(e - central), -e))
                     ordered = sorted(range(-n // 2, n // 2), key=lambda y: (abs(y), y))
                     bins = {
                         echo_number: sorted(ordered[rank * shots : (rank + 1) * shots])
@@ -402,11 +398,7 @@ def make_sequence(
                 line(0, angle, exc_time + radial_te, z=z)
             finish((spec.get("tr_ms") or {}).get("target", 12) / 1000)
     else:
-        count = (
-            read.get("rings")
-            or read.get("interleaves")
-            or (16 if fam == "concentric_rings" else 4)
-        )
+        count = read.get("interleaves") or 4
         for j in range(count):
             excite(j)
             duration = curved_duration
@@ -416,27 +408,12 @@ def make_sequence(
             angle = j * 2 * np.pi / count
             radius = n / 2 - 0.5
             turns = read.get("turns") or 8
-            lobes = read.get("rosette_lobes") or 8
-            if fam == "spiral_gre":
-                if spiral_power != 1.0:
-                    shift_u = 0.01
-                    u = ((u + shift_u) ** spiral_power - shift_u**spiral_power) / (
-                        (1 + shift_u) ** spiral_power - shift_u**spiral_power
-                    )
-                r, theta = radius * u, 2 * np.pi * turns * u + angle
-            elif fam == "rosette_gre":
-                r, theta = (
-                    radius * np.sin(np.pi * lobes * u),
-                    np.pi
-                    * (lobes + 1 if rosette_winding is None else rosette_winding)
-                    * u
-                    + angle,
+            if spiral_power != 1.0:
+                shift_u = 0.01
+                u = ((u + shift_u) ** spiral_power - shift_u**spiral_power) / (
+                    (1 + shift_u) ** spiral_power - shift_u**spiral_power
                 )
-            else:
-                r, theta = (
-                    np.full_like(u, (j + 0.5) * radius / (count - 0.5)),
-                    2 * np.pi * u,
-                )
+            r, theta = radius * u, 2 * np.pi * turns * u + angle
             xy = np.c_[r * np.cos(theta), r * np.sin(theta)] / fov[:2]
             gradients = np.gradient(xy, dt, axis=0)
             # Explicit gradient ramp boundaries. ADC omits the ramp, and the
@@ -465,19 +442,6 @@ def make_sequence(
             )
             target = np.zeros(3)
             target[:2] = xy[0] - area_before_first
-            # Pin the middle acquired sample to k=0 using authored waveform
-            # integrals. This gives the oscillator an unambiguous echo anchor.
-            if exact_rosette_center and fam == "rosette_gre":
-                mid = len(t) // 2
-                target[:2] = -np.array(
-                    [
-                        np.trapezoid(
-                            np.r_[0, w[: ramp + mid + 1]],
-                            x=np.r_[0, (np.arange(ramp + mid + 1) + 0.5) * dt],
-                        )
-                        for w in waveforms
-                    ]
-                )
             shift(target)
             te = (
                 (spec.get("te_ms") or {}).get("target", 5) / 1000
@@ -489,7 +453,7 @@ def make_sequence(
                 len(t), dwell=dt, delay=ramp * dt, phase_offset=phase, system=system
             )
             if receiver_frequency:
-                anchor = te + (duration / 2 if fam == "rosette_gre" else 0)
+                anchor = te
                 adc.freq_offset = -receiver_frequency
                 adc.phase_offset -= (
                     2
@@ -519,47 +483,11 @@ def physics_control_options(case):
     Quality limits, matrix, FOV and detailed trajectory counts are unchanged.
     These settings are benchmark-owned controls, never participant rewrites.
     """
-    fam = case["task"]["id"].removesuffix("_research")
+    fam = case["task"]["id"]
     options = {
         "epi_single_shot": {"epi_flat": 0.00032, "epi_spacing": 0.00074},
         "epi_multishot": {"epi_flat": 0.00032, "epi_spacing": 0.00084},
         "spiral_gre": {"curved_duration": 0.0054, "spiral_power": 2 / 3},
-        "rosette_gre": {
-            "curved_duration": 0.0048,
-            "curved_te": 0.0015,
-            "rosette_winding": 5.5,
-        },
-        "concentric_rings": {"curved_duration": 0.002, "curved_te": 0.0015},
         "stack_of_stars": {"interleave_partitions": True},
     }.get(fam, {})
-    profile = case["physics"]["id"]
-    draft_quality = case["evaluation"]["version"] >= 3
-    if draft_quality and fam == "epi_single_shot" and profile == "b0_offset":
-        options.update(receiver_frequency=100)
-    elif fam == "epi_single_shot" and profile == "b0_offset":
-        options.update(
-            epi_spacing=0.01, centric_epi=True, receiver_frequency=100, epi_tr=0.4
-        )
-    if fam == "epi_multishot":
-        if profile in {"b0_offset", "b0_localized"}:
-            options.update(
-                epi_spacing=0.00064,
-                echo_time=0.018,
-                overlap_blips=True,
-                continuous_echo_times=True,
-            )
-        if profile == "b0_localized":
-            options.update(receiver_frequency=10)
-        if profile == "b0_drift":
-            options.update(epi_tr=1.0)
-    if fam == "grase" and profile in {"b0_offset", "b0_localized"}:
-        options.update(cartesian_flat=0.00032, grase_offset=0.0004, ref_duration=0.0006)
-    if fam == "spiral_gre" and profile == "b0_offset":
-        options.update(receiver_frequency=100)
-    if fam == "rosette_gre" and profile == "b0_offset":
-        options.update(receiver_frequency=100)
-        if not draft_quality:
-            options.update(curved_duration=0.02, exact_rosette_center=True)
-    if fam == "stack_of_stars" and profile == "b0_drift":
-        options.update(radial_te=0.0015)
     return options

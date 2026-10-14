@@ -179,7 +179,9 @@ class FeedbackServer:
             log.write(json.dumps(value, allow_nan=False) + "\n")
 
     def handle(self, kind, token, body):
-        if not hmac.compare_digest(token.encode(), self.token.encode()):
+        if not isinstance(token, str) or not hmac.compare_digest(
+            token.encode(), self.token.encode()
+        ):
             return 403, {"status": "forbidden", "reason": "unknown run token"}
         if not body or len(body) > self.config.max_submission_bytes:
             return 400, {

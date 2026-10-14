@@ -17,7 +17,6 @@ def case_for(hardware="high_performance"):
     catalog = Catalog(ROOT)
     return catalog.resolve(
         catalog.get("tasks", "pulseq_smoke"),
-        catalog.get("physics", "ideal"),
         hardware_ref=hardware,
     )
 
@@ -119,9 +118,7 @@ def test_real_feedback_worker_excludes_sar_and_submit_shows_no_verdict(tmp_path)
 def test_sar_failure_precedes_missing_physical_backend(tmp_path):
     path, _ = high_duty_submission(tmp_path)
     catalog = Catalog(ROOT)
-    case = catalog.resolve(
-        catalog.get("tasks", "gre_t1w"), catalog.get("physics", "ideal")
-    )
+    case = catalog.resolve(catalog.get("tasks", "gre_t1w"))
     result = evaluate(path, case, ROOT, tmp_path / "judge")
     assert result["status"] == "failed"
     assert any(c["name"] == "sar_360s" and not c["passed"] for c in result["checks"])

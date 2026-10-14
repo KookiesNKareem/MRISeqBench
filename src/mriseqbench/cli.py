@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -190,8 +191,14 @@ def main(argv=None):
         if args.command == "materialize":
             from .phantoms import materialize
 
-            if not 0 <= args.seed < 2**32 or args.timeout_s <= 0:
-                raise ValueError("seed must be uint32 and timeout must be positive")
+            if (
+                not 0 <= args.seed < 2**32
+                or not math.isfinite(args.timeout_s)
+                or args.timeout_s <= 0
+            ):
+                raise ValueError(
+                    "seed must be uint32 and timeout must be finite and positive"
+                )
             case = catalog.find_case(args.case)
             case["seed"] = args.seed
             materialize(case, catalog.root, args.out, args.timeout_s)

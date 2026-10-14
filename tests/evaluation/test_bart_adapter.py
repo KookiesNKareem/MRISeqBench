@@ -28,13 +28,24 @@ def test_explicit_missing_bart_fails_closed(monkeypatch, tmp_path):
         bart.fft(np.ones((4, 4)), inverse=True, axes=(0, 1))
 
 
+def test_unqualified_bart_version_is_rejected_before_reconstruction(
+    monkeypatch, tmp_path
+):
+    binary = tmp_path / "bart"
+    binary.write_text("#!/bin/sh\nprintf 'v0.9.00\\n'\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv("MRISEQBENCH_BART", str(binary))
+    with pytest.raises(RuntimeError, match="v1.0.00 is required.*v0.9.00"):
+        bart.fft(np.ones((4, 4)), inverse=True, axes=(0, 1))
+
+
 def test_named_bart_command_runs_actual_binary_and_records_identity():
     value = np.arange(24).reshape(3, 4, 1, 2) * (1 - 1j)
     result = bart.run(["scale", "2", "{data}", "{out}"], {"data": value})
     assert np.array_equal(result, 2 * value)
     provenance = bart.provenance()
     assert provenance["engine"] == "BART"
-    assert provenance["version"]
+    assert provenance["version"] == bart.QUALIFIED_VERSION
     assert len(provenance["binary_sha256"]) == 64
     assert any(
         item["argv"] == ["scale", "2", "{data}", "{out}"] and item["calls"] >= 1

@@ -11,18 +11,14 @@ Identifier = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")]
 Reference = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*@[1-9][0-9]*$")]
 # Capabilities grouped by sequence programming layer.
 SEQUENCE_CATEGORIES = {
-    "S1": ("gre", "spoiled_gre", "spin_echo", "bssfp", "cartesian"),
+    "S1": ("spoiled_gre", "spin_echo", "bssfp", "cartesian"),
     "S2": (
         "spiral",
-        "rosette",
-        "concentric_rings",
         "radial",
         "stack_of_stars",
         "propeller",
         "ute",
-        "zte",
         "epi",
-        "single_shot",
         "multi_shot",
         "tse",
         "rare",
@@ -33,38 +29,21 @@ SEQUENCE_CATEGORIES = {
         "grappa",
         "sense",
         "caipirinha",
-        "wave_caipi",
-        "sms",
         "compressed_sensing",
         "variable_density",
         "poisson_disc",
         "partial_fourier",
-        "asymmetric_echo",
         "reduced_fov",
         "elliptical_kspace",
     ),
     "S4": (
-        "tailored_rf",
-        "cest",
-        "tone",
         "adiabatic",
-        "spectral_spatial",
-        "ptx",
         "inversion",
         "t2_preparation",
-        "magnetization_transfer",
-        "diffusion",
-        "asl",
-        "fat_saturation",
-        "multi_echo",
         "multi_contrast",
-        "mpm",
-        "mrf",
         "mapping",
         "triggering",
         "gating",
-        "navigator",
-        "motion_correction",
     ),
 }
 Capability = Literal[
@@ -246,13 +225,13 @@ class Task(Document):
     version: Annotated[int, Field(gt=0)] = 1
     objective: Annotated[str, Field(min_length=1)]
     sequence: SequenceSpec
-    prompt_mode: Literal["detailed", "research"] = "detailed"
+    prompt_mode: Literal["detailed"] = "detailed"
     identity_requirements: list[Annotated[str, Field(min_length=1)]] = Field(
-        default_factory=list
+        default_factory=list, max_length=0
     )
     object: Reference = "cardiac_2d@1"
     hardware: Reference = "high_performance@1"
-    evaluation: Reference = "image_fidelity@1"
+    evaluation: Reference
     submission: Submission = Field(default_factory=Submission)
 
     @model_validator(mode="after")
@@ -262,47 +241,19 @@ class Task(Document):
                 raise ValueError(
                     "S4 cardiac applications require triggering and gating capabilities"
                 )
-            if self.prompt_mode == "detailed" and (
+            if (
                 self.sequence.temporal is None
                 or self.sequence.temporal.trigger_source != "ecg"
             ):
                 raise ValueError(
                     "detailed S4 cardiac applications require an ECG timing contract"
                 )
-            if (
-                self.prompt_mode == "detailed"
-                and {"inversion", "t2_preparation"} & set(self.sequence.capabilities)
-                and (
-                    "bssfp" not in self.sequence.capabilities
-                    or "spoiled_gre" in self.sequence.capabilities
-                )
+            if {"inversion", "t2_preparation"} & set(self.sequence.capabilities) and (
+                "bssfp" not in self.sequence.capabilities
+                or "spoiled_gre" in self.sequence.capabilities
             ):
                 raise ValueError(
                     "detailed S4 magnetization preparations require bSSFP readouts"
-                )
-        return self
-
-    @model_validator(mode="after")
-    def research_contract(self):
-        if self.prompt_mode == "research":
-            if not self.identity_requirements:
-                raise ValueError(
-                    "research tasks require sequence identity requirements"
-                )
-            if any(
-                getattr(self.sequence, field) is not None
-                for field in (
-                    "te_ms",
-                    "tr_ms",
-                    "flip_angle_deg",
-                    "readout",
-                    "sampling",
-                    "temporal",
-                    "application",
-                )
-            ):
-                raise ValueError(
-                    "research tasks cannot impose hidden numerical design targets"
                 )
         return self
 

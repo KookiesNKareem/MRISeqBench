@@ -1,6 +1,5 @@
-"""Draft S2 quality targets and receiver-invariant mechanism checks."""
+"""Independent clean targets and receiver-invariant mechanism checks."""
 
-import copy
 import importlib.util
 from pathlib import Path
 
@@ -24,7 +23,7 @@ controls = importlib.util.module_from_spec(loader)
 loader.loader.exec_module(controls)
 
 
-def case_for(profile="ideal", obj="uniform_disc", version=3):
+def case_for(profile="ideal", obj="uniform_disc"):
     catalog = Catalog(ROOT)
     case = resolve_legacy_case(catalog, "epi_single_shot", profile, obj)
     # Isolated analytic regression: qualify the fixture policy, not active cardiac cases.
@@ -33,16 +32,14 @@ def case_for(profile="ideal", obj="uniform_disc", version=3):
     ).model_dump(mode="json")
     case["image_policy"] = case["object_level"]
     case["task"]["sequence"]["matrix"] = [8, 8]
-    case["evaluation"].update(
-        version=version, spatial_samples=4096, spatial_replicates=4
-    )
+    case["evaluation"].update(version=3, spatial_samples=4096, spatial_replicates=4)
     return case
 
 
 def test_clean_target_does_not_absorb_echo_train_modulation(tmp_path):
     case = case_for()
     properties = phantom(case, ROOT, 4).properties
-    clean, conditioned = [], []
+    clean = []
     for spacing in (0.00074, 0.0016):
         path = tmp_path / f"epi-{spacing}.seq"
         controls.make_sequence(case, epi_flat=0.00032, epi_spacing=spacing).write(
@@ -52,14 +49,7 @@ def test_clean_target_does_not_absorb_echo_train_modulation(tmp_path):
         response = canonical_response(acq, properties, "epi_single_shot")
         raw = analytic_reference(acq, case, ROOT, response)
         clean.append(reference_image(acq, case, ROOT, response, raw))
-        historical = copy.deepcopy(case)
-        historical["evaluation"]["version"] = 2
-        conditioned.append(reference_image(acq, historical, ROOT, response, raw))
     assert np.linalg.norm(clean[0] - clean[1]) / np.linalg.norm(clean[0]) < 1e-9
-    assert (
-        np.linalg.norm(conditioned[0] - conditioned[1]) / np.linalg.norm(conditioned[0])
-        > 1e-4
-    )
 
 
 @pytest.mark.parametrize("rotation", [False, True])
@@ -79,14 +69,3 @@ def test_receiver_tuning_preserves_spoiling_but_not_image_rotation(tmp_path, rot
     assert result["status"] == ("failed" if rotation else "passed")
     if rotation:
         assert any(not c["passed"] for c in result["case_image_checks"])
-
-
-def test_s2_at_2_keeps_historical_receiver_probe(tmp_path):
-    case = case_for("b0_offset", "tissue_discs", version=2)
-    path = tmp_path / "sequence.seq"
-    controls.make_sequence(
-        case, epi_flat=0.00032, epi_spacing=0.00074, receiver_frequency=100
-    ).write(str(path))
-    result = evaluate(path, case, ROOT, tmp_path / "evaluation")
-    assert result["status"] == "failed"
-    assert not next(c for c in result["checks"] if c["name"] == "spoiled_gre")["passed"]

@@ -16,13 +16,13 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from mriseqbench.catalog import Catalog, load_yaml
+from mriseqbench.catalog import Catalog
 from mriseqbench.cli import main
 from mriseqbench.harness import arm_gateway, arm_runtime
 from mriseqbench.harness.arm_mailbox import Mailbox, read_request
 from mriseqbench.harness.prepare import prepare
 from mriseqbench.harness.runner import run, run_one
-from mriseqbench.models import Arm, Experiment, Task
+from mriseqbench.models import Arm, Experiment
 
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "sha256:" + "a" * 64
@@ -120,12 +120,8 @@ def test_every_arm_prompt_reports_actual_access_and_never_claims_internet(
 ):
     catalog = Catalog(ROOT)
     case = catalog.resolve(
-        Task.model_validate(
-            load_yaml(
-                ROOT / "tests/fixtures/legacy_research_tasks/gre_t1w_research.yaml"
-            )
-        ),
-        catalog.get("physics", "ideal"),
+        catalog.get("tasks", "gre_t1w"),
+        catalog.get("physics", "static_b0"),
     )
     prepare(
         tmp_path,
@@ -237,12 +233,8 @@ def test_unknown_docker_image_id_rejected(monkeypatch):
 def test_runner_enforces_every_arm_and_keeps_judge_separate(monkeypatch, tmp_path, arm):
     catalog = Catalog(ROOT)
     case = catalog.resolve(
-        Task.model_validate(
-            load_yaml(
-                ROOT / "tests/fixtures/legacy_research_tasks/gre_t1w_research.yaml"
-            )
-        ),
-        catalog.get("physics", "ideal"),
+        catalog.get("tasks", "gre_t1w"),
+        catalog.get("physics", "static_b0"),
     )
     experiment = configured(arm)
     observed = []
@@ -266,7 +258,7 @@ def test_runner_enforces_every_arm_and_keeps_judge_separate(monkeypatch, tmp_pat
     assert report["arm"] == experiment.arm
     assert report["simulator"] == arm.simulator
     assert report["web_access"] is False
-    assert report["prompt_mode"] == "research"
+    assert report["prompt_mode"] == "detailed"
     assert observed[0][1]["PIP_NO_INDEX"] == "1"
     assert process_env == [None]  # The host Docker client retains its daemon context.
     assert str(ROOT / ".venv") not in observed[0][1]["PATH"]

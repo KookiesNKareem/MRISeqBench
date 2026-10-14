@@ -178,6 +178,17 @@ def completed_evidence(report):
     )
 
 
+def result_artifacts(report):
+    """S4 keeps each cardiac image's artifacts in its frame result."""
+    artifacts = dict(report.get("artifacts", {}))
+    for number, frame in enumerate(report.get("frames", [])):
+        artifacts.update(
+            (f"frame_{number}/{name}", path)
+            for name, path in frame.get("artifacts", {}).items()
+        )
+    return artifacts
+
+
 def finalize_evaluation(report, workspace, store=None):
     """Seal complete evidence, deduplicate images, then archive restart caches.
 
@@ -187,20 +198,29 @@ def finalize_evaluation(report, workspace, store=None):
     workspace = Path(workspace).resolve()
     if not completed_evidence(report):
         return None
-    artifacts = report.get("artifacts", {})
-    if "images" not in artifacts:
+    artifacts = result_artifacts(report)
+    image_names = [name for name in artifacts if name.rsplit("/", 1)[-1] == "images"]
+    if not image_names:
         return None
     if any(Path(path).is_symlink() for path in artifacts.values()):
         raise ValueError("Cannot seal symlink artifacts")
     paths = {name: Path(path).resolve() for name, path in artifacts.items()}
     if any(not path.is_relative_to(workspace) for path in paths.values()):
         return None  # Reused attempt results belong to their original workspace.
+    caches = {paths[name].parent / "replays" for name in image_names}
+    if encoded := report.get("encoded_replay_cache", {}).get("directory"):
+        cache = Path(encoded).resolve()
+        if not cache.is_relative_to(workspace) or Path(encoded).is_symlink():
+            raise ValueError("Encoded replay cache escapes evaluation workspace")
+        caches.add(cache)
     store = ArtifactStore(store or store_directory(workspace))
     receipt_path = workspace / "storage-finalization.json"
     with store.locked():
         hashes = {name: sha256(path) for name, path in paths.items()}
         if receipt_path.exists():
             receipt = json.loads(receipt_path.read_text())
+            if receipt["sealed_result"] != report:
+                raise ValueError(f"Sealed result changed: {receipt_path}")
             if receipt["artifact_sha256"] != hashes:
                 raise ValueError(f"Sealed evidence changed: {receipt_path}")
             for record in receipt["checkpoints"]:
@@ -212,11 +232,16 @@ def finalize_evaluation(report, workspace, store=None):
                 "artifact_sha256": hashes,
                 "checkpoints": [],
             }
-        receipt["images"] = store.deduplicate(paths["images"])
-        cache = paths["images"].parent / "replays"
+        images = {name: store.deduplicate(paths[name]) for name in image_names}
+        if "images" in images:
+            receipt["images"] = images["images"]
+        if len(images) > 1 or "images" not in images:
+            receipt["image_bundles"] = images
         known = {row["path"]: row for row in receipt["checkpoints"]}
         pending = []
-        if cache.is_dir() and not cache.is_symlink():
+        for cache in sorted(caches):
+            if not cache.is_dir() or cache.is_symlink():
+                continue
             for path in sorted(cache.glob("*.npy")):
                 if path.is_symlink():
                     raise ValueError(f"Symlink checkpoint: {path}")
@@ -313,9 +338,10 @@ def verify_migration(directory):
                     archives.setdefault(rel, row)
     verified_archives = set()
     for archive in archives.values():
-        if archive["blob"] not in verified_archives:
+        identity = (archive["blob"], archive["sha256"], archive["bytes"])
+        if identity not in verified_archives:
             verify_checkpoint(archive)
-            verified_archives.add(archive["blob"])
+            verified_archives.add(identity)
     for rel, record in manifest["files"].items():
         path = root / rel
         if "symlink" in record:
@@ -327,6 +353,8 @@ def verify_migration(directory):
                 or sha256(path) != record["sha256"]
             ):
                 raise ValueError(f"Changed evidence: {path}")
+        elif path.exists() or path.is_symlink():
+            raise ValueError(f"Changed evidence type: {path}")
         elif rel in archives:
             archive = archives[rel]
             if any(archive[key] != record[key] for key in ("sha256", "bytes")):
@@ -370,9 +398,10 @@ def migrate_runs(root, *, exclude=()):
         if isinstance(report, dict) and completed_evidence(report):
             completed[rel] = report
     eligible_images = {
-        Path(report["artifacts"]["images"]).resolve()
+        Path(path).resolve()
         for report in completed.values()
-        if "images" in report.get("artifacts", {})
+        for name, path in result_artifacts(report).items()
+        if name.rsplit("/", 1)[-1] == "images"
     }
     images = []
     with store.locked():

@@ -8,6 +8,7 @@ import pytest
 
 from mriseqbench.catalog import Catalog
 from tests.fixtures.audit_cardiac_qualification import (
+    REQUIRED_SCIENTIFIC_SOURCES,
     ROOT,
     audit,
     contract,
@@ -21,6 +22,21 @@ from tests.fixtures.audit_cardiac_qualification import (
     verified,
     verify_receiver_negative,
 )
+
+
+def frozen_sources(campaign, name="source_manifest.json"):
+    source = campaign / "source"
+    for relative in REQUIRED_SCIENTIFIC_SOURCES:
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("synthetic frozen scientific source")
+    declared = {
+        str(path.relative_to(source)): sha(path)
+        for path in source.rglob("*")
+        if path.is_file()
+    }
+    (campaign / name).write_text(json.dumps(declared))
+    return declared
 
 
 @pytest.fixture
@@ -72,7 +88,7 @@ def test_native_positive_rejects_changed_or_unrelated_artifact(
 def test_source_manifest_is_contained_and_has_no_aliases(tmp_path, corruption):
     campaign = tmp_path / "campaign"
     source = campaign / "source"
-    source.mkdir(parents=True)
+    declared = frozen_sources(campaign, "source-hashes.json")
     original = source / "source.py"
     original.write_text("synthetic frozen source")
     relative, digest = "source.py", sha(original)
@@ -84,7 +100,8 @@ def test_source_manifest_is_contained_and_has_no_aliases(tmp_path, corruption):
     elif corruption == "symlink":
         (source / "alias.py").symlink_to(original)
         relative = "alias.py"
-    (campaign / "source-hashes.json").write_text(json.dumps({relative: digest}))
+    declared[relative] = digest
+    (campaign / "source-hashes.json").write_text(json.dumps(declared))
     if corruption is None:
         assert source_manifest(campaign)["sha256"] == sha(
             campaign / "source-hashes.json"
@@ -102,8 +119,7 @@ def test_incomplete_failed_s4_payload_cannot_count_as_a_negative(tmp_path):
         campaign / "cases/adiabatic_inversion--high_performance--missing_trigger"
     )
     directory.mkdir(parents=True)
-    (campaign / "source").mkdir()
-    (campaign / "source_manifest.json").write_text("{}")
+    frozen_sources(campaign)
     (directory / "case.json").write_text(json.dumps(case))
     (directory / "sequence.seq").write_text("synthetic exported sequence")
     report = {
@@ -376,3 +392,19 @@ def test_failed_fresh_native_crosscheck_cannot_be_ignored(receiver_fixture):
     row["fresh_native_crosscheck"] = {"passed": False, "raw_relative_error": 0.01}
     with pytest.raises(ValueError, match="Failed fresh native"):
         verify_receiver_negative(directory, row, positive)
+
+
+@pytest.mark.parametrize("corruption", ["empty", "omitted", "removed_core"])
+def test_source_manifest_requires_complete_scientific_closure(tmp_path, corruption):
+    declared = frozen_sources(tmp_path)
+    if corruption == "empty":
+        declared = {}
+    elif corruption == "omitted":
+        (tmp_path / "source/unlisted.py").write_text("unlisted scientific code")
+    else:
+        relative = "src/mriseqbench/evaluation/s1_koma.jl"
+        declared.pop(relative)
+        (tmp_path / "source" / relative).unlink()
+    (tmp_path / "source_manifest.json").write_text(json.dumps(declared))
+    with pytest.raises(ValueError, match="Incomplete scientific source manifest"):
+        source_manifest(tmp_path)

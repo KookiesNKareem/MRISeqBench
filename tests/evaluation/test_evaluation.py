@@ -54,7 +54,6 @@ def test_selected_hardware_enforces_real_gradient_limit(tmp_path):
     for hardware, passes in [("high_performance@1", True), ("low_field@1", False)]:
         case = catalog.resolve(
             catalog.get("tasks", "gre_t1w"),
-            catalog.get("physics", "ideal"),
             hardware_ref=hardware,
         )
         checks = preflight(path, case)
@@ -83,7 +82,7 @@ def fake_backend(case, **changes):
     if case["evaluation"]["reconstruction"].startswith("bart_"):
         result["reconstruction_provenance"] = {
             "engine": "BART",
-            "version": "contract-fixture-only",
+            "version": "v1.0.00",
             "binary_sha256": "a" * 64,
             "source_commit": None,
             "commands": [{"argv": ["fft", "-i", "3", "input", "output"], "calls": 1}],
@@ -279,15 +278,13 @@ def test_invalid_and_missing_submissions(tmp_path):
     )
 
 
-@pytest.mark.parametrize("level", ["P2", "P3"])
+@pytest.mark.parametrize("level", ["P2"])
 @pytest.mark.parametrize("case_error", [0.1, 0.9, None])
 def test_external_s1_backend_must_supply_case_metrics(
     submission, tmp_path, level, case_error
 ):
     catalog = Catalog(ROOT)
-    case = resolve_legacy_case(
-        catalog, "gre_t1w", physics="b0_offset" if level == "P2" else "b0_drift"
-    )
+    case = resolve_legacy_case(catalog, "gre_t1w", physics="b0_offset")
     metrics = {"ideal_complex_image_nrmse": 0.9}
     if case_error is not None:
         metrics.update(
@@ -327,52 +324,3 @@ def test_raster_header_cannot_relax_hardware(submission, tmp_path):
     assert path.read_text() != submission.read_text()
     result = evaluate(path, gre_case(), ROOT, tmp_path / "evaluation")
     assert result["status"] == "failed"
-
-
-def test_research_requires_identity_and_suitable_parameters_not_reference_timing(
-    submission, tmp_path
-):
-    catalog = Catalog(ROOT)
-    case = resolve_legacy_case(catalog, "gre_t1w_research")
-    requirements = {
-        k: True
-        for k in (
-            "spoiled_gre",
-            "cartesian",
-            "matrix",
-            "fov_mm",
-            "sequence_identity",
-            "reasonable_parameters",
-        )
-    }
-    # These are backend-contract fixtures, not evidence of physical sequence correctness.
-    assert (
-        evaluate(
-            submission,
-            case,
-            ROOT,
-            tmp_path / "valid",
-            fake_backend(case, requirements=requirements),
-        )["status"]
-        == "passed"
-    )
-    requirements["sequence_identity"] = False
-    assert (
-        evaluate(
-            submission,
-            case,
-            ROOT,
-            tmp_path / "wrong_identity",
-            fake_backend(case, requirements=requirements),
-        )["status"]
-        == "failed"
-    )
-    requirements.pop("sequence_identity")
-    with pytest.raises(RuntimeError, match="backend omitted requirements"):
-        evaluate(
-            submission,
-            case,
-            ROOT,
-            tmp_path / "omitted",
-            fake_backend(case, requirements=requirements),
-        )

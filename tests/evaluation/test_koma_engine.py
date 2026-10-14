@@ -12,7 +12,6 @@ from pypulseq import (
     make_block_pulse,
     make_delay,
 )
-from scipy.integrate import solve_ivp
 from scipy.linalg import expm
 
 from mriseqbench.catalog import Catalog
@@ -41,7 +40,7 @@ def probe(tmp_path, field=3.0, ppm=False, flip=45):
     path = tmp_path / "probe.seq"
     seq.write(str(path))
     cat = Catalog(ROOT)
-    case = cat.resolve(cat.get("tasks", "gre_t1w"), cat.get("physics", "ideal"))
+    case = cat.resolve(cat.get("tasks", "gre_t1w"))
     case["hardware"]["field_strength_T"] = field
     acq = inspect_sequence(path, case)
     spins = Spins(
@@ -56,12 +55,18 @@ def probe(tmp_path, field=3.0, ppm=False, flip=45):
     return acq, spins
 
 
-def test_pinned_koma_and_mrireco_versions_are_reported():
+def test_pinned_koma_and_bart_versions_are_reported():
     actual = versions()
     assert actual["KomaMRICore"] == "0.11.2"
     assert actual["KomaMRIBase"] == "0.11.3"
     assert actual["KomaMRIFiles"] == "0.10.3"
-    assert actual["MRIReco"] == "0.9.2"
+    from mriseqbench.evaluation.bart import provenance
+
+    assert "MRIReco" not in actual
+    identity = provenance()
+    assert identity["engine"] == "BART"
+    assert "v1.0.00" in identity["version"]
+    assert len(identity["binary_sha256"]) == 64
 
 
 def test_nominal_rf_reference_ignores_pulses_after_final_adc(tmp_path):
@@ -104,7 +109,7 @@ def test_rf_train_has_no_endpoint_tail_across_long_delays(
     path = tmp_path / "rf-train.seq"
     seq.write(str(path))
     cat = Catalog(ROOT)
-    case = cat.resolve(cat.get("tasks", "gre_t1w"), cat.get("physics", "ideal"))
+    case = cat.resolve(cat.get("tasks", "gre_t1w"))
     acq = inspect_sequence(path, case)
     spins = Spins(
         np.zeros((1, 3)),
@@ -162,74 +167,6 @@ def test_rf_train_has_no_endpoint_tail_across_long_delays(
     assert nrmse(actual, expected) < 2e-5
 
 
-def test_time_varying_field_refines_across_rf_free_delay(tmp_path):
-    system = Opts(rf_dead_time=0, rf_ringdown_time=0, adc_dead_time=0)
-    seq = Sequence(system)
-    seq.add_block(
-        make_block_pulse(np.pi / 2, duration=0.001, system=system, use="excitation")
-    )
-    seq.add_block(make_delay(0.5))
-    seq.add_block(make_adc(8, dwell=2e-6, system=system), make_delay(20e-6))
-    path = tmp_path / "dynamic-delay.seq"
-    seq.write(str(path))
-    cat = Catalog(ROOT)
-    case = cat.resolve(cat.get("tasks", "gre_t1w"), cat.get("physics", "ideal"))
-    acq = inspect_sequence(path, case)
-    spins = Spins(
-        np.zeros((1, 3)),
-        np.zeros(1, dtype=np.int64),
-        ["water"],
-        np.array([[1.0, 3.0, 2.0]]),
-        1.0,
-        (1,),
-        "exact-dynamic-delay",
-    )
-    amplitude, period = 30.0, 0.4
-    angular = 2 * np.pi / period
-    pulse = acq.pulses[0]
-    wx = 2 * np.pi * pulse.signal[0].real
-
-    def ode(t, state):
-        x, y, z = state
-        wz = 2 * np.pi * amplitude * np.sin(angular * t)
-        return [-x / 2 + wz * y, -wz * x - y / 2 + wx * z, -wx * y + (1 - z) / 3]
-
-    solution = solve_ivp(
-        ode, (pulse.start, pulse.end), [0, 0, 1], rtol=1e-12, atol=1e-14
-    )
-    assert solution.success
-    x, y, _z = solution.y[:, -1]
-    field_area = (
-        amplitude / angular * (np.cos(angular * pulse.end) - np.cos(angular * acq.adc))
-    )
-    expected = (x + 1j * y) * np.exp(
-        -(acq.adc - pulse.end) / 2 - 2j * np.pi * field_area
-    )
-    effects = [
-        {
-            "kind": "time_variation",
-            "model": "sinusoidal",
-            "target": "b0_offset",
-            "amplitude_hz": amplitude,
-            "period_s": period,
-            "phase_deg": 0.0,
-        }
-    ]
-    errors = []
-    for step in [0.001, 0.0005]:
-        actual = simulate(
-            acq,
-            spins,
-            effects,
-            step_s=step,
-            rf_step_s=step / 50,
-            integration_method="magnus4",
-        )
-        errors.append(nrmse(actual, expected))
-    assert errors[0] < 2e-4
-    assert errors[1] < errors[0] / 2
-
-
 @pytest.mark.parametrize("integration_method", ["bloch", "magnus4"])
 def test_oscillating_rf_envelope_cannot_alias_both_temporal_steps(
     tmp_path, integration_method
@@ -249,7 +186,7 @@ def test_oscillating_rf_envelope_cannot_alias_both_temporal_steps(
     path = tmp_path / "oscillating-rf.seq"
     seq.write(str(path))
     cat = Catalog(ROOT)
-    case = cat.resolve(cat.get("tasks", "gre_t1w"), cat.get("physics", "ideal"))
+    case = cat.resolve(cat.get("tasks", "gre_t1w"))
     acq = inspect_sequence(path, case)
     spins = Spins(
         np.zeros((1, 3)),
@@ -334,7 +271,7 @@ def test_selected_adc_sample_preserves_fractional_microsecond_timing(tmp_path):
             seq.set_block(number, adc, make_delay(220e-6))
     seq.write(acq.source_path)
     cat = Catalog(ROOT)
-    case = cat.resolve(cat.get("tasks", "gre_t1w"), cat.get("physics", "ideal"))
+    case = cat.resolve(cat.get("tasks", "gre_t1w"))
     acq = inspect_sequence(acq.source_path, case)
     full = simulate(acq, spins)
     selected = copy(acq)

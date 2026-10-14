@@ -82,7 +82,6 @@ def run_one(
             if experiment.api_proxy
             else None
         )
-        web_access = case["task"].get("prompt_mode") == "research" and arm is None
         prompt_path, case_path, submission = prepare(
             agent_dir, case, experiment, server, phantom_dir, arm=arm
         )
@@ -107,9 +106,7 @@ def run_one(
             experiment.agent, catalog.root, agent_dir, **values
         )
         if experiment.agent.adapter == "pi":
-            env.update(
-                prepare_pi(agent_dir, values["api_base_url"], offline=not web_access)
-            )
+            env.update(prepare_pi(agent_dir, values["api_base_url"]))
             env["OPENROUTER_API_KEY"] = proxy.token
         if not arm:
             env["PATH"] = str(Path(command[0]).parent) + ":" + env["PATH"]
@@ -142,7 +139,6 @@ def run_one(
                 agent_dir,
                 workspace / "control",
                 ports,
-                internet=web_access,
             )
         )
         with launcher as (isolated_command, isolation):
@@ -204,8 +200,8 @@ def run_one(
         report.update(
             repeat=repeat,
             prompt_mode=case["task"].get("prompt_mode", "detailed"),
-            web_access=web_access,
-            task_family=case["task"]["id"].removesuffix("_research"),
+            web_access=False,
+            task_family=case["task"]["id"],
             agent=execution,
             isolation=isolation,
             feedback=server.stats(),

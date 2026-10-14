@@ -437,21 +437,16 @@
         "capabilities": {
           "items": {
             "enum": [
-              "gre",
               "spoiled_gre",
               "spin_echo",
               "bssfp",
               "cartesian",
               "spiral",
-              "rosette",
-              "concentric_rings",
               "radial",
               "stack_of_stars",
               "propeller",
               "ute",
-              "zte",
               "epi",
-              "single_shot",
               "multi_shot",
               "tse",
               "rare",
@@ -460,36 +455,19 @@
               "grappa",
               "sense",
               "caipirinha",
-              "wave_caipi",
-              "sms",
               "compressed_sensing",
               "variable_density",
               "poisson_disc",
               "partial_fourier",
-              "asymmetric_echo",
               "reduced_fov",
               "elliptical_kspace",
-              "tailored_rf",
-              "cest",
-              "tone",
               "adiabatic",
-              "spectral_spatial",
-              "ptx",
               "inversion",
               "t2_preparation",
-              "magnetization_transfer",
-              "diffusion",
-              "asl",
-              "fat_saturation",
-              "multi_echo",
               "multi_contrast",
-              "mpm",
-              "mrf",
               "mapping",
               "triggering",
-              "gating",
-              "navigator",
-              "motion_correction"
+              "gating"
             ],
             "type": "string"
           },
@@ -875,11 +853,8 @@
       "$ref": "#/$defs/SequenceSpec"
     },
     "prompt_mode": {
+      "const": "detailed",
       "default": "detailed",
-      "enum": [
-        "detailed",
-        "research"
-      ],
       "title": "Prompt Mode",
       "type": "string"
     },
@@ -888,6 +863,7 @@
         "minLength": 1,
         "type": "string"
       },
+      "maxItems": 0,
       "title": "Identity Requirements",
       "type": "array"
     },
@@ -904,7 +880,6 @@
       "type": "string"
     },
     "evaluation": {
-      "default": "image_fidelity@1",
       "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
       "title": "Evaluation",
       "type": "string"
@@ -916,7 +891,8 @@
   "required": [
     "id",
     "objective",
-    "sequence"
+    "sequence",
+    "evaluation"
   ],
   "title": "Task",
   "type": "object"

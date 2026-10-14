@@ -1,4 +1,4 @@
-"""Independent finite-RF controls that activate every registered physics profile."""
+"""Independent finite-RF/gradient oracle for the two active static B0 profiles."""
 
 from itertools import pairwise
 from pathlib import Path
@@ -14,7 +14,6 @@ from pypulseq import (
     make_trapezoid,
 )
 from scipy.integrate import quad, solve_ivp
-from scipy.spatial.transform import Rotation
 
 from mriseqbench.catalog import Catalog
 from mriseqbench.evaluation.s1_koma import simulate
@@ -23,7 +22,7 @@ from mriseqbench.evaluation.s1_sequence import inspect_sequence
 from tests.fixtures.legacy_catalog import resolve_legacy_case
 
 ROOT = Path(__file__).resolve().parents[2]
-PROFILES = sorted(p.stem for p in (ROOT / "benchmark/physics").glob("*.yaml"))
+PROFILES = ["static_b0", "static_b0_3d"]
 
 
 def pad(values):
@@ -31,57 +30,12 @@ def pad(values):
 
 
 def physical_state(t, point, material, effects):
-    """Definitions evaluated independently of the judge's environment adapters."""
-    moved = point.copy()
-    for effect in effects:
-        if effect["kind"] != "motion":
-            continue
-        model = effect["model"]
-        if model == "rigid_keyframes":
-            pose = next(p for p in reversed(effect["poses"]) if p["time_s"] <= t)
-            moved = Rotation.from_euler(
-                "xyz", pose["rotation_xyz_deg"], degrees=True
-            ).apply(point)
-            moved += pad(pose["translation_mm"]) / 1000
-        else:
-            sine = np.sin(
-                2 * np.pi * t / effect["period_s"]
-                + np.deg2rad(effect.get("phase_deg", 0))
-            )
-            if model == "affine_sinusoidal":
-                moved = point * (1 + pad(effect["strain_amplitude"]) * sine)
-            else:
-                moved = Rotation.from_euler(
-                    "z", effect["rotation_amplitude_deg"] * sine, degrees=True
-                ).apply(point)
-                moved += pad(effect["translation_amplitude_mm"]) * sine / 1000
-    field, density = 0.0, 1.0
-    for effect in effects:
-        if effect["kind"] == "b0":
-            field += effect.get("offset_hz", 0)
-            if effect["model"] == "linear":
-                field += pad(effect["gradient_hz_per_m"]) @ moved
-            elif effect["model"] == "gaussian":
-                sigma = np.r_[
-                    np.asarray(effect["sigma_mm"]) / 1000,
-                    np.ones(3 - len(effect["sigma_mm"])),
-                ]
-                field += effect["amplitude_hz"] * np.exp(
-                    -0.5
-                    * np.sum(((moved - pad(effect["center_mm"]) / 1000) / sigma) ** 2)
-                )
-        elif effect["kind"] == "time_variation":
-            sine = np.sin(
-                2 * np.pi * t / effect["period_s"]
-                + np.deg2rad(effect.get("phase_deg", 0))
-            )
-            if effect["target"] == "b0_offset":
-                field += effect["amplitude_hz"] * sine
-            elif (
-                effect["target"] == "proton_density" and material == effect["material"]
-            ):
-                density *= 1 + effect["amplitude_scale"] * sine
-    return moved, field, density
+    # Independently evaluate the active scanner-frame linear field.
+    field = sum(
+        effect.get("offset_hz", 0) + pad(effect["gradient_hz_per_m"]) @ point
+        for effect in effects
+    )
+    return point, field, 1.0
 
 
 def authored_probe(tmp_path, starts=(0.24, 1.24, 2.24), gradient_scale=1.0):
@@ -230,28 +184,3 @@ def test_registered_profile_matches_independent_active_physics(tmp_path, profile
         baseline = independent_signal(acq, windows, spins, [])
         # Acquiring beyond 2 s activates both registered keyframe transitions.
         assert np.linalg.norm(expected - baseline) / np.linalg.norm(baseline) > 1e-4
-
-
-def test_keyframe_jumps_inside_gradient_encoding(tmp_path):
-    # Each first/second readout spans a declared discontinuity at 1/2 seconds.
-    # An engine that merely evaluates the later pose at the ADC is incorrect.
-    acq, windows = authored_probe(
-        tmp_path, starts=(0.9955, 1.9955, 2.24), gradient_scale=100
-    )
-    effects = (
-        Catalog(ROOT).get("physics", "rigid_steps").model_dump(mode="json")["effects"]
-    )
-    spins = Spins(
-        np.array([[0.021, -0.013, 0.0], [-0.028, 0.019, 0.0]]),
-        np.array([0, 1]),
-        ["wm", "gm"],
-        np.array([[0.7, 0.8, 2.0], [0.9, 1.1, 1.6]]),
-        0.5,
-        (2,),
-        "independent-gradient-keyframe-jumps",
-    )
-    expected = independent_signal(acq, windows, spins, effects)
-    actual = simulate(acq, spins, effects, step_s=250e-6, rf_step_s=2e-6)
-    error = float(np.linalg.norm(actual - expected) / np.linalg.norm(expected))
-    print(f"keyframe_gradient_jumps: independent active-physics NRMSE={error:.8g}")
-    assert error < 2e-4

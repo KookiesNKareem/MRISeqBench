@@ -80,8 +80,6 @@ def seatbelt_profile(
     deny_paths=(),
     ports=(),
     protected_paths=(),
-    *,
-    internet=False,
 ):
     workspace = real(workspace)
     quote = lambda p: json.dumps(str(p), ensure_ascii=False)
@@ -102,10 +100,6 @@ def seatbelt_profile(
         f"(allow file-write* (subpath {quote(workspace)}))",
         '(allow file-write* (literal "/dev/null") (literal "/dev/tty") (literal "/dev/dtracehelper"))',
     ]
-    if internet:
-        lines.remove("(deny network-outbound)")
-        # Native DNS resolution uses mDNSResponder on macOS.
-        lines.append('(allow mach-lookup (global-name "com.apple.mDNSResponder"))')
     for path in protected_paths:
         lines.append(f"(deny file-read-data (subpath {quote(real(path))}))")
     for path in [workspace, *[real(p) for p in SYSTEM_READ_MAC], *read_paths]:
@@ -152,7 +146,7 @@ def environment(agent, root, workspace, **values):
 
 
 @contextmanager
-def launch(config, command, root, workspace, control_dir, ports=(), *, internet=False):
+def launch(config, command, root, workspace, control_dir, ports=()):
     """Return a command and isolation metadata. Never silently use unsandboxed execution."""
     backend = config.backend
     if backend == "auto":
@@ -187,7 +181,6 @@ def launch(config, command, root, workspace, control_dir, ports=(), *, internet=
                 deny_paths,
                 allowed_ports,
                 [root, Path(workspace).parent],
-                internet=internet,
             )
         )
         yield (
@@ -197,7 +190,7 @@ def launch(config, command, root, workspace, control_dir, ports=(), *, internet=
                 "isolated": True,
                 "read_paths": [str(p) for p in read_paths],
                 "network_ports": allowed_ports,
-                "internet": internet,
+                "internet": False,
                 "profile": str(profile),
             },
         )
@@ -225,20 +218,7 @@ def launch(config, command, root, workspace, control_dir, ports=(), *, internet=
             "--tmpfs",
             "/tmp",
         ]
-        if internet:
-            args += ["--share-net"]
-        network_paths = (
-            (
-                "/etc/resolv.conf",
-                "/etc/hosts",
-                "/etc/nsswitch.conf",
-                "/etc/ssl",
-                "/etc/pki",
-            )
-            if internet
-            else ()
-        )
-        for path in (*SYSTEM_READ_LINUX, *network_paths):
+        for path in SYSTEM_READ_LINUX:
             if Path(path).exists():
                 args += ["--ro-bind", path, path]
         # Hide catalogs/control even if they live beneath a public system mount.
@@ -254,7 +234,7 @@ def launch(config, command, root, workspace, control_dir, ports=(), *, internet=
                 args += ["--ro-bind", "/dev/null", str(path)]
         # TCP inside the isolated network namespace reaches only these Unix relays.
         relay_pairs = []
-        for port in [] if internet else allowed_ports:
+        for port in allowed_ports:
             relay = stack.enter_context(HostRelay(port, control_dir))
             socket_path = f"/run/mriseqbench/port-{port}.sock"
             args += ["--ro-bind", str(relay.path), socket_path]
@@ -280,6 +260,6 @@ def launch(config, command, root, workspace, control_dir, ports=(), *, internet=
                 "isolated": True,
                 "read_paths": [str(p) for p in read_paths],
                 "network_ports": allowed_ports,
-                "internet": internet,
+                "internet": False,
             },
         )

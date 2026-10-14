@@ -8,7 +8,7 @@ import pypulseq as pp
 
 def mask_for(fam, matrix, sampling):
     """Author mask without importing any judge geometry or reconstruction code."""
-    nx, ny, *nz = matrix
+    _nx, ny, *nz = matrix
     mask = np.zeros(matrix, bool)
     width = sampling.get("calibration_lines", 8)
     centre = list(range(ny // 2 - width // 2, ny // 2 + (width + 1) // 2))
@@ -41,9 +41,6 @@ def mask_for(fam, matrix, sampling):
     elif fam == "partial_fourier":
         count = int(np.ceil(ny * sampling.get("partial_fourier_fraction", 0.75)))
         mask[:, ny - count :] = True
-    elif fam == "asymmetric_echo":
-        count = int(np.ceil(nx * sampling.get("asymmetric_echo_fraction", 0.75)))
-        mask[nx - count :] = True
     elif fam == "reduced_fov":
         mask[:, np.arange(ny)[(np.arange(ny) - ny // 2) % 2 == 0]] = True
     else:
@@ -74,7 +71,7 @@ def make_sequence(
     reduced_fat_saturation_duration=0.004,
 ):
     spec, h = case["task"]["sequence"], case["hardware"]
-    fam = case["task"]["id"].removesuffix("_research")
+    fam = case["task"]["id"]
     nx, ny, *nz = spec["matrix"]
     fov = np.asarray(spec["fov_mm"]) / 1000
     sampling = {k: v for k, v in (spec.get("sampling") or {}).items() if v is not None}

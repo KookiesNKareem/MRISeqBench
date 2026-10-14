@@ -42,12 +42,11 @@ def fixture_images():
     return reference, support, masks, phasor
 
 
-@pytest.mark.parametrize("level", ["P2", "P3"])
 @pytest.mark.parametrize(
     "mutation",
     [None, "phase", "wrong_field_phase", "dropout", "contrast", "ghost", "blank"],
 )
-def test_case_quality_preserves_expected_phase_and_rejects_corruptions(level, mutation):
+def test_case_quality_preserves_expected_phase_and_rejects_corruptions(mutation):
     reference, support, masks, phasor = fixture_images()
     actual = reference * phasor
     if mutation == "phase":
@@ -66,7 +65,13 @@ def test_case_quality_preserves_expected_phase_and_rejects_corruptions(level, mu
     metrics, intervals, _ = case_image_scores(
         images, reference, support, phasor, support, masks
     )
-    policy = LEGACY_EVALUATOR["case_image_criteria"][level]
+    catalog = Catalog(ROOT)
+    policies = [
+        catalog.get("evaluators", name).case_image_criteria["static"].model_dump()
+        for name in ("s1", "s2", "s3", "s4")
+    ]
+    assert all(policy == policies[0] for policy in policies)
+    policy = policies[0]
     precise, _ = s1.score_precision(
         metrics, intervals, s1.ImagePrecision().model_dump()
     )
@@ -78,17 +83,14 @@ def test_case_quality_preserves_expected_phase_and_rejects_corruptions(level, mu
     assert all(np.isfinite(v) for v in metrics.values())
 
 
-@pytest.mark.parametrize("level", ["P2", "P3"])
 @pytest.mark.parametrize(
     "case_pass,ideal_unresolved,coverage",
     [(True, False, 1.0), (False, False, 1.0), (True, True, 1.0), (True, False, 0.2)],
 )
-def test_p2_p3_overall_gate_uses_case_image_not_ideal(
-    monkeypatch, tmp_path, level, case_pass, ideal_unresolved, coverage
+def test_phase_aware_gate_uses_case_image_not_ideal(
+    monkeypatch, tmp_path, case_pass, ideal_unresolved, coverage
 ):
-    case = resolve_legacy_case(
-        Catalog(ROOT), "bssfp", physics="b0_offset" if level == "P2" else "b0_drift"
-    )
+    case = resolve_legacy_case(Catalog(ROOT), "bssfp", physics="b0_offset")
     case["task"]["sequence"]["matrix"] = [8, 8]
     case["evaluation"].update(spatial_samples=4096, spatial_max_samples=16384)
     path = tmp_path / "sequence.seq"
@@ -192,7 +194,7 @@ def test_contract_is_public_versioned_and_validated():
             Evaluation.model_validate({**contract, **patch})
 
 
-@pytest.mark.parametrize("profile", ["b0_offset", "b0_drift", "fields_and_motion"])
+@pytest.mark.parametrize("profile", ["b0_offset"])
 def test_koma_individual_responses_sum_to_full_signal(tmp_path, profile):
     case = resolve_legacy_case(Catalog(ROOT), "gre_t1w", physics=profile)
     case["task"]["sequence"]["matrix"] = [8, 8]

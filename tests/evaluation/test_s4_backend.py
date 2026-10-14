@@ -31,7 +31,7 @@ def contract_fixture():
         "reconstruction": "bart_cartesian_fft@1",
         "reconstruction_provenance": {
             "engine": "BART",
-            "version": "contract-fixture-only",
+            "version": "v1.0.00",
             "binary_sha256": "b" * 64,
             "source_commit": None,
             "commands": [{"argv": ["fft", "-i", "3", "input", "output"], "calls": 1}],

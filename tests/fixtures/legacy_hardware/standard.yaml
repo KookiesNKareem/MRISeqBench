@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../schemas/hardware.schema.json
+# yaml-language-server: $schema=../../../schemas/hardware.schema.json
 schema_version: 1
 id: standard
 version: 1

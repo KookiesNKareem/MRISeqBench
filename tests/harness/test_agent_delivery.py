@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from mriseqbench.catalog import Catalog, load_yaml
+from mriseqbench.catalog import Catalog
 from mriseqbench.harness.feedback import FeedbackServer
 from mriseqbench.harness.prepare import evaluation_summary, prepare, prompt, task_brief
 from mriseqbench.harness.proxy import ApiProxy
 from mriseqbench.harness.runner import run
-from mriseqbench.models import ApiProxyConfig, FeedbackConfig, SandboxConfig, Task
+from mriseqbench.models import ApiProxyConfig, FeedbackConfig, SandboxConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -216,7 +216,7 @@ def test_proxy_rejects_other_models_and_fallback_routing(tmp_path):
 def test_prompt_uses_resolved_contract():
     catalog = Catalog(ROOT)
     case = catalog.resolve(
-        catalog.get("tasks", "gre_t1w"), catalog.get("physics", "b0_smooth")
+        catalog.get("tasks", "gre_t1w"), catalog.get("physics", "static_b0")
     )
     text = prompt(case)
     assert case["task"]["objective"] in text
@@ -235,23 +235,13 @@ def test_prompt_uses_resolved_contract():
     assert "jackknife" not in text
 
 
-@pytest.mark.parametrize("physics", ["ideal", "b0_smooth", "fields_and_motion"])
-@pytest.mark.parametrize("task_id", ["gre_t1w", "gre_t1w_research"])
-def test_minimal_prompt_preserves_contract_and_optional_scoring(
-    tmp_path, physics, task_id
-):
+def test_minimal_prompt_preserves_current_contract_and_scoring(tmp_path):
     from types import SimpleNamespace
 
     catalog = Catalog(ROOT)
     case = catalog.resolve(
-        (
-            Task.model_validate(
-                load_yaml(ROOT / f"tests/fixtures/legacy_research_tasks/{task_id}.yaml")
-            )
-            if task_id.endswith("_research")
-            else catalog.get("tasks", task_id)
-        ),
-        catalog.get("physics", physics),
+        catalog.get("tasks", "gre_t1w"),
+        catalog.get("physics", "static_b0"),
     )
     prepare(
         tmp_path,
@@ -272,14 +262,8 @@ def test_minimal_prompt_preserves_contract_and_optional_scoring(
         in details
     )
     assert "360 s" in details and "10 s" in details
-    if case.get("image_policy", case.get("object_level")) in ("static", "P2", "P3"):
-        assert "ideal-control imaging is diagnostic only" in text
-        assert "wrapped phase RMS" in details
-    else:
-        assert "ideal-control images (B0/motion robustness is diagnostic only)" in text
-    if task_id.endswith("_research"):
-        assert "identity_requirements" not in details
-        assert "te_ms" not in inline["sequence"]
+    assert "ideal-control imaging is diagnostic only" in text
+    assert "wrapped phase RMS" in details
 
 
 @pytest.mark.parametrize("submissions", [1, 2, 3])
@@ -297,7 +281,7 @@ def test_prompt_submission_rules_match_available_feedback(
     experiment.feedback.max_checks = 2
     experiment.submission_mode = submission_mode
     case = catalog.resolve(
-        catalog.get("tasks", "gre_t1w"), catalog.get("physics", "ideal")
+        catalog.get("tasks", "gre_t1w"), catalog.get("physics", "static_b0")
     )
     prepare(
         tmp_path,
@@ -336,7 +320,7 @@ def test_hardware_provenance_stays_out_of_agent_context(tmp_path):
     catalog = Catalog(ROOT)
     case = catalog.resolve(
         catalog.get("tasks", "gre_t1w"),
-        catalog.get("physics", "ideal"),
+        catalog.get("physics", "static_b0"),
         hardware_ref="low_field@1",
     )
     original = copy.deepcopy(case)

@@ -26,7 +26,7 @@ def author(tmp_path, monkeypatch, kind):
         catalog.get("arms", "a2_pypulseq").model_dump_json()
     )
     case = catalog.resolve(
-        catalog.get("tasks", "pulseq_smoke"), catalog.get("physics", "ideal")
+        catalog.get("tasks", "pulseq_smoke"), catalog.get("physics", "static_b0")
     )
     (tmp_path / "case.json").write_text(json.dumps(case))
     runpy.run_path(

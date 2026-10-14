@@ -38,6 +38,8 @@ uv run mriseqbench describe spiral_gre
 uv run mriseqbench run --experiment experiments/pi.yaml
 ```
 
+Set `agent.model` in the experiment and provide `OPENROUTER_API_KEY` before running it.
+
 Agents can use `./bin/lint` for timing checks and `./bin/check` for hardware checks.
 These are non-consuming; `./bin/submit` performs full evaluation, with up to three
 submissions per task.

@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../schemas/physics.schema.json
+# yaml-language-server: $schema=../../../../schemas/physics.schema.json
 schema_version: 1
 id: b0_offset
 version: 1

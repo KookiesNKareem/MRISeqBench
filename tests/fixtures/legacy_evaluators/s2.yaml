@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../schemas/evaluators.schema.json
+# yaml-language-server: $schema=../../../schemas/evaluators.schema.json
 schema_version: 1
 id: s2
 version: 2

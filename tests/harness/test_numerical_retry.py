@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def s1_case():
     cat = Catalog(ROOT)
-    return cat.resolve(cat.get("tasks", "gre_t1w"), cat.get("physics", "ideal"))
+    return cat.resolve(cat.get("tasks", "gre_t1w"), cat.get("physics", "static_b0"))
 
 
 @pytest.mark.parametrize("verdict", ["passed", "failed"])
@@ -216,25 +217,46 @@ def test_process_deadline_applies_trusted_retry_credit(tmp_path):
     assert result["status"] == "completed"
 
 
+@pytest.mark.parametrize("recover_worker", [False, True])
 def test_runner_allows_candidate_revision_after_slow_worker_recovery(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, recover_worker
 ):
-    calls = []
+    calls, now = [], [10.0]
+    credited = threading.Event()
+    clock = SimpleNamespace(monotonic=lambda: now[0], time=time.time)
+    monkeypatch.setattr("mriseqbench.harness.feedback.time", clock)
+    monkeypatch.setattr("mriseqbench.process.time", clock)
+
+    def agent(*args, timeout_credit, **kwargs):
+        def observed_credit():
+            credit = timeout_credit()
+            if now[0] == 14.0:
+                assert credit == 4.0
+                credited.set()
+            return credit
+
+        return execute(*args, timeout_credit=observed_credit, **kwargs)
 
     def worker(command, directory, budget, *args, **kwargs):
         snapshot = Path(command[command.index("--submission") + 1])
         calls.append((snapshot, snapshot.read_bytes(), budget))
-        if len(calls) == 2:
-            # This exceeds the participant deadline, but is trusted evaluator work.
-            time.sleep(4)
-        if len(calls) == 1:
+        if recover_worker and len(calls) == 1:
             return {"status": "error"}
-        status = ["failed", "passed"][len(calls) - 2]
+        if snapshot.read_bytes() == b"first candidate":
+            # Advance only trusted grading time, independent of process startup.
+            # The real deadline loop must observe this active credit before the
+            # evaluator releases its failure verdict for candidate revision.
+            now[0] = 14.0
+            assert credited.wait(5), "deadline loop did not apply active grading credit"
+            status = "failed"
+        else:
+            status = "passed"
         (directory / "result.json").write_text(
             json.dumps({"status": status, "checks": [], "metrics": {}})
         )
         return {"status": "completed"}
 
+    monkeypatch.setattr("mriseqbench.harness.runner.execute", agent)
     monkeypatch.setattr("mriseqbench.harness.feedback.execute", worker)
     catalog = Catalog(ROOT)
     experiment = catalog.get("experiments", "smoke").model_copy(deep=True)
@@ -253,45 +275,11 @@ subprocess.run(['./bin/submit'], check=True)
     report = run_one(catalog, experiment, s1_case(), tmp_path / "run", 1)
     assert report["status"] == "passed"
     assert report["feedback"]["submissions_used"] == 2
-    assert report["feedback"]["grading_wall_s"] >= 4
-    assert calls[0][:2] == calls[1][:2]
-    assert [call[2] for call in calls] == [None, None, None]
-    assert calls[2][1] == b"revised candidate"
+    assert report["feedback"]["grading_wall_s"] == 4
+    assert report["feedback"]["numerical_retries"] == 0
+    if recover_worker:
+        assert calls[0][:2] == calls[1][:2]
+    assert [call[2] for call in calls] == [None] * (2 + recover_worker)
+    assert calls[-1][1] == b"revised candidate"
     assert report["first_submission_status"] == "failed"
     assert report["passed_on_submission"] == 2
-
-
-def test_runner_excludes_slow_grading_from_agent_deadline(monkeypatch, tmp_path):
-    calls = []
-
-    def worker(command, directory, budget, *args, **kwargs):
-        calls.append(budget)
-        if len(calls) == 1:
-            # Grading alone exceeds the participant deadline.
-            time.sleep(4)
-        status = ["failed", "passed"][len(calls) - 1]
-        (directory / "result.json").write_text(
-            json.dumps({"status": status, "checks": [], "metrics": {}})
-        )
-        return {"status": "completed"}
-
-    monkeypatch.setattr("mriseqbench.harness.feedback.execute", worker)
-    catalog = Catalog(ROOT)
-    experiment = catalog.get("experiments", "smoke").model_copy(deep=True)
-    experiment.submission_mode = "submit"
-    experiment.agent.timeout_s = 3
-    experiment.feedback.timeout_s = 5
-    script = """
-import json, pathlib, subprocess
-pathlib.Path('sequence.seq').write_bytes(b'first candidate')
-reply = subprocess.run(['./bin/submit'], capture_output=True, text=True, check=False)
-assert json.loads(reply.stdout)['status'] == 'retry_required', reply.stdout
-pathlib.Path('sequence.seq').write_bytes(b'revised candidate')
-subprocess.run(['./bin/submit'], check=True)
-"""
-    experiment.agent.command = [sys.executable, "-c", script]
-    report = run_one(catalog, experiment, s1_case(), tmp_path / "run", 1)
-    assert report["status"] == "passed"
-    assert report["feedback"]["submissions_used"] == 2
-    assert report["feedback"]["numerical_retries"] == 0
-    assert report["feedback"]["grading_wall_s"] >= 4

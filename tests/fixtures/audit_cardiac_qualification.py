@@ -251,6 +251,20 @@ def contract(case, current, *, report=None, mutation=None):
     return exceptions
 
 
+REQUIRED_SCIENTIFIC_SOURCES = {
+    "Project.toml",
+    "Manifest.toml",
+    "src/mriseqbench/evaluation/bart.py",
+    "src/mriseqbench/evaluation/s1.py",
+    "src/mriseqbench/evaluation/s1_koma.py",
+    "src/mriseqbench/evaluation/s1_koma.jl",
+    "src/mriseqbench/evaluation/s1_anatomy.py",
+    "benchmark/objects/anatomy.json",
+    "benchmark/objects/phantoms.jl",
+    "benchmark/physics/effects.jl",
+}
+
+
 def source_manifest(campaign):
     name = (
         "source-hashes.json"
@@ -258,8 +272,21 @@ def source_manifest(campaign):
         else "source_manifest.json"
     )
     path = campaign / name
-    for relative, digest in json.loads(path.read_text()).items():
-        verified(contained_file(campaign / "source", relative), digest)
+    declared = json.loads(path.read_text())
+    source = campaign / "source"
+    actual = {
+        str(file.relative_to(source))
+        for file in source.rglob("*")
+        if file.is_file() and "__pycache__" not in file.parts
+    }
+    if (
+        not isinstance(declared, dict)
+        or not REQUIRED_SCIENTIFIC_SOURCES <= declared.keys()
+        or set(declared) != actual
+    ):
+        raise ValueError(f"Incomplete scientific source manifest: {campaign}")
+    for relative, digest in declared.items():
+        verified(contained_file(source, relative), digest)
     return {"path": str(path), "sha256": sha(path)}
 
 

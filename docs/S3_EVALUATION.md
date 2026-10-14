@@ -8,9 +8,10 @@ verify acquired sampling masks, calibration regions, support and spatial
 selection.
 
 KomaMRI replays [static cardiac anatomy](CARDIAC_PHANTOM.md) with
-scanner-specific T1/T2, fat and off-resonance. Parallel imaging uses the fixed
-receive model and BART PICS L2 SENSE (λ=0.001, 50 iterations). Other families use
-BART FFT. Images are compared against an independently encoded
+scanner-specific T1/T2, fat and off-resonance. GRAPPA-style, SENSE, CAIPI,
+compressed-sensing and variable-density sampling use the fixed receive model and
+BART PICS L2 SENSE (λ=0.001, 50 iterations). Remaining families use BART FFT.
+Images are compared against an independently encoded
 full-grid target holding finite-RF tissue response at the central echo, including
 intrinsic fat. The RF-only phase oracle adds declared B0; the submitted sampling
 mask, receiver errors, readout-induced fat displacement and blur cannot define the target.

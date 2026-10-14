@@ -58,6 +58,8 @@ def test_seal_archive_restore_and_repeat_preserve_all_bytes(tmp_path, status):
     assert not replay.exists()
     seal = images.parents[2] / "storage-finalization.json"
     assert finalize_evaluation(report, images.parents[2]) == receipt
+    with pytest.raises(ValueError, match="Sealed result changed"):
+        finalize_evaluation({**report, "metrics": {"changed": True}}, images.parents[2])
     assert restore_checkpoints(seal) == 1
     assert replay.read_bytes() == original
     assert restore_checkpoints(seal) == 0
@@ -206,3 +208,66 @@ def test_evaluate_uses_common_finalization(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "_evaluate", lambda *args, **kwargs: report)
     assert module.evaluate(None, None, None, images.parents[2]) == report
     assert not replay.exists()
+
+
+def test_migration_rejects_checkpoint_replaced_by_symlink(tmp_path):
+    root = tmp_path / "runs"
+    _, _, replay = evaluation(root / "case")
+    summary = migrate_runs(root)
+    replay.symlink_to(tmp_path / "missing")
+    with pytest.raises(ValueError, match="Changed evidence type"):
+        verify_migration(summary["migration"])
+
+
+def test_migration_verifies_each_declared_archive_identity(tmp_path):
+    root = tmp_path / "runs"
+    evaluation(root / "first")
+    _, _, second = evaluation(root / "second")
+    np.save(second, np.arange(20) * 2j)
+    summary = migrate_runs(root)
+    index = Path(summary["migration"]) / "archives.json"
+    archives = json.loads(index.read_text())
+    first_record, second_record = archives.values()
+    second_record["blob"] = first_record["blob"]
+    index.write_text(json.dumps(archives))
+    with pytest.raises(ValueError, match="Corrupt checkpoint archive"):
+        verify_migration(summary["migration"])
+
+
+@pytest.mark.parametrize("converged", [False, True])
+def test_cardiac_frames_and_shared_cache_finalize_only_after_convergence(
+    tmp_path, converged
+):
+    workspace = tmp_path / "runs/case"
+    frames, images, checkpoints = [], [], []
+    for number in range(2):
+        report, image, replay = evaluation(workspace / f"s4/frame-{number}")
+        frames.append(report)
+        images.append(image)
+        checkpoints.append(replay)
+    images[1].write_bytes(images[0].read_bytes())
+    shared = workspace / "s4/full-encoded-replays/abc.npy"
+    shared.parent.mkdir()
+    np.save(shared, np.arange(20))
+    checkpoints.append(shared)
+    original = {path: path.read_bytes() for path in [*images, *checkpoints]}
+    report = {
+        "status": "passed" if converged else "numerically_unresolved",
+        "numerically_converged": converged,
+        "frames": frames,
+        "encoded_replay_cache": {"directory": str(shared.parent)},
+    }
+    snapshot = json.dumps(report)
+    receipt = finalize_evaluation(report, workspace)
+    assert json.dumps(report) == snapshot
+    if not converged:
+        assert receipt is None
+        assert all(path.read_bytes() == content for path, content in original.items())
+        return
+    assert receipt["sealed_result"] == report
+    assert len(receipt["image_bundles"]) == 2
+    assert all(image.read_bytes() == original[image] for image in images)
+    assert os.path.samefile(*images)
+    assert all(not path.exists() for path in checkpoints)
+    assert restore_checkpoints(workspace / "storage-finalization.json") == 3
+    assert all(path.read_bytes() == content for path, content in original.items())
