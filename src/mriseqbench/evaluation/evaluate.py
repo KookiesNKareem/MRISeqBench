@@ -9,7 +9,7 @@ from pydantic import Field, StrictBool
 from ..io import write_json
 from ..models import Finite, Strict
 from ..process import execute, expand
-from ..storage import finalize_evaluation
+from ..storage import atomic_json, finalize_evaluation
 from .preflight import preflight
 from .sar import evaluate_sar
 
@@ -56,7 +56,7 @@ def validate_bart_provenance(value):
 
 def intrinsic_cardiac_case(case):
     return bool(
-        case["evaluation"].get("intrinsic_tissue_response", False)
+        case["evaluation"]["id"] in {"s1", "s2", "s3", "s4"}
         and case["object"]["phantom"].startswith("cardiac_")
     )
 
@@ -69,6 +69,7 @@ def s4_backend_contract(case):
     spec, contract = case["task"]["sequence"], case["evaluation"]
     fam = family(case)
     requirements = {
+        "physio_trigger_resolution",
         "ecg_trigger_events",
         "nominal_rr_cadence",
         "cardiac_adc_window",
@@ -161,7 +162,11 @@ def evaluate(
         feedback=feedback,
         time_budget_s=time_budget_s,
     )
-    finalize_evaluation(report, workspace)
+    # A valid scientific verdict must survive an interrupted storage operation.
+    # Compressing and repeatedly verifying gigabytes of restart checkpoints is
+    # maintenance, not evaluation work. Keep raw caches for explicit archival.
+    atomic_json(Path(workspace) / "evaluation-result.json", report)
+    finalize_evaluation(report, workspace, archive_replays=False)
     return report
 
 
@@ -194,6 +199,33 @@ def _evaluate(
     write_json(workspace / "case.json", case)
     if not all(c["passed"] for c in checks):
         return report
+    physio_resolution = None
+    if (
+        backend is None
+        and case["sequence_level"] == "S4"
+        and case["evaluation"]["id"] == "s4"
+    ):
+        from .s4_physio import InvalidPhysioSequence, resolve_sequence
+
+        try:
+            submission, physio_resolution = resolve_sequence(
+                submission, case, workspace / "physio"
+            )
+        except InvalidPhysioSequence as exc:
+            checks.append(
+                {
+                    "name": "physio_trigger_resolution",
+                    "passed": False,
+                    "detail": str(exc),
+                }
+            )
+            return report
+        # Hardware duration and SAR must use the same executed timeline as the
+        # physical grader. Raw preflight above still protects the original file.
+        checks[:] = preflight(submission, case)
+        report["physio"] = physio_resolution
+        if not all(c["passed"] for c in checks):
+            return report
     if not feedback:
         checks.extend(evaluate_sar(submission, case["hardware"]))
         if not all(c["passed"] for c in checks):
@@ -202,12 +234,26 @@ def _evaluate(
     if contract["scope"] == "smoke":
         report["status"] = "smoke_passed"
         return report
+    if backend is None and contract["id"] == "rf_excitation":
+        from .excitation import evaluate_excitation
+
+        physical = evaluate_excitation(
+            submission, case, root, workspace / "rf_excitation", deadline=deadline
+        )
+        physical["checks"] = checks + physical["checks"]
+        report.update(physical)
+        return report
     if backend is None and case["sequence_level"] == "S4":
         from .s4 import evaluate_s4
 
         try:
             physical = evaluate_s4(
-                submission, case, root, workspace / "s4", deadline=deadline
+                submission,
+                case,
+                root,
+                workspace / "s4",
+                deadline=deadline,
+                physio_resolution=physio_resolution,
             )
             physical["checks"] = checks + physical["checks"]
             report.update(physical)
@@ -283,10 +329,8 @@ def _evaluate(
         ):
             if case["task"]["sequence"][field] is not None:
                 required.add(field)
-        if case["task"].get("prompt_mode") == "research":
-            # Backend must inspect physical sequence identity and parameter suitability,
-            # rather than compare agent-selected timings to hidden reference numbers.
-            required |= {"sequence_identity", "reasonable_parameters"}
+        if contract["id"] == "rf_excitation":
+            required |= {"no_adc", "numerical_convergence", "ai_target"}
         if contract["id"] == "s4":
             cardiac_requirements, _cardiac_bounds = s4_backend_contract(case)
             required |= cardiac_requirements
@@ -295,8 +339,15 @@ def _evaluate(
 
             if uses_case_image(case):
                 required.add("numerical_convergence")
-        if case["task"]["id"] == "reduced_fov":
+        if case["task"]["id"] in {"reduced_fov", "rfov_epi"}:
             required.add("spatial_selection")
+        if case["task"]["id"] == "rfov_epi":
+            required |= {
+                "single_shot_epi",
+                "two_dimensional_rf_encoding",
+                "rfov_inside_signal",
+                "no_refocusing",
+            }
         missing = required - result.requirements.keys()
         if missing:
             raise ValueError(f"backend omitted requirements: {sorted(missing)}")
@@ -332,7 +383,7 @@ def _evaluate(
                     )
             if contract["id"] == "s4":
                 _, metric_bounds = s4_backend_contract(case)
-        if case["task"]["id"] == "reduced_fov":
+        if case["task"]["id"] in {"reduced_fov", "rfov_epi"}:
             # Exact scalar semantics of s3.mechanism_probes: useful selected
             # water signal and worst outside/mean inside signal over 27 spins.
             metric_bounds = [

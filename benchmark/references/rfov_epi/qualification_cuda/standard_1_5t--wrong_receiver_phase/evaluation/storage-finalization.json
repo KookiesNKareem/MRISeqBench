@@ -1,0 +1,900 @@
+{
+  "schema_version": 1,
+  "sealed_result": {
+    "case_id": "rfov_epi-v1--static_b0-v1--hardware-standard_1_5t-v1",
+    "status": "failed",
+    "checks": [
+      {
+        "name": "grad_raster_time",
+        "passed": true,
+        "detail": "Submitted raster must match the hardware profile"
+      },
+      {
+        "name": "rf_raster_time",
+        "passed": true,
+        "detail": "Submitted raster must match the hardware profile"
+      },
+      {
+        "name": "adc_raster_time",
+        "passed": true,
+        "detail": "Submitted raster must match the hardware profile"
+      },
+      {
+        "name": "block_duration_raster",
+        "passed": true,
+        "detail": "Submitted raster must match the hardware profile"
+      },
+      {
+        "name": "pulseq_parse",
+        "passed": true,
+        "detail": "Pulseq file parsed"
+      },
+      {
+        "name": "timing",
+        "passed": true,
+        "detail": "[]"
+      },
+      {
+        "name": "duration",
+        "passed": true,
+        "detail": {
+          "duration_s": 0.20393000000000017,
+          "max_s": 0.25
+        }
+      },
+      {
+        "name": "supported_events",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "has_rf_and_adc",
+        "passed": true,
+        "detail": {
+          "adc_samples": 512,
+          "rf_events": 1
+        }
+      },
+      {
+        "name": "finite_rf",
+        "passed": true,
+        "detail": "RF samples, times, frequency and phase must be finite"
+      },
+      {
+        "name": "finite_adc",
+        "passed": true,
+        "detail": "ADC timing, frequency, phase and modulation must be finite"
+      },
+      {
+        "name": "peak_b1",
+        "passed": true,
+        "detail": {
+          "peak_uT": 16.171246711762496,
+          "max_uT": 20.0
+        }
+      },
+      {
+        "name": "finite_gradient_x",
+        "passed": true,
+        "detail": "finite samples with increasing time"
+      },
+      {
+        "name": "gradient_x",
+        "passed": true,
+        "detail": {
+          "peak_mT_per_m": 11.74370537391958,
+          "max": 33.0
+        }
+      },
+      {
+        "name": "slew_x",
+        "passed": true,
+        "detail": {
+          "peak_T_per_m_per_s": 39.145684579732624,
+          "max": 125.0
+        }
+      },
+      {
+        "name": "finite_gradient_y",
+        "passed": true,
+        "detail": "finite samples with increasing time"
+      },
+      {
+        "name": "gradient_y",
+        "passed": true,
+        "detail": {
+          "peak_mT_per_m": 4.817925591882751,
+          "max": 33.0
+        }
+      },
+      {
+        "name": "slew_y",
+        "passed": true,
+        "detail": {
+          "peak_T_per_m_per_s": 31.316563322062827,
+          "max": 125.0
+        }
+      },
+      {
+        "name": "sar_360s",
+        "passed": true,
+        "detail": {
+          "model": "homogeneous_sphere_v1",
+          "field_strength_T": 1.5,
+          "peak_W_per_kg": 0.11404343930887408,
+          "limit_W_per_kg": 2.0,
+          "window_start_s": 0.0,
+          "averaging_duration_s": 0.20393000000000017,
+          "b1_rms_uT": 0.5610581940229565,
+          "coefficient_W_per_kg_per_uT2": 0.36228844891485773,
+          "load": {
+            "model": "homogeneous_sphere_v1",
+            "radius_m": 0.15,
+            "conductivity_S_per_m": 0.5,
+            "density_kg_per_m3": 1000.0,
+            "whole_body_limit_W_per_kg": 2.0
+          },
+          "scope": "synthetic global SAR; no local SAR or scanner certification"
+        }
+      },
+      {
+        "name": "sar_10s",
+        "passed": true,
+        "detail": {
+          "model": "homogeneous_sphere_v1",
+          "field_strength_T": 1.5,
+          "peak_W_per_kg": 0.11404343930887408,
+          "limit_W_per_kg": 4.0,
+          "window_start_s": 0.0,
+          "averaging_duration_s": 0.20393000000000017,
+          "b1_rms_uT": 0.5610581940229565,
+          "coefficient_W_per_kg_per_uT2": 0.36228844891485773,
+          "load": {
+            "model": "homogeneous_sphere_v1",
+            "radius_m": 0.15,
+            "conductivity_S_per_m": 0.5,
+            "density_kg_per_m3": 1000.0,
+            "whole_body_limit_W_per_kg": 2.0
+          },
+          "scope": "synthetic global SAR; no local SAR or scanner certification"
+        }
+      },
+      {
+        "name": "rf_before_adc",
+        "passed": true,
+        "detail": "Every ADC line follows a completed excitation"
+      },
+      {
+        "name": "cartesian",
+        "passed": true,
+        "detail": {
+          "max_lattice_error_samples": 7.4999997359270765e-06,
+          "readout_axis": "x"
+        }
+      },
+      {
+        "name": "fov_mm",
+        "passed": true,
+        "detail": {
+          "fov_mm": [
+            200.0,
+            200.0
+          ],
+          "lattice_offset": [
+            0.5,
+            5.499999642815185e-06
+          ]
+        }
+      },
+      {
+        "name": "matrix",
+        "passed": true,
+        "detail": {
+          "in_bounds": true,
+          "unique_samples": 512,
+          "adc_samples": 512
+        }
+      },
+      {
+        "name": "te_ms",
+        "passed": true,
+        "detail": {
+          "effective_te_ms": 60.070845343701244,
+          "contract": {
+            "target": null,
+            "tolerance": null,
+            "max": 80.0
+          }
+        }
+      },
+      {
+        "name": "echo_in_adc",
+        "passed": true,
+        "detail": "Every EPI line brackets kx=0 after the excitation endpoint"
+      },
+      {
+        "name": "single_shot_epi",
+        "passed": true,
+        "detail": {
+          "readout_lines": 16,
+          "shots": 1,
+          "polarities": [
+            1.0,
+            -1.0,
+            1.0,
+            -1.0,
+            1.0,
+            -1.0,
+            1.0,
+            -1.0,
+            1.0,
+            -1.0,
+            1.0,
+            -1.0,
+            1.0,
+            -1.0,
+            1.0,
+            -1.0
+          ]
+        }
+      },
+      {
+        "name": "two_dimensional_rf_encoding",
+        "passed": true,
+        "detail": {
+          "rf_overlaps_x_gradient": true,
+          "rf_overlaps_y_gradient": true
+        }
+      },
+      {
+        "name": "sampling_pattern",
+        "passed": true,
+        "detail": {
+          "family": "rfov_epi",
+          "missing_samples": 0,
+          "extra_samples": 0
+        }
+      },
+      {
+        "name": "no_refocusing",
+        "passed": true,
+        "detail": "Gradient echoes contain no nominal 180-degree pulses"
+      },
+      {
+        "name": "gre",
+        "passed": true,
+        "detail": "Non-refocused gradient echoes"
+      },
+      {
+        "name": "positive_echo_times",
+        "passed": true,
+        "detail": {}
+      },
+      {
+        "name": "spatial_selection",
+        "passed": true,
+        "detail": {
+          "inside_signal": 0.3221790848131861,
+          "outside_signal": 0.025651233205379865,
+          "outside_to_inside_max": 0.1,
+          "ratio": 0.07961793429344925
+        }
+      },
+      {
+        "name": "rfov_inside_signal",
+        "passed": true,
+        "detail": {
+          "min_signal": 0.27076725364715154,
+          "minimum": 0.2
+        }
+      }
+    ],
+    "metrics": {
+      "selection_leakage_ratio": 0.07961793429344925,
+      "diagnostic_signal_fraction": 0.3221790848131861,
+      "ideal_image_nrmse": 0.37594179000849565,
+      "ideal_complex_image_nrmse": 1.2757340539903756,
+      "ideal_outside_object_energy_fraction": 0.005498970305985811,
+      "ideal_signal_fraction": 0.806553778039816,
+      "ideal_absolute_rms_signal": 0.01657616256904855,
+      "ideal_fat_mean_signal": 0.002905694076116973,
+      "ideal_myocardium_mean_signal": 0.019340240171472605,
+      "ideal_blood_mean_signal": 0.03651794758379076,
+      "case_image_nrmse": 0.11976786658909133,
+      "case_complex_image_nrmse": 0.5981913430895779,
+      "case_outside_object_energy_fraction": 0.00034775140040533225,
+      "case_signal_fraction": 1.00147683332902,
+      "case_absolute_rms_signal": 0.02058182913596104,
+      "case_fat_mean_signal": 0.002149916239874639,
+      "case_myocardium_mean_signal": 0.02126376870321967,
+      "case_blood_mean_signal": 0.05603717324864774,
+      "ideal_normalized_squared_error": 1.6274973765107188,
+      "case_normalized_squared_error": 0.357832882947313,
+      "case_normalized_squared_magnitude_error": 0.014305546996893043,
+      "case_magnitude_image_nrmse": 0.11960579834143929,
+      "case_normalized_squared_phase_error": 0.3577329221919219,
+      "case_phase_error_rad": 0.5981077847611765,
+      "case_min_tissue_signal_fraction": 1.022205651333179,
+      "case_contrast_retention": 0.9426224457832992,
+      "temporal_nrmse": 0.006000023902494613,
+      "temporal_raw_nrmse": 0.005991706277744223,
+      "temporal_image_nrmse": 0.006000023902494613,
+      "case_vs_ideal_image_nrmse": 0.4586170121156322,
+      "case_signal_retention": 1.241652225008457
+    },
+    "sequence_valid": true,
+    "ideal_imaging_success": false,
+    "imaging_success_under_case_physics": false,
+    "image_verdict": "failed",
+    "image_acceptance_basis": "case_physics",
+    "evaluation_contract": "s3@2",
+    "nominal_contrast_model": "finite_rf_intrinsic_materials_central_echo@1",
+    "reconstruction": "bart_sampling_sense@1",
+    "artifacts": {
+      "sequence": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/sequence.json",
+      "images": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/images.npz",
+      "provenance": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/provenance.json",
+      "policy": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/policy.json"
+    },
+    "numerical_intervals": {
+      "ideal": {
+        "complex_image_nrmse": [
+          1.2749177683129387,
+          1.276549817696667
+        ],
+        "normalized_squared_error": [
+          1.6254153159600437,
+          1.6295794370613939
+        ],
+        "signal_fraction": [
+          0.805933094519806,
+          0.8071739842799264
+        ],
+        "outside_object_energy_fraction": [
+          0.005446761130862069,
+          0.005551179481109553
+        ]
+      },
+      "case": {
+        "complex_image_nrmse": [
+          0.5977047497863726,
+          0.5986775408994695
+        ],
+        "normalized_squared_error": [
+          0.3572509679171902,
+          0.35841479797743586
+        ],
+        "signal_fraction": [
+          1.0010995857559912,
+          1.001853938849684
+        ],
+        "outside_object_energy_fraction": [
+          0.00033251825203099613,
+          0.00036298454877966836
+        ],
+        "normalized_squared_magnitude_error": [
+          0.013797767422927107,
+          0.014813326570858978
+        ],
+        "magnitude_image_nrmse": [
+          0.11746389838127759,
+          0.12171001015059928
+        ],
+        "normalized_squared_phase_error": [
+          0.357362568186498,
+          0.3581032761973458
+        ],
+        "phase_error_rad": [
+          0.597798099851863,
+          0.5984173094065259
+        ],
+        "min_tissue_signal_fraction": [
+          1.0208117937952768,
+          1.0235995088710812
+        ],
+        "contrast_retention": [
+          0.9337839625456933,
+          0.9514609290209052
+        ]
+      }
+    },
+    "numerically_converged": true,
+    "numerical_precision": {
+      "targets": {
+        "normalized_squared_error": 0.0008,
+        "signal_fraction": 0.005,
+        "outside_object_energy_fraction": 0.005,
+        "wm_gm_ratio": 0.02,
+        "normalized_squared_magnitude_error": 0.001,
+        "normalized_squared_phase_error": 0.002,
+        "min_tissue_signal_fraction": 0.01,
+        "contrast_retention": 0.02
+      },
+      "ideal_errors": {
+        "normalized_squared_error": 0.002082060550675058,
+        "signal_fraction": 0.0006206835200099903,
+        "outside_object_energy_fraction": 5.2209175123742006e-05
+      },
+      "case_errors": {
+        "normalized_squared_error": 0.0005819150301228371,
+        "signal_fraction": 0.00037724757302881606,
+        "outside_object_energy_fraction": 1.5233148374336114e-05,
+        "normalized_squared_magnitude_error": 0.0005077795739659354,
+        "normalized_squared_phase_error": 0.00037035400542390073,
+        "min_tissue_signal_fraction": 0.0013938575379022211,
+        "contrast_retention": 0.008838483237605943
+      }
+    },
+    "score_precision_met": {
+      "ideal": false,
+      "case": true
+    },
+    "decision_basis": {
+      "ideal": "interval_certified",
+      "case": "precision_target"
+    },
+    "spatial_sampling": {
+      "samples_per_replicate": 32768,
+      "replicates": 8,
+      "requested_replicates": 8,
+      "seed": 1729,
+      "initial_budget_per_replicate": 131072,
+      "chunk_size": 32768,
+      "exceeded_initial_budget": false,
+      "stop_reason": "precision_target"
+    },
+    "effects": [
+      "b0"
+    ],
+    "reconstruction_provenance": {
+      "engine": "BART",
+      "version": "v1.0.00",
+      "binary_sha256": "c6f4874909ac180f83bc218f49259ab9957d9267103fb091fe468ce70a177fd5",
+      "source_commit": "37f3c5f0feaf0a19a7fca85c926ad74101f4a034",
+      "commands": [
+        {
+          "argv": [
+            "fft",
+            "-i",
+            "3",
+            "{data}",
+            "{out}"
+          ],
+          "calls": 72
+        }
+      ]
+    },
+    "case_phase_reference": {
+      "model": "koma_rf_acquisition_phase@2",
+      "engine": "KomaMRICore",
+      "echo_time_s": 0.09562500000000008,
+      "line": 8,
+      "sample_indices": [
+        271
+      ],
+      "echo_contexts": 1,
+      "intrinsic_tissue_response": true,
+      "rf_history": "complete; ideal transverse spoiling before excitation",
+      "temporal_phase_chord_rms": 0.0062941397641638995,
+      "reference_energy_coverage": 0.9998979169293982,
+      "spatial_model": "voxel centres with exact anatomical-cell/image-voxel fractions; no continuum phase-reference claim",
+      "converged": true,
+      "coverage_adequate": true,
+      "temporal_refinement_history": [
+        {
+          "scale": 1,
+          "phase_chord_rms": 0.0062941397641638995
+        }
+      ],
+      "limits": {
+        "temporal_phase_chord_rms": 0.01,
+        "reference_energy_coverage": 0.5
+      },
+      "receiver_phase": "independent RF coherence convention; no fitted phase or gain",
+      "geometry_frame": "original object coordinates; no registration"
+    },
+    "case_scoring_regions": {
+      "tissues": [
+        "myocardium",
+        "blood"
+      ],
+      "contrast_pairs": [
+        [
+          "myocardium",
+          "blood"
+        ]
+      ],
+      "phase_voxels": 255
+    },
+    "limitations": [
+      "BART_fixed_L2_SENSE_for_parallel_and_CS_masks; BART_zero_fill_FFT_for_partial_and_elliptical_support",
+      "synthetic_receive_maps_are_comoving; no_scanner_coil_or_noise_claim"
+    ],
+    "ideal_image_checks": [
+      {
+        "name": "ideal_complex_image_nrmse",
+        "passed": false,
+        "detail": {
+          "value": 1.2757340539903756,
+          "numerical_interval": [
+            1.2749177683129387,
+            1.276549817696667
+          ],
+          "numerically_resolved": true,
+          "name": "ideal_complex_image_nrmse",
+          "min": null,
+          "max": 0.3
+        }
+      },
+      {
+        "name": "ideal_signal_fraction",
+        "passed": true,
+        "detail": {
+          "value": 0.806553778039816,
+          "numerical_interval": [
+            0.805933094519806,
+            0.8071739842799264
+          ],
+          "numerically_resolved": true,
+          "name": "ideal_signal_fraction",
+          "min": 0.5,
+          "max": null
+        }
+      },
+      {
+        "name": "ideal_outside_object_energy_fraction",
+        "passed": true,
+        "detail": {
+          "value": 0.005498970305985811,
+          "numerical_interval": [
+            0.005446761130862069,
+            0.005551179481109553
+          ],
+          "numerically_resolved": true,
+          "name": "ideal_outside_object_energy_fraction",
+          "min": null,
+          "max": 0.25
+        }
+      }
+    ],
+    "case_image_checks": [
+      {
+        "name": "case_complex_image_nrmse",
+        "passed": false,
+        "detail": {
+          "value": 0.5981913430895779,
+          "numerical_interval": [
+            0.5977047497863726,
+            0.5986775408994695
+          ],
+          "numerically_resolved": true,
+          "name": "complex_image_nrmse",
+          "min": null,
+          "max": 0.45
+        }
+      },
+      {
+        "name": "case_magnitude_image_nrmse",
+        "passed": true,
+        "detail": {
+          "value": 0.11960579834143929,
+          "numerical_interval": [
+            0.11746389838127759,
+            0.12171001015059928
+          ],
+          "numerically_resolved": true,
+          "name": "magnitude_image_nrmse",
+          "min": null,
+          "max": 0.35
+        }
+      },
+      {
+        "name": "case_phase_error_rad",
+        "passed": false,
+        "detail": {
+          "value": 0.5981077847611765,
+          "numerical_interval": [
+            0.597798099851863,
+            0.5984173094065259
+          ],
+          "numerically_resolved": true,
+          "name": "phase_error_rad",
+          "min": null,
+          "max": 0.35
+        }
+      },
+      {
+        "name": "case_min_tissue_signal_fraction",
+        "passed": true,
+        "detail": {
+          "value": 1.022205651333179,
+          "numerical_interval": [
+            1.0208117937952768,
+            1.0235995088710812
+          ],
+          "numerically_resolved": true,
+          "name": "min_tissue_signal_fraction",
+          "min": 0.5,
+          "max": null
+        }
+      },
+      {
+        "name": "case_contrast_retention",
+        "passed": true,
+        "detail": {
+          "value": 0.9426224457832992,
+          "numerical_interval": [
+            0.9337839625456933,
+            0.9514609290209052
+          ],
+          "numerically_resolved": true,
+          "name": "contrast_retention",
+          "min": 0.5,
+          "max": null
+        }
+      },
+      {
+        "name": "case_outside_object_energy_fraction",
+        "passed": true,
+        "detail": {
+          "value": 0.00034775140040533225,
+          "numerical_interval": [
+            0.00033251825203099613,
+            0.00036298454877966836
+          ],
+          "numerically_resolved": true,
+          "name": "outside_object_energy_fraction",
+          "min": null,
+          "max": 0.25
+        }
+      },
+      {
+        "name": "case_phase_reference_coverage",
+        "passed": true,
+        "detail": {
+          "value": 0.9998979169293982,
+          "min": 0.5
+        }
+      }
+    ],
+    "image_checks": [
+      {
+        "name": "case_complex_image_nrmse",
+        "passed": false,
+        "detail": {
+          "value": 0.5981913430895779,
+          "numerical_interval": [
+            0.5977047497863726,
+            0.5986775408994695
+          ],
+          "numerically_resolved": true,
+          "name": "complex_image_nrmse",
+          "min": null,
+          "max": 0.45
+        }
+      },
+      {
+        "name": "case_magnitude_image_nrmse",
+        "passed": true,
+        "detail": {
+          "value": 0.11960579834143929,
+          "numerical_interval": [
+            0.11746389838127759,
+            0.12171001015059928
+          ],
+          "numerically_resolved": true,
+          "name": "magnitude_image_nrmse",
+          "min": null,
+          "max": 0.35
+        }
+      },
+      {
+        "name": "case_phase_error_rad",
+        "passed": false,
+        "detail": {
+          "value": 0.5981077847611765,
+          "numerical_interval": [
+            0.597798099851863,
+            0.5984173094065259
+          ],
+          "numerically_resolved": true,
+          "name": "phase_error_rad",
+          "min": null,
+          "max": 0.35
+        }
+      },
+      {
+        "name": "case_min_tissue_signal_fraction",
+        "passed": true,
+        "detail": {
+          "value": 1.022205651333179,
+          "numerical_interval": [
+            1.0208117937952768,
+            1.0235995088710812
+          ],
+          "numerically_resolved": true,
+          "name": "min_tissue_signal_fraction",
+          "min": 0.5,
+          "max": null
+        }
+      },
+      {
+        "name": "case_contrast_retention",
+        "passed": true,
+        "detail": {
+          "value": 0.9426224457832992,
+          "numerical_interval": [
+            0.9337839625456933,
+            0.9514609290209052
+          ],
+          "numerically_resolved": true,
+          "name": "contrast_retention",
+          "min": 0.5,
+          "max": null
+        }
+      },
+      {
+        "name": "case_outside_object_energy_fraction",
+        "passed": true,
+        "detail": {
+          "value": 0.00034775140040533225,
+          "numerical_interval": [
+            0.00033251825203099613,
+            0.00036298454877966836
+          ],
+          "numerically_resolved": true,
+          "name": "outside_object_energy_fraction",
+          "min": null,
+          "max": 0.25
+        }
+      },
+      {
+        "name": "case_phase_reference_coverage",
+        "passed": true,
+        "detail": {
+          "value": 0.9998979169293982,
+          "min": 0.5
+        }
+      }
+    ]
+  },
+  "artifact_sha256": {
+    "sequence": "d06a69792cc7e5e23782c0548af1c10983412dc27675a33d59ac96fa653745b3",
+    "images": "7621fec32780415ae90fec207329b353fcd3a6f873532c3ab8c917062165fe09",
+    "provenance": "e6126534e4a2c0fb2e3efb80e8c3288099bf0ddbeb76a50c2aba4a091dce2844",
+    "policy": "a9a4e36ec48e5d5cca9b2fda866df8738523846374d43433bfdc76bbd6d3587f"
+  },
+  "checkpoints": [
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/1ce57676fb4fa141f7c0a79e1e661969fecea9fa2404a97ff83a7eedf980272e.npy",
+      "sha256": "7a4a5e2db7cfb0c0ecf4f31ae9ba3a5e2a27b4a196130a6ba1e3f58524fa140f",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/7a/7a4a5e2db7cfb0c0ecf4f31ae9ba3a5e2a27b4a196130a6ba1e3f58524fa140f.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/1d1568cd477d4e82d0346d58ba4717606128392aae0b39358f5ec0a2b736535b.npy",
+      "sha256": "3a35095de47814cd10a56c3bf733f1b781bd6005093201fa35731271cace1b6b",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/3a/3a35095de47814cd10a56c3bf733f1b781bd6005093201fa35731271cace1b6b.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/3a069efff014eeb408edf473eefc39107a307e4381366d58a6bf560bda2d7b10.npy",
+      "sha256": "b4775634ea279ad0d135618125d30b6ec3931a17c5cae4700fe511afc0c370ed",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/b4/b4775634ea279ad0d135618125d30b6ec3931a17c5cae4700fe511afc0c370ed.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/3b783b0e38b9c0ded2ce306d60293c8ed33b55a6c9f802f07c0a5479afc80e90.npy",
+      "sha256": "dd9a4163c359f27f944057e13c0338f20d5fd9ba2bfe90517e4e0c7bf9affb83",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/dd/dd9a4163c359f27f944057e13c0338f20d5fd9ba2bfe90517e4e0c7bf9affb83.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/3bba257d0216761b3f9797ae48d793731052a4f8ea4791084ed4bebb4b0a7be9.npy",
+      "sha256": "c14bea2e865cc17d035bb166db71d513e8d2e7636eba0718db52f7d8013ccfcf",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/c1/c14bea2e865cc17d035bb166db71d513e8d2e7636eba0718db52f7d8013ccfcf.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/411a75be047e3d86acf31235f5a36d9e45d2c937c402657f99db363028e031bc.npy",
+      "sha256": "833adfad32503507715cbd37b1445ece98155dd9888a2c681253ea7efed6c86d",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/83/833adfad32503507715cbd37b1445ece98155dd9888a2c681253ea7efed6c86d.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/50038f01bdbef92c8cebb7d9ac7826e6dd99ba7762853b0e4230c0b6832e86a2.npy",
+      "sha256": "a96a38182de3ad3c5749cbc8ab23e92a70c0cdcf12a18db03bfe6718e7d2cd73",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/a9/a96a38182de3ad3c5749cbc8ab23e92a70c0cdcf12a18db03bfe6718e7d2cd73.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/68e169472e20d03dde78bc8aa77f42e7f2b612f673bfd8cdcba91de3d3ad5e12.npy",
+      "sha256": "534895237684414a446556fe69320e649739294895edc4a610e698cf9aa6aa9b",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/53/534895237684414a446556fe69320e649739294895edc4a610e698cf9aa6aa9b.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/7caba12241c25bb16038787d0ed0175ce62ac97db42e464612fc9ef07854ea50.npy",
+      "sha256": "a33fefac21ce408ccb24052ed7f6ca68e3dd2e31ddf40283cd050f3d432e6c96",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/a3/a33fefac21ce408ccb24052ed7f6ca68e3dd2e31ddf40283cd050f3d432e6c96.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/817a86f95a0dd7dfc0177920c8d782720fe38ca28e83718212eb232d58e06c7f.npy",
+      "sha256": "f5e4f6b2f1410fc1e5780de9124394de715a749d81b4bbccc004ba08e13e4f8d",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/f5/f5e4f6b2f1410fc1e5780de9124394de715a749d81b4bbccc004ba08e13e4f8d.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/865b7ba415549a9a11cdff2121a47683ddb7522284229b28994063a20bb6fee7.npy",
+      "sha256": "e928a0cd5b9655979c3e30682122bd63571603aaa35c72818f5866a3bf1ac167",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/e9/e928a0cd5b9655979c3e30682122bd63571603aaa35c72818f5866a3bf1ac167.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/87e14094214d762c7ceddb2792f42479380e33da6dea126944ea780ef2948403.npy",
+      "sha256": "b873719f619003fd4562c31fabfe9cbb6d5210df6c4e787764daf34bcd64f336",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/b8/b873719f619003fd4562c31fabfe9cbb6d5210df6c4e787764daf34bcd64f336.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/8d6940bd55cd4468c0640ede76c7b33a17c49de20dc56774d4c19ac320c2cd58.npy",
+      "sha256": "e0891315159afa90641c8c92899a5929f17838c25cb32daa28588099a55148fc",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/e0/e0891315159afa90641c8c92899a5929f17838c25cb32daa28588099a55148fc.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/946ca44c127f35319ac72802fc0c4919f1c3c2a6431a726bc885ddf198303247.npy",
+      "sha256": "4c36a634ecbd12718ee244663aebcd92540adc3f893e6aa9f2f92a148889bbbe",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/4c/4c36a634ecbd12718ee244663aebcd92540adc3f893e6aa9f2f92a148889bbbe.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/95bcf225a7f35713ba1d3db17c7d9ebcb88dcef06c5ac536851e2d4db6ec34b4.npy",
+      "sha256": "7dc503fd2ee3473401225c93689bdca27d3b417476d6df0721d00d8058dc095f",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/7d/7dc503fd2ee3473401225c93689bdca27d3b417476d6df0721d00d8058dc095f.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/965e17562a09ac5c6e0c88976747e639d1fc52efc954393ef9cea3784f0ff6a1.npy",
+      "sha256": "329d7463c3f99b414fb33851d973f0e65cf22a24d681d2b4d1c6330fd7b80a1c",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/32/329d7463c3f99b414fb33851d973f0e65cf22a24d681d2b4d1c6330fd7b80a1c.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/b840738b00b21eba7fb510daaad3a738def9f2e565771ad09dd4ea5468ac9b3e.npy",
+      "sha256": "c60245a12e43f19207a67c414042d420c6aeaf7bc224935b03c53397925b59a1",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/c6/c60245a12e43f19207a67c414042d420c6aeaf7bc224935b03c53397925b59a1.gz",
+      "mode": 436
+    },
+    {
+      "path": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/s3/replays/cb4a0fd29d04cfc3914c91c6ceb4bff671ea7cae3d305cb44d72e0f9cd7a434e.npy",
+      "sha256": "a3f051d95ed7df3e68b37b75f9631c1db2620c81093a02c9532e8663fab2c3eb",
+      "bytes": 8320,
+      "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/replays/a3/a3f051d95ed7df3e68b37b75f9631c1db2620c81093a02c9532e8663fab2c3eb.gz",
+      "mode": 436
+    }
+  ],
+  "images": {
+    "sha256": "7621fec32780415ae90fec207329b353fcd3a6f873532c3ab8c917062165fe09",
+    "bytes": 397576,
+    "blob": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/standard_1_5t--wrong_receiver_phase/evaluation/.artifacts/sha256/76/7621fec32780415ae90fec207329b353fcd3a6f873532c3ab8c917062165fe09"
+  }
+}

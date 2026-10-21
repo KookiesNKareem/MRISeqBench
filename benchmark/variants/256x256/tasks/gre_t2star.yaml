@@ -1,0 +1,26 @@
+id: gre_t2star
+objective: Create Cartesian spoiled GRE with a 20-degree flip angle, TE 20 ms and TR 30 ms for T2-star weighting.
+object: cardiac_2d@1
+sequence:
+  level: S1
+  capabilities:
+  - spoiled_gre
+  - cartesian
+  matrix:
+  - 256
+  - 256
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 12
+  te_ms:
+    target: 20
+    tolerance: 2.0
+  tr_ms:
+    target: 30
+    tolerance: 1.5
+  flip_angle_deg: 20
+evaluation: s1@4
+schema_version: 1
+version: 2
+hardware: high_performance@1

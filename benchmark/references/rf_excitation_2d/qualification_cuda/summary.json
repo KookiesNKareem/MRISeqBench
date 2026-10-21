@@ -1,0 +1,324 @@
+{
+  "all_expected": true,
+  "complete": true,
+  "rows": [
+    {
+      "hardware": "low_field",
+      "control": "positive",
+      "expected_outcome": true,
+      "status": "uncalibrated",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.017113414466849608,
+        "inside_signal_fraction": 0.9888457436898249,
+        "outside_rms_fraction": 0.004592921724666738
+      },
+      "failed_checks": [],
+      "sequence_sha256": "e5a1d15677bce912afd2944d06b818b3f1699dbfdc2f671cd437490bdbb38517",
+      "seconds": 261.57030295208097,
+      "independent_oracle": {
+        "native_max_absolute_error": 0.0005258681814028383,
+        "oracle_refinement_error": 1.0662116823920529e-06,
+        "absolute_error_limit": 0.001,
+        "passed": true
+      }
+    },
+    {
+      "hardware": "low_field",
+      "control": "uniform",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 1.9328089097032983,
+        "inside_signal_fraction": 0.9611619641467976,
+        "outside_rms_fraction": 0.9488606466326331
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "outside_rms_fraction"
+      ],
+      "sequence_sha256": "7e2f792ed4fa4fe8fc24611d736eee77b8b7f8c018a622c2772e3bcb04b76e3c",
+      "seconds": 24.704850608482957,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "low_field",
+      "control": "missing_i",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.5716241793994492,
+        "inside_signal_fraction": 0.7559726614795008,
+        "outside_rms_fraction": 0.0036220788795087223
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "inside_signal_fraction"
+      ],
+      "sequence_sha256": "f9e3501033e477a79d3ecf05e971b9b796d4b49683e883fc0729356e44c07d76",
+      "seconds": 12.340809745714068,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "low_field",
+      "control": "shift",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 1.0419147251018712,
+        "inside_signal_fraction": 0.4050344919250484,
+        "outside_rms_fraction": 0.34568904226810965
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "inside_signal_fraction",
+        "outside_rms_fraction"
+      ],
+      "sequence_sha256": "f3340f65e59610b6018ff4c81ad38b1274387b50aad0dddf163ead505b2b88c9",
+      "seconds": 12.14697939902544,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "low_field",
+      "control": "wrong_amplitude",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.4906045077302396,
+        "inside_signal_fraction": 0.511794105444591,
+        "outside_rms_fraction": 0.002496789957669171
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "inside_signal_fraction"
+      ],
+      "sequence_sha256": "3ac100aa2eb95e90825c43510047f13c4c88dd31f935e16745c2a10fede5d0ac",
+      "seconds": 12.30381865426898,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "low_field",
+      "control": "no_rf",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "excitation_only"
+      ],
+      "sequence_sha256": "e7ef4e510abff6a713827d46b92d1f3a87f1178ff6bf32e0e8c6ed791dbdb231",
+      "seconds": 0.014874888584017754,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "positive",
+      "expected_outcome": true,
+      "status": "uncalibrated",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.01692766373462665,
+        "inside_signal_fraction": 0.9889621569631162,
+        "outside_rms_fraction": 0.004511151679138642
+      },
+      "failed_checks": [],
+      "sequence_sha256": "860166c8910f40365440968633f106346ece18a06a4ca87b9d4f638cbe3f9728",
+      "seconds": 51.515197176486254,
+      "independent_oracle": {
+        "native_max_absolute_error": 0.0005348352380799364,
+        "oracle_refinement_error": 1.6291783879687737e-06,
+        "absolute_error_limit": 0.001,
+        "passed": true
+      }
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "uniform",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 1.9321959390974706,
+        "inside_signal_fraction": 0.960906489425984,
+        "outside_rms_fraction": 0.9485601726385599
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "outside_rms_fraction"
+      ],
+      "sequence_sha256": "7e2f792ed4fa4fe8fc24611d736eee77b8b7f8c018a622c2772e3bcb04b76e3c",
+      "seconds": 24.72385574877262,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "missing_i",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.5716827490353054,
+        "inside_signal_fraction": 0.7559684187324682,
+        "outside_rms_fraction": 0.0035907152980275206
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "inside_signal_fraction"
+      ],
+      "sequence_sha256": "585c62034758195e4b9fcbc9ea97e9b3fd3f756a4dc13e369282370c89db7539",
+      "seconds": 12.374447088688612,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "shift",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 1.0422894118127244,
+        "inside_signal_fraction": 0.4048715702793316,
+        "outside_rms_fraction": 0.3457736544553002
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "inside_signal_fraction",
+        "outside_rms_fraction"
+      ],
+      "sequence_sha256": "2703979d5034db1ab8b31ad5d045c7663492ec09a058f36087359cf9c4232c0a",
+      "seconds": 24.85242248699069,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "wrong_amplitude",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.49052770434236725,
+        "inside_signal_fraction": 0.5118687409590721,
+        "outside_rms_fraction": 0.0024566517993113374
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "inside_signal_fraction"
+      ],
+      "sequence_sha256": "5690afa281f53988158ee00fda25f3369591a0df62a9e2f493907403936ad74c",
+      "seconds": 12.260363962501287,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "no_rf",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "excitation_only"
+      ],
+      "sequence_sha256": "e7ef4e510abff6a713827d46b92d1f3a87f1178ff6bf32e0e8c6ed791dbdb231",
+      "seconds": 0.015604723244905472,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "high_performance",
+      "control": "positive",
+      "expected_outcome": true,
+      "status": "uncalibrated",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.018997192876792898,
+        "inside_signal_fraction": 0.9881788072645042,
+        "outside_rms_fraction": 0.005780682366986378
+      },
+      "failed_checks": [],
+      "sequence_sha256": "993147d5426bff40224826c70b4a05adadd1de432d25a6cabe827be5dd1db24c",
+      "seconds": 51.43863426707685,
+      "independent_oracle": {
+        "native_max_absolute_error": 0.0004628978872038421,
+        "oracle_refinement_error": 4.649604020853492e-06,
+        "absolute_error_limit": 0.001,
+        "passed": true
+      }
+    },
+    {
+      "hardware": "high_performance",
+      "control": "uniform",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 1.9300746770660036,
+        "inside_signal_fraction": 0.9600213359727772,
+        "outside_rms_fraction": 0.947520197015177
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "outside_rms_fraction"
+      ],
+      "sequence_sha256": "7e2f792ed4fa4fe8fc24611d736eee77b8b7f8c018a622c2772e3bcb04b76e3c",
+      "seconds": 25.122991079464555,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "high_performance",
+      "control": "missing_i",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.5714502352602863,
+        "inside_signal_fraction": 0.7558195563003728,
+        "outside_rms_fraction": 0.003935525244938992
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "inside_signal_fraction"
+      ],
+      "sequence_sha256": "368f6f84dd210bf75e4c3cb4c3295f477d9a9be80acdfc5a22eb337d913f94a6",
+      "seconds": 11.914328811690211,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "high_performance",
+      "control": "shift",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 1.0456959866049846,
+        "inside_signal_fraction": 0.4058118723858394,
+        "outside_rms_fraction": 0.34754546021780636
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "inside_signal_fraction",
+        "outside_rms_fraction"
+      ],
+      "sequence_sha256": "08ddc48dec8e408074950fd2175f37375b6a7ba462355f4df0d9622f8392a9b1",
+      "seconds": 12.324047688394785,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "high_performance",
+      "control": "wrong_amplitude",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.491079724635236,
+        "inside_signal_fraction": 0.511415666065013,
+        "outside_rms_fraction": 0.0031241951363389035
+      },
+      "failed_checks": [
+        "excitation_magnitude_nrmse",
+        "inside_signal_fraction"
+      ],
+      "sequence_sha256": "488a0ca5276c8986f152a2ea6e2ba25d9b2d04924af40d6c1983a244adebda44",
+      "seconds": 12.499996034428477,
+      "independent_oracle": null
+    },
+    {
+      "hardware": "high_performance",
+      "control": "no_rf",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "excitation_only"
+      ],
+      "sequence_sha256": "e7ef4e510abff6a713827d46b92d1f3a87f1178ff6bf32e0e8c6ed791dbdb231",
+      "seconds": 0.014848912134766579,
+      "independent_oracle": null
+    }
+  ]
+}

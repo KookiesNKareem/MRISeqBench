@@ -32,6 +32,9 @@ MUTATIONS = (
     "receiver_phase",
     "constant_contrast",
     "narrow_preparation",
+    "double_inversion",
+    "missing_t2_refocuser",
+    "wrong_t2_phase",
 )
 
 
@@ -45,7 +48,12 @@ def make_sequence(
     prep_gap_tr=3,
     ramp_count=None,
     tr_s=None,
+    catalyzation=False,
+    flip_back=False,
 ):
+    """catalyzation adds an alpha/2 pulse TR/2 before each train; flip_back adds
+    an alpha/2 tip-up TR/2 after each train's last readout. Both are bSSFP
+    conditioning, not preparation."""
     hardware = case["hardware"]
     spec = case["task"]["sequence"]
     family = case["task"]["id"]
@@ -109,7 +117,7 @@ def make_sequence(
         mu=4.9,
         adiabaticity=4,
         delay=system.rf_dead_time,
-        phase_offset=np.pi / 2,
+        phase_offset=0.0 if mutation == "wrong_t2_phase" else np.pi / 2,
         system=system,
         use="refocusing",
     )
@@ -180,10 +188,10 @@ def make_sequence(
         if target - clock > 1e-9:
             add(make_delay(target - clock))
 
-    def preparation_pulse(center, pulse):
+    def preparation_pulse(center, pulse, *, skip=False):
         pulse_center = pulse.delay + pulse.shape_dur / 2
         wait(center - pulse_center)
-        if mutation == "missing_preparation":
+        if mutation == "missing_preparation" or skip:
             add(make_delay(calc_duration(pulse)))
         else:
             add(pulse)
@@ -212,6 +220,8 @@ def make_sequence(
                 25.0 if family in {"adiabatic_inversion", "t1_mapping"} else 30.0
             )
         if family in {"adiabatic_inversion", "t1_mapping"}:
+            if mutation == "double_inversion":
+                preparation_pulse(central_echo - actual_value / 1000 - 0.05, inversion)
             preparation_pulse(central_echo - actual_value / 1000, inversion)
         elif actual_value > 0:
             # A symmetric, two-refocusing T2 preparation, then a separate catalyst.
@@ -219,8 +229,26 @@ def make_sequence(
             start = end - actual_value / 1000
             preparation_pulse(start, tipdown)
             preparation_pulse(start + actual_value / 4000, refocusing)
-            preparation_pulse(start + 3 * actual_value / 4000, refocusing)
+            preparation_pulse(
+                start + 3 * actual_value / 4000,
+                refocusing,
+                skip=mutation == "missing_t2_refocuser",
+            )
             preparation_pulse(end, tipup)
+
+        def half_alpha(center, phase):
+            wait(center - rf_center)
+            r = copy.copy(rf)
+            r.signal = r.signal / 2
+            r.phase_offset = phase
+            add(r)
+
+        if catalyzation:
+            # Opposite phase to the first train pulse, TR/2 earlier.
+            half_alpha(
+                first_center - frame_dummy_count * tr - tr / 2,
+                np.pi * ((shot + 1) % 2),
+            )
         for line in range(-frame_dummy_count, ny):
             center = first_center + line * tr
             wait(center - rf_center)
@@ -254,6 +282,12 @@ def make_sequence(
             add(*([post_x] if mutation != "unbalanced" else []), post_y)
             end = center - rf_center + tr
             wait(end)
+            if flip_back and line == ny - 1:
+                # Tip-up alpha/2 TR/2 after the last echo, continuing the cycle.
+                r = copy.copy(rf)
+                r.signal = r.signal / 2
+                r.phase_offset = np.pi * ((shot + 1) % 2)
+                add(r)
             shot += 1
     # Finish the final nominal cardiac cycle with actual RF-free recovery.
     # This is part of the physical protocol and its SAR averaging duration.

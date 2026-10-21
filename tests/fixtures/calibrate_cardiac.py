@@ -36,18 +36,20 @@ def controls(root, level):
 def options_for(case, module):
     level, family = case["sequence_level"], case["task"]["id"]
     cardiac = (
-        case["evaluation"].get("intrinsic_tissue_response", False)
-        and case["object"]["phantom"].startswith("cardiac_")
+        case["object"]["phantom"].startswith("cardiac_")
         and case.get("image_policy") == "static"
     )
     field = case["hardware"]["field_strength_T"]
+    # 0.32 ms cannot carry a 256-sample readout; 0.64 ms (2.5 us dwell) is the
+    # shortest raster-valid flat top under the 80 mT/m limit.
+    flat = 0.00064 if case["task"]["sequence"]["matrix"][0] >= 256 else 0.00032
     if level == "S1":
-        options = {"readout_flat": 0.00032}
+        options = {"readout_flat": flat}
         if cardiac and family == "spin_echo_t2w" and field == 3:
             options.update(water_selective_order=2, water_selective_refocusing_order=2)
         return options
     if level == "S3":
-        options = {"readout_flat": 0.00032}
+        options = {"readout_flat": flat}
         if cardiac and family == "reduced_fov":
             options.update(
                 selective_rf_duration=0.0096,
@@ -55,17 +57,32 @@ def options_for(case, module):
                 reduced_refocusing_duration=0.0008,
                 reduced_flip_deg=90,
                 preparations=1,
-                repetition_time=0.352,
+                repetition_time=None
+                if case["task"]["sequence"].get("tr_ms")
+                else 0.352,
                 reduced_fat_saturation=True,
                 reduced_fat_saturation_pulses=2,
                 reduced_fat_saturation_duration=0.008,
             )
         return options
     options = module.physics_control_options(case)
+    if family == "radial_readout" and case["task"]["sequence"].get("te_ms"):
+        options["radial_te"] = case["task"]["sequence"]["te_ms"]["target"] / 1000
     if family not in {"ute_radial", "spiral_gre"}:
-        options["cartesian_flat"] = 0.00032
+        options["cartesian_flat"] = flat
     if family == "grase":
         options.update(grase_offset=0.0004, ref_duration=0.0006)
+    if flat > 0.00032:
+        # 256 controls: blips in the readout fall ramp keep the 0.64 ms flat top
+        # inside each TE; GRASE gradient echoes sit outside that longer readout.
+        if family.startswith("epi"):
+            options.update(epi_spacing=0.00118, overlap_blips=True)
+        if family == "epi_single_shot":
+            options["epi_tr"] = 0.45
+        if family == "grase":
+            options["grase_offset"] = 0.0013
+        if family == "spiral_gre":
+            options.update(curved_duration=0.016, spiral_adc_oversampling=5)
     if case["hardware"]["id"] == "low_field":
         if family.startswith("epi"):
             options["epi_spacing"] = 0.0012
@@ -83,7 +100,7 @@ def options_for(case, module):
         if field == 3 and family in {"grase", "propeller_tse", "tse_t2w"}:
             options.update(water_selective_order=2, water_selective_refocusing_order=2)
         if field == 3 and family == "grase":
-            options["grase_spin_echo_spacing"] = 0.006
+            options["grase_spin_echo_spacing"] = 0.008 if flat > 0.00032 else 0.006
         if family == "tse_t2w" and field in {1.5, 3}:
             options["centric_tse"] = True
             if field == 1.5:
@@ -268,7 +285,9 @@ def run(args):
             if args.tse_ref_duration_ms is not None:
                 options["ref_duration"] = args.tse_ref_duration_ms / 1000
             if args.tse_water:
-                options.update(water_selective_order=2, water_selective_refocusing_order=2)
+                options.update(
+                    water_selective_order=2, water_selective_refocusing_order=2
+                )
         try:
             mutation = (
                 ("missing_line" if case["sequence_level"] == "S1" else "wrong_fov")

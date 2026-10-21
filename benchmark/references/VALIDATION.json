@@ -1,0 +1,22 @@
+{
+  "reference_controls": {
+    "rf_excitation_2d": 18,
+    "rfov_epi": 24
+  },
+  "all_expected": true,
+  "qualified_scanner_fields_T": [
+    0.55,
+    1.5,
+    3.0
+  ],
+  "published_reference_sequences": 6,
+  "full_suite_cases": 81,
+  "rf_suite_cases": 6,
+  "scoped_pytest": {
+    "passed": 186,
+    "deselected": 2
+  },
+  "native_default": "CUDA Float64",
+  "ai_cpu_cuda_max_absolute_difference": 4.1705632477085876e-14,
+  "unrelated_local_integration_failure": "An earlier real-Pi delivery test expected pinned Pi 0.87.0; the locally installed Pi reports 1.2.0. Existing pins and other runtime settings were preserved."
+}

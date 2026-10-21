@@ -12,7 +12,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-from scipy.special import roots_legendre
 
 from ..io import write_json
 from . import bart
@@ -20,12 +19,12 @@ from .s1 import evaluate_s1
 from .s1_image import canonical_response, expected_receiver_phase
 from .s1_koma import simulate
 from .s1_phantom import Spins
-from .s1_sampling import analytic_reference, source
+from .s1_sampling import analytic_reference
 from .s1_sequence import check, family
 from .s2 import mechanism_probes as gre_probes
 from .s2 import phase_reference, reference_index
 from .s2 import reference_signal as spatial_reference
-from .s3_sequence import PARALLEL, inspect_sequence
+from .s3_sequence import PARALLEL, REDUCED_FOV, inspect_sequence
 
 RECEIVE_AMPLITUDE = 0.8
 RECEIVE_NORMALIZATION = np.sqrt(4 * (1 + RECEIVE_AMPLITUDE**2 / 2))
@@ -35,6 +34,7 @@ REGULARIZATION = 1e-3
 # after reaching the complex64 floor on irregular masks. Fixed 50 is validated
 # against dense normal equations, including phase-rotated inputs.
 MAX_ITERATIONS = 50
+REFERENCE_CHUNK_SPINS = 262144
 
 
 def receive_terms(dims, parallel=True):
@@ -68,17 +68,26 @@ def receive_terms(dims, parallel=True):
     return channels
 
 
+def _receive_map(positions, fov, angles):
+    """One exact separable cosine coil, without complex harmonic temporaries."""
+    value = np.ones(len(positions))
+    for axis, angle in enumerate(angles, start=1):
+        phase = 2 * np.pi * positions[:, axis] / fov[axis] - angle
+        value *= (1 + RECEIVE_AMPLITUDE * np.cos(phase)) / RECEIVE_NORMALIZATION
+    return value
+
+
 def receive_maps(positions, fov, parallel=True):
-    dims = len(fov)
     xyz = np.asarray(positions)
-    maps = []
-    for terms in receive_terms(dims, parallel):
-        value = sum(
-            c * np.exp(2j * np.pi * (xyz[:, :dims] @ (shift[:dims] / fov)))
-            for shift, c in terms
-        )
-        maps.append(value.real)
-    return np.asarray(maps)
+    angles = (
+        list(product(np.arange(4) * np.pi / 2, repeat=len(fov) - 1))
+        if parallel
+        else [()]
+    )
+    maps = np.empty((len(angles), len(xyz)))
+    for channel, phases in enumerate(angles):
+        maps[channel] = _receive_map(xyz, fov, phases)
+    return maps
 
 
 def signal_shape(acq):
@@ -100,20 +109,35 @@ def simulate_channels(acq, spins, effects=(), **steps):
 
 
 def reference_channels(acq, spins, spec, response):
-    maps = receive_maps(
-        spins.positions,
-        np.asarray(spec["fov_mm"]) / 1000,
-        acq.measurements["family"] in PARALLEL,
+    """Stream one receive coil through the identical Fourier control variate.
+
+    Retaining every coil's complex harmonic backing array made the next
+    quadrature stage exceed the host-memory cap. Native Bloch replays already
+    operate in small spin chunks; only this independent reference was unbounded.
+    """
+    fov = np.asarray(spec["fov_mm"]) / 1000
+    parallel = acq.measurements["family"] in PARALLEL
+    angles = (
+        list(product(np.arange(4) * np.pi / 2, repeat=len(fov) - 1))
+        if parallel
+        else [()]
     )
     weights = np.broadcast_to(spins.weight, (len(spins.positions),))
-    return np.asarray(
-        [
-            spatial_reference(
-                acq, replace(spins, weight=weights * sensitivity), spec, response
+    raw = np.zeros((len(angles), len(acq.adc)), complex)
+    for start in range(0, len(weights), REFERENCE_CHUNK_SPINS):
+        stop = start + REFERENCE_CHUNK_SPINS
+        part = replace(
+            spins,
+            positions=spins.positions[start:stop],
+            labels=spins.labels[start:stop],
+            weight=weights[start:stop],
+        )
+        for channel, phases in enumerate(angles):
+            sensitivity = _receive_map(part.positions, fov, phases)
+            raw[channel] += spatial_reference(
+                acq, replace(part, weight=part.weight * sensitivity), spec, response
             )
-            for sensitivity in maps
-        ]
-    )
+    return raw
 
 
 def analytic_channels(acq, case, root, response):
@@ -163,7 +187,7 @@ def inverse(grid, offset):
 
 def selection_region(acq, matrix):
     region = np.ones(matrix, bool)
-    if acq.measurements["family"] == "reduced_fov":
+    if acq.measurements["family"] in REDUCED_FOV:
         n = matrix[1]
         width = round(n * acq.measurements["reduced_fov_fraction"])
         ys = np.arange(n)
@@ -186,7 +210,7 @@ def reconstruct(raw, acq, matrix):
     fam = acq.measurements["family"]
     if fam not in PARALLEL:
         image = inverse(grid[0], acq.offset)
-        if fam == "reduced_fov":
+        if fam in REDUCED_FOV:
             image *= (
                 selection_region(acq, matrix) / acq.measurements["reduced_fov_fraction"]
             )
@@ -244,72 +268,21 @@ def temporal_image_error(delta, acq, matrix, reference):
     )
 
 
-def clipped_reference(acq, case, root, response, fraction, *, order=512):
-    """Independent Fourier integral of primitives clipped to the ideal inner slab.
+def clipped_reference(acq, case, root, response, fraction):
+    """Independent anatomical Fourier reference clipped to the ideal inner slab."""
+    from .s1_anatomy import anatomical_reference
 
-    For ellipses the readout-axis integral is analytic; only the phase-axis
-    cross-section uses deterministic Gauss-Legendre quadrature. It does not use
-    submitted RF, measured signals, reconstructed images or candidate geometry.
-    """
-    from .s1_anatomy import anatomical_reference, is_anatomical
-
-    if is_anatomical(case):
-        half = case["task"]["sequence"]["fov_mm"][1] / 2000 * fraction
-        return anatomical_reference(
-            acq, case, root, response, clip_axis=1, clip_bounds_m=(-half, half)
-        )
-    shapes, primitives, _ = source(case, root)
-    materials = list(shapes["materials"])
-    spec = case["task"]["sequence"]
-    voxel = np.prod(np.asarray(spec["fov_mm"]) / 1000 / spec["matrix"])
-    half = spec["fov_mm"][1] / 2000 * fraction
-    unit, weights = roots_legendre(order)
-    raw = np.zeros(len(acq.adc), complex)
-    kx, ky = acq.k[:, 0], acq.k[:, 1]
-    for index, shape in enumerate(primitives):
-        cx, cy = np.asarray(shape["center_mm"]) / 1000
-        rx, ry = np.asarray(shape["radii_mm"]) / 1000
-        lo, hi = max(cy - ry, -half), min(cy + ry, half)
-        if lo >= hi:
-            continue
-        parent = None
-        for earlier in primitives[:index]:
-            q = (np.asarray(shape["center_mm"]) - earlier["center_mm"]) / earlier[
-                "radii_mm"
-            ]
-            if (np.abs(q) <= 1).all() if earlier["kind"] == "box" else q @ q <= 1:
-                parent = earlier["material"]
-        coefficient = response[materials.index(shape["material"])].copy()
-        if parent is not None:
-            coefficient -= response[materials.index(parent)]
-        if shape["kind"] == "box":
-            fourier = (
-                2
-                * rx
-                * np.sinc(2 * kx * rx)
-                * (hi - lo)
-                * np.sinc(ky * (hi - lo))
-                * np.exp(-2j * np.pi * (kx * cx + ky * (hi + lo) / 2))
-            )
-        else:
-            ys = (lo + hi) / 2 + (hi - lo) / 2 * unit
-            width = rx * np.sqrt(np.maximum(0, 1 - ((ys - cy) / ry) ** 2))
-            cross_section = (
-                2 * width[None, :] * np.sinc(2 * kx[:, None] * width[None, :])
-            )
-            fourier = np.exp(-2j * np.pi * kx * cx) * (
-                (cross_section * np.exp(-2j * np.pi * ky[:, None] * ys[None, :]))
-                @ ((hi - lo) / 2 * weights)
-            )
-        raw += fourier / voxel * coefficient
-    return raw
+    half = case["task"]["sequence"]["fov_mm"][1] / 2000 * fraction
+    return anatomical_reference(
+        acq, case, root, response, clip_axis=1, clip_bounds_m=(-half, half)
+    )
 
 
 def reference_image(acq, case, root, response, reference_raw):
     """Complete Fourier grid of the object, independent of the submitted mask."""
     spec = case["task"]["sequence"]
     matrix = np.asarray(spec["matrix"])
-    if family(case) == "reduced_fov":
+    if family(case) in REDUCED_FOV:
         fraction = acq.measurements["reduced_fov_fraction"]
         inner = matrix.copy()
         inner[1] = round(matrix[1] * fraction)
@@ -345,7 +318,7 @@ def reference_image(acq, case, root, response, reference_raw):
 
 
 def mechanism_probes(acq, case, materials, properties):
-    if family(case) != "reduced_fov":
+    if family(case) not in REDUCED_FOV:
         # Mechanism probes isolate spoiling from receiver corruption. Only this
         # diagnostic uses the RF-derived phase; image replay keeps submitted ADC
         # phases, so receiver errors remain in the independently scored image.
@@ -364,6 +337,24 @@ def mechanism_probes(acq, case, materials, properties):
     ]
     xyz = np.zeros((len(inside_y) + len(outside_y), 3))
     xyz[:, 1] = np.r_[inside_y, outside_y]
+    if family(case) == "rfov_epi":
+        # Both axes must select. Include x-only stopband probes so a 1D y-slab
+        # excitation cannot masquerade as a 2D RF pulse on compact anatomy.
+        inside_points = np.array(
+            [(x, y, 0.0) for x in (-0.056, 0.0, 0.056) for y in inside_y]
+        )
+        outside_points = np.array(
+            [(x, y, 0.0) for x in (-0.056, 0.0, 0.056) for y in outside_y]
+            + [
+                (x, y, 0.0)
+                for x in (-0.096, -0.092, 0.092, 0.096)
+                for y in (-0.025, 0.0, 0.025)
+            ]
+        )
+        xyz = np.vstack((inside_points, outside_points))
+        inside_y = np.zeros(
+            len(inside_points)
+        )  # Preserve the shared inside/outside split.
     props = np.array([[1.0, 0.8, 0.08]])
     spins = Spins(
         xyz,
@@ -378,25 +369,19 @@ def mechanism_probes(acq, case, materials, properties):
     centres = np.asarray(acq.measurements["centre_sample_indices"])
     ids = centres[np.unique([0, len(centres) // 2, len(centres) - 1])]
     a.adc, a.adc_phase, a.k = acq.adc[ids], acq.adc_phase[ids], acq.k[ids]
-    signal = np.abs(simulate(a, spins, individual=True))
-    inside = float(np.mean(signal[:, : len(inside_y)]))
+    signal = np.abs(
+        simulate(
+            a,
+            spins,
+            case["physics"]["effects"] if family(case) == "rfov_epi" else (),
+            individual=True,
+        )
+    )
+    inside_values = signal[:, : len(inside_y)]
+    inside = float(np.mean(inside_values))
     outside = float(np.max(signal[:, len(inside_y) :]))
     leakage = outside / max(inside, 1e-15)
-    # Refocusing adds pi to the independent excitation -i convention.
-    response = canonical_response(
-        acq,
-        properties,
-        family(case),
-        finite_rf=case["evaluation"].get("intrinsic_tissue_response", False),
-    )
-    parity = np.zeros(len(acq.adc), int)
-    for pulse in acq.pulses:
-        after = acq.adc >= pulse.center
-        if pulse.refocusing:
-            parity[after] += 1
-        else:
-            parity[after] = 0
-    response *= (-1.0) ** parity
+    response = canonical_response(acq, properties, family(case), finite_rf=True)
     checks = [
         check(
             "spatial_selection",
@@ -409,6 +394,14 @@ def mechanism_probes(acq, case, materials, properties):
             },
         )
     ]
+    if family(case) == "rfov_epi":
+        checks.append(
+            check(
+                "rfov_inside_signal",
+                np.min(inside_values) >= 0.2,
+                {"min_signal": float(np.min(inside_values)), "minimum": 0.2},
+            )
+        )
     return (
         checks,
         {"selection_leakage_ratio": leakage, "diagnostic_signal_fraction": inside},
@@ -455,10 +448,10 @@ def evaluate_s3(submission, case, root, workspace, *, deadline=None):
             "model": "s3_trigonometric_comoving@1"
             if family(case) in PARALLEL
             else "uniform@1",
-            "dynamics": "KomaMRICore.BlochDict"
+            "dynamics": "KomaMRICore native GPU Bloch: static fused receive or dynamic BlochDict"
             if family(case) in PARALLEL
             else "KomaMRICore.Bloch",
-            "accumulation": "bounded native per-spin ADC blocks multiplied by fixed receive maps"
+            "accumulation": "native fused exact static receive; bounded native per-spin ADC for dynamic receive"
             if family(case) in PARALLEL
             else "native summed Bloch replay",
         }

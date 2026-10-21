@@ -10,12 +10,55 @@ from .s1_sequence import inspect_sequence as inspect_cartesian
 FAMILIES = {"adiabatic_inversion", "t2_prepared", "t1_mapping", "t2_mapping"}
 
 
+def _inversion_time_matches(measured_ms, target_ms, tolerance_ms):
+    """Inclusive TI bound with a 1 ps guard for accumulated float arithmetic.
+
+    This is numerical slack, far below the file rasters; it does not replace
+    the physical tolerance or round a genuinely out-of-tolerance TI onto it.
+    """
+    return measured_ms is not None and abs(measured_ms - target_ms) <= (
+        tolerance_ms + 1e-9
+    )
+
+
 def _phase(pulse):
     return pulse.phase + 2 * np.pi * pulse.frequency * (pulse.center - pulse.start)
 
 
 def _phase_error(actual, expected):
     return float(abs(np.angle(np.exp(1j * (actual - expected)))))
+
+
+def classify_preparation(pulses, window_ids, readout_flip, *, t2):
+    """Assign pre-train RF a role from its waveform, never from labels.
+
+    Preparation is an inversion-class pulse (nominal flip >=170 degrees) or,
+    for T2 families, the first 90/>=178/>=178/90 consecutive block. Pulses no
+    larger than the train's own flips (+2 degrees) are conditioning, e.g.
+    alpha/2 catalyzation, ramp-up or flip-back. Anything else is unclassified
+    and fails the frame instead of silently counting as either role.
+    """
+    flips = [pulses[j].flip for j in window_ids]
+    prep = []
+    if t2:
+        for i in range(len(window_ids) - 3):
+            down, ref1, ref2, up = flips[i : i + 4]
+            if (
+                abs(down - 90) <= 2
+                and ref1 >= 178
+                and ref2 >= 178
+                and abs(up - 90) <= 2
+            ):
+                prep = window_ids[i : i + 4]
+                break
+    else:
+        prep = [j for j, flip in zip(window_ids, flips) if flip >= 170]
+    rest = [j for j in window_ids if j not in prep]
+    conditioning = [
+        j for j in rest if pulses[j].flip <= readout_flip + 2 and pulses[j].flip < 170
+    ]
+    unclassified = [j for j in rest if j not in conditioning]
+    return prep, conditioning, unclassified
 
 
 def _hs_shape(pulse):
@@ -170,12 +213,24 @@ def inspect_sequence(path, case):
         ):
             start -= 1
         train_start = acq.pulses[start].start
-        prep_ids = [
+        window_ids = [
             j
             for j, pulse in enumerate(acq.pulses)
             if prior_frame_end <= pulse.start and pulse.end <= train_start - tolerance
         ]
+        prep_ids, conditioning_ids, unclassified_ids = classify_preparation(
+            acq.pulses,
+            window_ids,
+            max(acq.pulses[j].flip for j in readout_ids),
+            t2=family(case) in {"t2_prepared", "t2_mapping"},
+        )
         preparations = [acq.pulses[j] for j in prep_ids]
+        roles = {
+            "preparation_pulse_indices": prep_ids,
+            "conditioning_pulse_indices": conditioning_ids,
+            "unclassified_pulse_indices": unclassified_ids,
+            "unclassified_flips_deg": [acq.pulses[j].flip for j in unclassified_ids],
+        }
         unique = len(np.unique(acq.indices[ids], axis=0))
         checks.append(
             check(
@@ -222,10 +277,36 @@ def inspect_sequence(path, case):
                     "alternating_rf": bool(alternating),
                     "receiver_phase_error_rad": receiver_error,
                     "matched_rf_adc_frequency": matched_carrier,
+                    "echo_te_ms": (echo_te * 1000).tolist(),
+                    "required_te_ms": tr * 500,
+                    "te_tolerance_ms": max(1e-5, 0.05 * tr) * 1000,
+                    "max_te_error_ms": float(np.max(np.abs(echo_te - tr / 2)) * 1000),
+                    "limits": {
+                        "max_gradient_area_fov": 0.01,
+                        "phase_error_rad": 0.01,
+                        "carrier_error_hz": 1e-6,
+                    },
+                    "conditions": {
+                        "positive_tr": bool(tr > 0),
+                        "balanced_gradients": balance <= 0.01,
+                        "alternating_rf": bool(alternating),
+                        "matched_receiver_phase": receiver_error <= 0.01,
+                        "matched_rf_adc_frequency": matched_carrier,
+                        "echo_at_half_tr": bool(
+                            np.all(np.abs(echo_te - tr / 2) <= max(1e-5, 0.05 * tr))
+                        ),
+                    },
                 },
             )
         )
         central = int(ids[np.argmin(np.linalg.norm(acq.k[ids], axis=1))])
+        # TI uses the same interpolated k-space-centre echo time as TE. The
+        # nearest ADC sample is up to half a dwell away on a half-sample lattice.
+        central_echo = float(
+            acq.measurements["echo_times_s"][
+                next(j for j in line_ids if central in acq.lines[j])
+            ]
+        )
         application = spec["application"]
         if family(case) in {"adiabatic_inversion", "t1_mapping"}:
             target_ti = (
@@ -237,21 +318,41 @@ def inspect_sequence(path, case):
             inversion_ok = (
                 inversion is not None
                 and len(preparations) == 1
-                and inversion.flip >= 170
+                and not unclassified_ids
             )
             measured_ti = (
-                (acq.adc[central] - inversion.center) * 1000
+                (central_echo - inversion.center) * 1000
                 if inversion is not None
                 else None
             )
             checks.append(
                 check(
                     f"frame_{frame_no}_inversion",
-                    inversion_ok and abs(measured_ti - target_ti) <= tolerance * 1000,
+                    inversion_ok
+                    and _inversion_time_matches(
+                        measured_ti, target_ti, tolerance * 1000
+                    ),
                     {
                         "ti_ms": measured_ti,
                         "required_ti_ms": target_ti,
                         "preparation_pulses": len(preparations),
+                        **roles,
+                        "nominal_flip_deg": inversion.flip
+                        if inversion is not None
+                        else None,
+                        "min_nominal_flip_deg": 170,
+                        "ti_error_ms": abs(measured_ti - target_ti)
+                        if measured_ti is not None
+                        else None,
+                        "ti_tolerance_ms": tolerance * 1000,
+                        "ti_numerical_slack_ms": 1e-9,
+                        "conditions": {
+                            "exactly_one_inversion": len(preparations) == 1,
+                            "no_unclassified_rf": not unclassified_ids,
+                            "inversion_time": _inversion_time_matches(
+                                measured_ti, target_ti, tolerance * 1000
+                            ),
+                        },
                     },
                 )
             )
@@ -277,13 +378,15 @@ def inspect_sequence(path, case):
                 if family(case) == "t2_prepared"
                 else application["preparation_durations_ms"][frame_no]
             )
-            valid_prep = not preparations if target == 0 else len(preparations) == 4
+            valid_prep = not unclassified_ids and (
+                not preparations if target == 0 else len(preparations) == 4
+            )
             measured = None
             if target > 0 and len(preparations) == 4:
                 down, ref1, ref2, up = preparations
                 measured = (up.center - down.center) * 1000
                 interval = up.center - down.center
-                valid_prep = (
+                valid_prep = valid_prep and (
                     abs(down.flip - 90) <= 2
                     and abs(up.flip - 90) <= 2
                     and ref1.flip >= 178
@@ -296,15 +399,58 @@ def inspect_sequence(path, case):
                     and _phase_error(_phase(ref2), _phase(ref1)) <= 0.01
                 )
                 prep_centers.append(down.center)
+            detail = {
+                "preparation_ms": measured if target else 0,
+                "required_ms": target,
+                "preparation_pulses": len(preparations),
+                **roles,
+                "nominal_flips_deg": [p.flip for p in preparations],
+                "timing_tolerance_ms": tolerance * 1000,
+                "tip_flip_tolerance_deg": 2,
+                "min_refocusing_flip_deg": 178,
+                "phase_tolerance_rad": 0.01,
+                "conditions": {
+                    "preparation_event_count": len(preparations)
+                    == (4 if target > 0 else 0),
+                    "no_unclassified_rf": not unclassified_ids,
+                },
+            }
+            if target > 0 and len(preparations) == 4:
+                quarter_errors = [
+                    (ref1.center - down.center - interval / 4) * 1000,
+                    (ref2.center - down.center - 3 * interval / 4) * 1000,
+                ]
+                phase_errors = [
+                    _phase_error(_phase(up), _phase(down) + np.pi),
+                    _phase_error(_phase(ref1), _phase(down) + np.pi / 2),
+                    _phase_error(_phase(ref2), _phase(ref1)),
+                ]
+                detail.update(
+                    refocuser_center_errors_ms=quarter_errors,
+                    phase_errors_rad=phase_errors,
+                    preparation_duration_error_ms=abs(measured - target),
+                )
+                detail["conditions"].update(
+                    {
+                        "tip_down_flip": abs(down.flip - 90) <= 2,
+                        "tip_up_flip": abs(up.flip - 90) <= 2,
+                        "first_refocusing_flip": ref1.flip >= 178,
+                        "second_refocusing_flip": ref2.flip >= 178,
+                        "duration": abs(measured - target) <= tolerance * 1000,
+                        "first_refocuser_center": abs(quarter_errors[0])
+                        <= tolerance * 1000,
+                        "second_refocuser_center": abs(quarter_errors[1])
+                        <= tolerance * 1000,
+                        "tip_up_phase": phase_errors[0] <= 0.01,
+                        "first_refocusing_phase": phase_errors[1] <= 0.01,
+                        "second_refocusing_phase": phase_errors[2] <= 0.01,
+                    }
+                )
             checks.append(
                 check(
                     f"frame_{frame_no}_t2_preparation",
                     valid_prep,
-                    {
-                        "preparation_ms": measured if target else 0,
-                        "required_ms": target,
-                        "preparation_pulses": len(preparations),
-                    },
+                    detail,
                 )
             )
         frames.append(
@@ -313,6 +459,7 @@ def inspect_sequence(path, case):
                 "line_indices": line_ids,
                 "central_adc_index": central,
                 "preparation_pulse_indices": prep_ids,
+                "conditioning_pulse_indices": conditioning_ids,
                 "readout_pulse_indices": readout_ids,
                 "train_start_s": train_start,
                 "trigger_time_s": float(triggers[trigger_id]),
@@ -335,6 +482,13 @@ def inspect_sequence(path, case):
                 {"preparation_intervals_s": separations.tolist(), "min_s": 3 * rr},
             )
         )
+    for item in checks:
+        detail = item.get("detail")
+        if isinstance(detail, dict) and "conditions" in detail:
+            detail["conditions"] = {k: bool(v) for k, v in detail["conditions"].items()}
+            detail["failed_conditions"] = [
+                k for k, v in detail["conditions"].items() if not v
+            ]
     acq.checks = checks
     acq.measurements.update(
         frames=frames, family=family(case), reconstruction="bart_cartesian_fft@1"

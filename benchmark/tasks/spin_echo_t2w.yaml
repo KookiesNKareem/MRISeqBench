@@ -11,4 +11,4 @@ sequence:
   duration_s: 40
   te_ms: {target: 80, tolerance: 8.0}
   tr_ms: {target: 1000, tolerance: 50.0}
-evaluation: s1@3
+evaluation: s1@4

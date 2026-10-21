@@ -16,4 +16,4 @@ sequence:
     calibration_lines: 8
     mask_seed: 42
     pattern: variable_density
-evaluation: s3@2
+evaluation: s3@3

@@ -32,15 +32,16 @@ def update(root, folder, name, mutate):
 
 def test_active_catalog_and_full_suite():
     catalog = Catalog(ROOT)
-    assert len(catalog.documents["tasks"]) == 26
-    assert len(catalog.documents["objects"]) == 8
+    assert len(catalog.documents["tasks"]) == 28
+    assert len(catalog.documents["objects"]) == 9
     assert set(catalog.documents["physics"]) == {"static_b0@1", "static_b0_3d@1"}
     assert set(catalog.documents["evaluators"]) == {
-        "pulseq_preflight@1",
-        "s1@3",
-        "s2@3",
-        "s3@2",
-        "s4@1",
+        "pulseq_preflight@2",
+        "s1@4",
+        "s2@4",
+        "s3@3",
+        "s4@2",
+        "rf_excitation@2",
     }
     cases = catalog.cases(catalog.get("suites", "full"))
     tasks = {
@@ -48,12 +49,12 @@ def test_active_catalog_and_full_suite():
         for task in catalog.documents["tasks"].values()
         if catalog.get("evaluators", task.evaluation).scope == "benchmark"
     }
-    assert len(cases) == len({case["case_id"] for case in cases}) == 75
+    assert len(cases) == len({case["case_id"] for case in cases}) == 81
     assert {case["task"]["id"] for case in cases} == tasks
     assert {
         level: sum(case["sequence_level"] == level for case in cases)
         for level in SEQUENCE_CATEGORIES
-    } == {"S1": 12, "S2": 27, "S3": 24, "S4": 12}
+    } == {"S1": 12, "S2": 27, "S3": 27, "S4": 15}
     for task in tasks:
         selected = [case for case in cases if case["task"]["id"] == task]
         assert {case["hardware"]["field_strength_T"] for case in selected} == {
@@ -63,8 +64,12 @@ def test_active_catalog_and_full_suite():
         }
     for case in cases:
         dimensions = len(case["task"]["sequence"]["matrix"])
+        if case["evaluation"]["id"] == "rf_excitation":
+            assert case["object"]["phantom"] == "uniform_disc@1"
+            assert case["evaluation"]["calibrated"] is True
+            assert case["evaluation"]["reconstruction"] == "direct_magnetization@1"
+            continue
         assert case["image_policy"] == "static" and "object_level" not in case
-        assert case["task"]["prompt_mode"] == "detailed"
         assert case["object"]["id"].startswith(f"cardiac_{dimensions}d_")
         assert case["object"]["definition"]["dimensions"] == dimensions
         assert case["physics"]["id"] == (
@@ -117,7 +122,7 @@ def test_core_smoke_and_default_hardware():
         (
             "tasks",
             "gre_t1w",
-            lambda d: d.update(evaluation="s2@3"),
+            lambda d: d.update(evaluation="s2@4"),
             "evaluator must match",
         ),
         ("tasks", "gre_t1w", lambda d: d.update(object="missing@1"), "unknown objects"),

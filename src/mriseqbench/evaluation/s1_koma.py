@@ -8,6 +8,7 @@ import atexit
 import copy
 import hashlib
 import json
+import os
 import selectors
 import shutil
 import subprocess
@@ -22,11 +23,16 @@ from pypulseq import Sequence, make_adc, make_delay
 
 class KomaWorker:
     def __init__(self):
+        if os.environ.get("MRISEQBENCH_KOMA_DEVICE", "cuda") != "cuda":
+            raise RuntimeError(
+                "MRISeqBench simulations require CUDA; CPU execution is disabled"
+            )
         self.root = Path(__file__).resolve().parents[3]
         self.directory = tempfile.TemporaryDirectory(prefix="mriseqbench-koma-")
         self.path = Path(self.directory.name)
         self.lock = threading.Lock()
         self.sequence_cache = {}
+        self.execution = None
         self.log = (self.path / "worker.log").open("w+")
         julia = shutil.which("julia")
         if julia is None:
@@ -37,6 +43,7 @@ class KomaWorker:
             [
                 julia,
                 "--startup-file=no",
+                "--compiled-modules=existing",
                 "--threads=4",
                 f"--project={self.root}",
                 str(Path(__file__).with_suffix(".jl")),
@@ -86,6 +93,7 @@ class KomaWorker:
             response = json.loads(line)
             if not response["ok"]:
                 raise RuntimeError("KomaMRI: " + response["error"])
+            self.execution = response.get("execution")
             if read:
                 with h5py.File(output_path) as handle:
                     return read(handle)
@@ -112,12 +120,24 @@ class KomaWorker:
         else:
             seq = Sequence(acq.seq.system)
             clock = 0.0
+            single_diagnostic = zero_gradients and len(acq.adc) == 1
+            # RF metadata can include events after the last selected ADC.
+            # Retain those events so the diagnostic and its metadata agree.
+            replay_end = max(
+                float(acq.adc[-1]), max((p.end for p in acq.pulses), default=0.0)
+            )
             for number in acq.seq.block_events:
                 block = acq.seq.get_block(number)
                 duration = acq.seq.block_durations[number]
                 events = [make_delay(duration)]
                 if block.rf is not None and any(
-                    abs(p.start - clock - block.rf.delay) < 1e-9 for p in acq.pulses
+                    abs(p.start - clock - block.rf.delay) < 1e-9
+                    or (
+                        abs(p.block_start - clock) < 1e-9
+                        and abs(p.end - clock - block.rf.delay - block.rf.shape_dur)
+                        < 1e-9
+                    )
+                    for p in acq.pulses
                 ):
                     events.append(copy.deepcopy(block.rf))
                 if not zero_gradients:
@@ -126,7 +146,15 @@ class KomaWorker:
                         for g in (block.gx, block.gy, block.gz)
                         if g is not None
                     )
-                times = acq.adc[(acq.adc >= clock) & (acq.adc < clock + duration)]
+                # A sample at a block boundary belongs to the preceding block
+                # for this single-sample diagnostic. Otherwise a negative ADC
+                # delay is clamped and shifts its centre by one microsecond.
+                upper = (
+                    acq.adc <= clock + duration + 1e-12
+                    if single_diagnostic
+                    else acq.adc < clock + duration
+                )
+                times = acq.adc[(acq.adc >= clock) & upper]
                 if len(times):
                     if len(times) > 1:
                         dwell = float(np.min(np.diff(times)))
@@ -138,6 +166,13 @@ class KomaWorker:
                             0.0 if min(fraction, 1 - fraction) < 1e-6 else fraction
                         )
                         dwell = 2 * fraction * 1e-6 if fraction else 2e-6
+                    if single_diagnostic:
+                        # Any dwell after this final sample is padding only.
+                        # Keep the emitted block on Pulseq's duration raster.
+                        raster = seq.block_duration_raster
+                        end = float(times[0] - clock + dwell / 2)
+                        padded = float(np.ceil(end / raster - 1e-9) * raster)
+                        events[0] = make_delay(max(duration, padded))
                     events.append(
                         make_adc(
                             len(times),
@@ -148,7 +183,9 @@ class KomaWorker:
                     )
                 seq.add_block(*events)
                 clock += duration
-                if clock > acq.adc[-1]:
+                if clock > replay_end or (
+                    single_diagnostic and clock >= replay_end - 1e-12
+                ):
                     break
             path = str(self.path / f"diagnostic-{len(self.sequence_cache)}.seq")
             seq.write(path, check_timing=False)
@@ -167,7 +204,15 @@ def worker():
 
 
 def versions():
-    return worker().call({"operation": "versions"})["versions"]
+    response = worker().call({"operation": "versions"})
+    execution = response["execution"]
+    return {
+        **response["versions"],
+        "SimulationBackend": execution["backend"],
+        "SimulationDevice": execution["device"],
+        "SimulationPrecision": execution["precision"],
+        **({"CUDA": execution["cuda_version"]} if execution["cuda_version"] else {}),
+    }
 
 
 def simulate(
@@ -182,7 +227,6 @@ def simulate(
     demodulate_encoding=False,
     individual=False,
     integration_method="bloch",
-    phase_windows=None,
     ideal_spoiling=False,
     receive_weights=None,
 ):
@@ -194,12 +238,8 @@ def simulate(
         raise ValueError(
             "Individual responses and encoding-demodulated sums are separate modes"
         )
-    if phase_windows is not None and not (individual and zero_gradients):
-        raise ValueError("Echo-local phase windows require individual RF-only replay")
     if ideal_spoiling and not (individual and zero_gradients):
         raise ValueError("Ideal spoiling requires individual RF-only replay")
-    if ideal_spoiling and phase_windows is not None:
-        raise ValueError("Ideal spoiling and equilibrium-reset phase windows differ")
     if receive_weights is not None:
         receive_weights = np.asarray(receive_weights, dtype=float)
         if individual or demodulate_encoding or integration_method != "bloch":
@@ -261,7 +301,6 @@ def simulate(
             "demodulate_encoding": demodulate_encoding,
             "individual": individual,
             "integration_method": integration_method,
-            "phase_windows": phase_windows,
             "spoil_times_s": [float(p.start) for p in acq.pulses if not p.refocusing]
             if ideal_spoiling
             else None,

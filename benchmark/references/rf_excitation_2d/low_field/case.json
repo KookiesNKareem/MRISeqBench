@@ -1,0 +1,159 @@
+{
+  "case_id": "rf_excitation_2d-v1--static_b0-v1--hardware-low_field-v1",
+  "sequence_level": "S4",
+  "image_policy": null,
+  "task": {
+    "schema_version": 1,
+    "id": "rf_excitation_2d",
+    "version": 1,
+    "objective": "Design a 2D spatially selective RF excitation that draws the upright letters AI in the supplied uniform water disc (radius 60 mm, z=0). Start from equilibrium and target transverse magnetization magnitude 0.5 of equilibrium PD within the letters and zero outside, with a 1.25 mm Gaussian edge smoothing. The canonical target is target.npz (x_mm, y_mm, target_mxy_magnitude; arrays use x as the first axis and positive y points upward). Use RF and in-plane gradients; the trajectory and pulse design method are free. Submit an excitation-only sequence without ADC events. The judge samples magnetization 1 microsecond after the end of your complete authored sequence, preserving all RF, gradients, relaxation and declared B0. Phase is unconstrained. No fitted gain, spatial registration or normalization is applied to your response. The full sequence, including any rewinding or recovery, must fit in 40 ms.",
+    "sequence": {
+      "level": "S4",
+      "capabilities": [
+        "rf_excitation_2d"
+      ],
+      "matrix": [
+        64,
+        64
+      ],
+      "fov_mm": [
+        200.0,
+        200.0
+      ],
+      "te_ms": null,
+      "tr_ms": null,
+      "duration_s": 0.04,
+      "flip_angle_deg": null,
+      "readout": null,
+      "sampling": null,
+      "temporal": null,
+      "application": null
+    },
+    "prompt_mode": "detailed",
+    "identity_requirements": [],
+    "object": "uniform_disc@1",
+    "hardware": "low_field@1",
+    "evaluation": "rf_excitation@1",
+    "submission": {
+      "format": "pulseq",
+      "file": "sequence.seq"
+    }
+  },
+  "seed": 42,
+  "object": {
+    "schema_version": 1,
+    "id": "uniform_disc",
+    "version": 1,
+    "description": "Uniform water disc for RF excitation; radius 60 mm, PD 1, T1 1 s, T2 0.1 s, z=0.",
+    "phantom": "uniform_disc@1",
+    "definition": {
+      "dimensions": 2,
+      "grid": [
+        64,
+        64
+      ],
+      "fov_mm": [
+        200.0,
+        200.0
+      ],
+      "bounds_mm": [
+        [
+          -60.0,
+          60.0
+        ],
+        [
+          -60.0,
+          60.0
+        ]
+      ],
+      "materials": [
+        "water"
+      ]
+    }
+  },
+  "physics": {
+    "schema_version": 1,
+    "id": "static_b0",
+    "version": 1,
+    "description": "Static scanner-frame B0 variation at a 3 T reference field; Hz offsets scale linearly with the selected scanner B0. Intrinsic fat chemical shift is supplied separately by the cardiac phantom.",
+    "reference_field_strength_T": 3.0,
+    "effects": [
+      {
+        "kind": "b0",
+        "model": "linear",
+        "offset_hz": 0.0,
+        "gradient_hz_per_m": [
+          183.33333333333334,
+          0.0
+        ]
+      }
+    ],
+    "field_strength_T": 0.55,
+    "field_scale": 0.18333333333333335
+  },
+  "hardware": {
+    "schema_version": 1,
+    "id": "low_field",
+    "version": 1,
+    "provenance": {
+      "system": "Siemens MAGNETOM Free.Max, B80 gradients",
+      "source_url": "https://academy.siemens-healthineers.com/_/en-us/magnetom-free-max-system-overview/",
+      "accessed_on": "2026-10-09",
+      "notes": "Published values: field_strength_T, max_gradient_mT_per_m and max_slew_T_per_m_per_s. Gradient limits are per axis, not vector sums. max_b1_uT, dead times and rasters are shared benchmark assumptions shared synthetic benchmark assumptions, not manufacturer specifications. This is a limit profile, not a complete scanner model."
+    },
+    "field_strength_T": 0.55,
+    "sar": {
+      "model": "homogeneous_sphere_v1",
+      "radius_m": 0.15,
+      "conductivity_S_per_m": 0.5,
+      "density_kg_per_m3": 1000.0,
+      "whole_body_limit_W_per_kg": 2.0
+    },
+    "max_gradient_mT_per_m": 26.0,
+    "max_slew_T_per_m_per_s": 45.0,
+    "max_b1_uT": 20.0,
+    "rf_dead_time_us": 100.0,
+    "rf_ringdown_time_us": 30.0,
+    "adc_dead_time_us": 10.0,
+    "gradient_raster_us": 10.0,
+    "rf_raster_us": 1.0,
+    "adc_raster_us": 0.1,
+    "block_raster_us": 10.0
+  },
+  "evaluation": {
+    "schema_version": 1,
+    "id": "rf_excitation",
+    "version": 1,
+    "scope": "benchmark",
+    "calibrated": true,
+    "reconstruction": "direct_magnetization@1",
+    "intrinsic_tissue_response": false,
+    "metrics": [
+      {
+        "name": "excitation_magnitude_nrmse",
+        "min": null,
+        "max": 0.3
+      },
+      {
+        "name": "inside_signal_fraction",
+        "min": 0.8,
+        "max": null
+      },
+      {
+        "name": "outside_rms_fraction",
+        "min": null,
+        "max": 0.1
+      }
+    ],
+    "spatial_samples": null,
+    "spatial_replicates": null,
+    "spatial_max_samples": null,
+    "spatial_seed": null,
+    "image_precision": null,
+    "temporal_refinement": null,
+    "case_image_criteria": null,
+    "preparation_effect_fraction_min": null,
+    "mapping_relative_error_max": null,
+    "mapping_relative_error_precision": null
+  }
+}

@@ -77,7 +77,12 @@ Base.@noinline function release_memory()
 end
 
 Base.@noinline function execute_request(folder)
-    request = TOML.parsefile(joinpath(folder, "request.toml"))
+    # Consume the pending marker before executing. Once `done` is published,
+    # the client may remove its files in any order; that must never make a
+    # completed request look pending again during the next directory scan.
+    running = joinpath(folder, "running.toml")
+    mv(joinpath(folder, "request.toml"), running)
+    request = TOML.parsefile(running)
     code = 0
     open(joinpath(folder, "stdout"), "w") do out
         open(joinpath(folder, "stderr"), "w") do err

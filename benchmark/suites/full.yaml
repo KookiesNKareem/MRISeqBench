@@ -3,6 +3,12 @@ schema_version: 1
 id: full
 version: 1
 cases:
+- task: rfov_epi@1
+  hardware: [low_field@1, standard_1_5t@1, high_performance@1]
+  physics: [static_b0@1]
+- task: rf_excitation_2d@1
+  hardware: [low_field@1, standard_1_5t@1, high_performance@1]
+  physics: [static_b0@1]
 - task: adiabatic_inversion@1
   hardware:
   - low_field@1

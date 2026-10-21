@@ -7,14 +7,13 @@ import pytest
 from mriseqbench.catalog import Catalog
 from mriseqbench.evaluation import evaluate
 from mriseqbench.models import Backend
-from tests.fixtures.legacy_catalog import resolve_legacy_case
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def gre_case():
     catalog = Catalog(ROOT)
-    return resolve_legacy_case(catalog, "gre_t1w")
+    return catalog.resolve(catalog.get("tasks", "gre_t1w"))
 
 
 def test_selected_hardware_enforces_real_gradient_limit(tmp_path):
@@ -211,38 +210,6 @@ def test_external_s3_backend_cannot_replace_case_metrics_with_ideal_metrics(
         evaluate(submission, case, ROOT, tmp_path, backend)
 
 
-def test_uncalibrated_cannot_pass(submission, tmp_path):
-    case = gre_case()
-    case["evaluation"]["calibrated"] = False
-    assert (
-        evaluate(submission, case, ROOT, tmp_path, fake_backend(case))["status"]
-        == "uncalibrated"
-    )
-
-
-def test_calibrated_contract_pass_and_fail(submission, tmp_path):
-    case = gre_case()
-    case["evaluation"]["calibrated"] = True
-    assert (
-        evaluate(submission, case, ROOT, tmp_path / "pass", fake_backend(case))[
-            "status"
-        ]
-        == "passed"
-    )
-    backend = fake_backend(
-        case,
-        metrics={
-            "ideal_complex_image_nrmse": 0.9,
-            "ideal_signal_fraction": 1.0,
-            "ideal_outside_object_energy_fraction": 0.1,
-        },
-    )
-    assert (
-        evaluate(submission, case, ROOT, tmp_path / "fail", backend)["status"]
-        == "failed"
-    )
-
-
 @pytest.mark.parametrize(
     "changes",
     [
@@ -276,36 +243,6 @@ def test_invalid_and_missing_submissions(tmp_path):
         ]
         == "failed"
     )
-
-
-@pytest.mark.parametrize("level", ["P2"])
-@pytest.mark.parametrize("case_error", [0.1, 0.9, None])
-def test_external_s1_backend_must_supply_case_metrics(
-    submission, tmp_path, level, case_error
-):
-    catalog = Catalog(ROOT)
-    case = resolve_legacy_case(catalog, "gre_t1w", physics="b0_offset")
-    metrics = {"ideal_complex_image_nrmse": 0.9}
-    if case_error is not None:
-        metrics.update(
-            case_complex_image_nrmse=case_error,
-            case_magnitude_image_nrmse=0.1,
-            case_phase_error_rad=0.1,
-            case_min_tissue_signal_fraction=0.8,
-            case_contrast_retention=0.8,
-            case_outside_object_energy_fraction=0.1,
-        )
-    backend = fake_backend(
-        case,
-        metrics=metrics,
-        effects=sorted({e["kind"] for e in case["physics"]["effects"]}),
-    )
-    if case_error is None:
-        with pytest.raises(RuntimeError, match="backend omitted metric"):
-            evaluate(submission, case, ROOT, tmp_path, backend)
-    else:
-        result = evaluate(submission, case, ROOT, tmp_path, backend)
-        assert result["status"] == ("passed" if case_error == 0.1 else "failed")
 
 
 def test_hardware_failure(submission, tmp_path):

@@ -1,0 +1,26 @@
+{
+  "checks": [
+    {
+      "name": "spatial_selection",
+      "passed": false,
+      "detail": {
+        "inside_signal": 0.2933188447840899,
+        "outside_signal": 0.4466428230832722,
+        "outside_to_inside_max": 0.1,
+        "ratio": 1.5227211992193785
+      }
+    },
+    {
+      "name": "rfov_inside_signal",
+      "passed": false,
+      "detail": {
+        "min_signal": 0.1366799190904346,
+        "minimum": 0.2
+      }
+    }
+  ],
+  "metrics": {
+    "selection_leakage_ratio": 1.5227211992193785,
+    "diagnostic_signal_fraction": 0.2933188447840899
+  }
+}

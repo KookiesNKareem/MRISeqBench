@@ -12,4 +12,4 @@ sequence:
   readout:
     spokes: 48
 object: cardiac_3d@1
-evaluation: s2@3
+evaluation: s2@4

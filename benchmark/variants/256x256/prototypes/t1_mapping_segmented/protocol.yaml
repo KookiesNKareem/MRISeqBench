@@ -1,0 +1,51 @@
+schema: resolution256_segmented_protocol_prototype@1
+id: t1_mapping_segmented256_diagnostic
+status: HELD_NOT_QUALIFIED_NOT_RELEASED
+production_catalog_entry: false
+compatible_with_s4_at1: false
+acquisition:
+  dimensions: 2
+  matrix: [256, 256]
+  fov_mm: [200, 200]
+  nominal_pixel_mm: [0.78125, 0.78125]
+  contrast_count: 3
+  segments_per_contrast: 8
+  imaging_lines_per_segment: 32
+  navigator_lines_per_segment: 1
+  navigator_ky_index: 128
+  navigator_role: timing diagnostic only; exclude from image assembly and fitting
+  imaging_ky_order: consecutive groups [0..31], [32..63], ..., [224..255]
+  adc_samples_per_line: 256
+  adc_dwell_us: 10
+  TR_ms: 4.6
+  measured_TE_ms: 2.295
+  nominal_navigator_TI_ms: [100, 400, 1200]
+  preparation: one nonselective 180-degree block inversion per segment
+  readout_flip_deg: 35
+  rf_phase_cycle_deg: [0, 180]
+  receiver_phase_cycle_deg: [0, 180]
+  dummy_TRs: 0
+  segment_train_ms: 151.8
+  duration_s: 120
+cardiac_timing:
+  source: physio1
+  nominal_RR_ms: 1000
+  selected_imaging_trigger_gap_RR: 5
+  train_start_after_selected_R_ms: 600
+  measured_all_ADC_window_after_selected_R_ms: [601.215, 750.965]
+  minimum_inversion_center_separation_s: 4.2
+  preparation_may_precede_imaging_R_wave: true
+semantics_requiring_new_evaluator:
+  - Group eight distinct trigger-window trains into each contrast image.
+  - Recognize 24 repeated preparations, rather than one preparation per whole image.
+  - Define prescribed TI at the first explicit navigator's measured k-zero sample.
+  - Exclude 24 navigator lines from imaging and map-fitting data; they are deliberate repeats.
+  - Evaluate every imaging sample at its actual preparation-to-readout time and phase.
+  - Image central-ky readout follows the navigator and therefore does not occur at nominal navigator TI.
+  - Require exactly one measurement of each full-grid imaging point per contrast after navigator exclusion.
+  - Check preparation recovery across all segments and contrasts using actual RF centers.
+  - Qualify full dynamic Bloch reference and independent spatial/fit negative controls before agent use.
+nonclaims:
+  - No native or CPU MRI signal simulation was run.
+  - No inversion robustness, slice profile, tissue response, map accuracy or clinical quality is established.
+  - Synthetic homogeneous-sphere benchmark SAR is not scanner SAR certification.

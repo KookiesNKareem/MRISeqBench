@@ -1,0 +1,264 @@
+{
+  "implementation": "s3_koma@1",
+  "implementation_sha256": "f2f0e62afbd3486ef97bfb84e793f66b35df3b38377d05972d429ffec448552b",
+  "reconstruction": "bart_sampling_sense@1",
+  "reconstruction_provenance": {
+    "engine": "BART",
+    "version": "v1.0.00",
+    "binary_sha256": "c6f4874909ac180f83bc218f49259ab9957d9267103fb091fe468ce70a177fd5",
+    "source_commit": "37f3c5f0feaf0a19a7fca85c926ad74101f4a034",
+    "commands": [
+      {
+        "argv": [
+          "fft",
+          "-i",
+          "3",
+          "{data}",
+          "{out}"
+        ],
+        "calls": 90
+      }
+    ]
+  },
+  "case_sha256": "8f0ca2ea01f203d8e2ddeef958b726e7db2f3443db1d21611c15ec90c186dbd8",
+  "versions": {
+    "numpy": "2.5.3",
+    "finufft": "2.5.1",
+    "pypulseq": "1.5.0.post1",
+    "scipy": "1.18.1"
+  },
+  "julia_manifest_sha256": "a5fbd65e40914465db79e1a54f4a81a7d2b72f56654c10fe24ee2041144361e1",
+  "submission_sha256": "6a6a9f8bdfabf1e86698f92cd062e8e6a84180570a3e880f7042f33a0c450ba9",
+  "phantom": "cardiac_2d_3t@1",
+  "shapes_sha256": "5ac67584cf307ac360a3952975ab0b72b09357dc08b7ab74c9c0228f32aca634",
+  "koma_versions": {
+    "KomaMRIFiles": "0.12.0",
+    "KomaMRIBase": "0.15.1",
+    "Julia": "1.12.6",
+    "KomaMRICore": "0.14.0",
+    "SimulationBackend": "cuda",
+    "SimulationDevice": "NVIDIA TITAN RTX",
+    "SimulationPrecision": "f64",
+    "CUDA": "6.4.0"
+  },
+  "spatial_integration": "tissue-stratified independently scrambled Sobol over anatomical cells and their interiors; exact tissue volumes and voxel-cell Fourier control variate; full Bloch residual retained",
+  "encoded_integrator": "KomaMRICore.Bloch",
+  "spatial_samples": 32768,
+  "spatial_replicates": 8,
+  "requested_spatial_replicates": 8,
+  "seeds": [
+    1729,
+    1730,
+    1731,
+    1732,
+    1733,
+    1734,
+    1735,
+    1736
+  ],
+  "refinement_history": [
+    {
+      "samples": 32768,
+      "replicates": 8,
+      "spins": [
+        24576,
+        24576,
+        24576,
+        24576,
+        24576,
+        24576,
+        24576,
+        24576
+      ],
+      "ideal_intervals": {
+        "complex_image_nrmse": [
+          1.3796363620115737,
+          1.3809718985043973
+        ],
+        "normalized_squared_error": [
+          1.9033964913845298,
+          1.907083384458839
+        ],
+        "signal_fraction": [
+          0.8327081091906906,
+          0.8340475240529386
+        ],
+        "outside_object_energy_fraction": [
+          0.013097716800089565,
+          0.013193010535985568
+        ]
+      },
+      "case_intervals": {
+        "complex_image_nrmse": [
+          0.21396740593576244,
+          0.2178339544499167
+        ],
+        "normalized_squared_error": [
+          0.04578205080287935,
+          0.04745163171128838
+        ],
+        "signal_fraction": [
+          1.015509231624913,
+          1.01627639129726
+        ],
+        "outside_object_energy_fraction": [
+          0.0007403088284343555,
+          0.0008185570156564073
+        ],
+        "normalized_squared_magnitude_error": [
+          0.03522722841128417,
+          0.0366136493515386
+        ],
+        "magnitude_image_nrmse": [
+          0.18768918032556958,
+          0.1913469345234948
+        ],
+        "normalized_squared_phase_error": [
+          0.010936425274200086,
+          0.012184162808849812
+        ],
+        "phase_error_rad": [
+          0.10457736501844023,
+          0.11038189529469863
+        ],
+        "min_tissue_signal_fraction": [
+          1.0545166455521868,
+          1.0563201221993954
+        ],
+        "contrast_retention": [
+          0.9453306636545639,
+          0.9703293211993232
+        ]
+      },
+      "ideal_precision_errors": {
+        "normalized_squared_error": 0.001843446537154625,
+        "signal_fraction": 0.0006699765215425479,
+        "outside_object_energy_fraction": 4.764686794800181e-05
+      },
+      "case_precision_errors": {
+        "normalized_squared_error": 0.0008347904542045162,
+        "signal_fraction": 0.00038365225202485753,
+        "outside_object_energy_fraction": 3.9124093611025913e-05,
+        "normalized_squared_magnitude_error": 0.0006932104701272146,
+        "normalized_squared_phase_error": 0.000623868767324863,
+        "min_tissue_signal_fraction": 0.0009017383236042953,
+        "contrast_retention": 0.012499328772379692
+      },
+      "decision_basis": {
+        "ideal": "interval_certified",
+        "case": "interval_certified"
+      }
+    }
+  ],
+  "temporal_refinement_history": [
+    {
+      "step_s": 0.001,
+      "rf_step_s": 2e-05,
+      "nrmse": 0.00647768622207475,
+      "raw_nrmse": 0.006376754280975323,
+      "image_nrmse": 0.00647768622207475
+    }
+  ],
+  "replay_cache_hits": 0,
+  "score_intervals": "Approximate 99% Student-t delete-one jackknife intervals; complex/energy scores use quadratic cross-products, nonlinear case scores use leading-bias correction; numerical uncertainty, not task uncertainty",
+  "rf_step_s": [
+    2e-05,
+    1e-05
+  ],
+  "dynamic_step_s": [
+    0.001,
+    0.0005
+  ],
+  "convergence_limits": {
+    "temporal_nrmse": 0.01,
+    "temporal_raw_nrmse": 0.01,
+    "temporal_image_nrmse": 0.01,
+    "initial_spatial_budget": 131072
+  },
+  "numerically_converged": true,
+  "image_precision_targets": {
+    "normalized_squared_error": 0.0008,
+    "signal_fraction": 0.005,
+    "outside_object_energy_fraction": 0.005,
+    "wm_gm_ratio": 0.02,
+    "normalized_squared_magnitude_error": 0.001,
+    "normalized_squared_phase_error": 0.002,
+    "min_tissue_signal_fraction": 0.01,
+    "contrast_retention": 0.02
+  },
+  "decision_rule": "interval-certified verdict where possible; otherwise point estimate at published cutoff after numerical precision target is met",
+  "effects": [
+    {
+      "kind": "b0",
+      "model": "linear",
+      "offset_hz": 0.0,
+      "gradient_hz_per_m": [
+        1000.0,
+        0.0
+      ]
+    }
+  ],
+  "reference": "analytic Fourier transforms of registered shapes with independent ideal family response; no fitted gain or registration",
+  "case_phase_reference": {
+    "model": "koma_rf_acquisition_phase@2",
+    "engine": "KomaMRICore",
+    "echo_time_s": 0.09562500000000008,
+    "line": 8,
+    "sample_indices": [
+      271
+    ],
+    "echo_contexts": 1,
+    "intrinsic_tissue_response": true,
+    "rf_history": "complete; ideal transverse spoiling before excitation",
+    "temporal_phase_chord_rms": 0.0065738916653552025,
+    "reference_energy_coverage": 0.9999070887977164,
+    "spatial_model": "voxel centres with exact anatomical-cell/image-voxel fractions; no continuum phase-reference claim",
+    "converged": true,
+    "coverage_adequate": true,
+    "temporal_refinement_history": [
+      {
+        "scale": 1,
+        "phase_chord_rms": 0.0065738916653552025
+      }
+    ],
+    "limits": {
+      "temporal_phase_chord_rms": 0.01,
+      "reference_energy_coverage": 0.5
+    },
+    "receiver_phase": "independent RF coherence convention; no fitted phase or gain",
+    "geometry_frame": "original object coordinates; no registration"
+  },
+  "case_scoring_regions": {
+    "tissues": [
+      "myocardium",
+      "blood"
+    ],
+    "contrast_pairs": [
+      [
+        "myocardium",
+        "blood"
+      ]
+    ],
+    "phase_voxels": 259
+  },
+  "image_acceptance_basis": "case_physics",
+  "evaluation_contract": "s3@2",
+  "case_image_criteria": {
+    "static": {
+      "complex_nrmse_max": 0.45,
+      "magnitude_nrmse_max": 0.35,
+      "phase_rms_rad_max": 0.35,
+      "tissue_signal_fraction_min": 0.5,
+      "contrast_retention_min": 0.5,
+      "outside_energy_fraction_max": 0.25
+    }
+  },
+  "t2star_scope": "65-isochromat +/-50 Hz diagnostic only; images retain declared T2 and B0",
+  "calibrated": true,
+  "family": "rfov_epi",
+  "receive_encoding": {
+    "model": "uniform@1",
+    "dynamics": "KomaMRICore.Bloch",
+    "accumulation": "native summed Bloch replay"
+  }
+}

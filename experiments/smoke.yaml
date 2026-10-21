@@ -6,6 +6,7 @@ suite: smoke@1
 repeats: 1
 submission_mode: file
 agent:
+  uses_model: false
   command:
   - '{python}'
   - '{root}/tests/fixtures/make_smoke_submission.py'

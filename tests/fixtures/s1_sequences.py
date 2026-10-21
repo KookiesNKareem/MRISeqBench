@@ -25,7 +25,13 @@ def make_sequence(
     ref_duration=0.0008,
     water_selective_order=0,
     water_selective_refocusing_order=0,
+    refocusing_phase="zero",
 ):
+    """Spin echoes: refocusing_phase "zero" (90x-180x) or "cpmg" (90x-180y).
+
+    The receiver follows the physical echo in the excitation's FID convention:
+    ADC phase = 2*refocusing phase - excitation phase + pi.
+    """
     h, spec = case["hardware"], case["task"]["sequence"]
     fam = case["task"]["id"]
     system = Opts(
@@ -92,17 +98,26 @@ def make_sequence(
     )
     if water_selective_refocusing_order:
         ref = binomial_rf(np.pi, water_selective_refocusing_order, "refocusing")
+    # Prephasers/spoilers keep 0.8 ms unless the moment needs longer (e.g. 256).
+    spoil_area = max(nx, 32) / fov[0] * 1.3
+    gdur = max(
+        0.0008,
+        np.ceil(
+            calc_duration(make_trapezoid("x", area=spoil_area, system=system)) / 1e-5
+        )
+        * 1e-5,
+    )
     read = make_trapezoid(
         "x", flat_area=nx / fov[0], flat_time=readout_flat, system=system
     )
     adc = make_adc(nx, duration=read.flat_time, delay=read.rise_time, system=system)
-    pre_x = make_trapezoid("x", area=-read.area / 2, duration=0.0008, system=system)
+    pre_x = make_trapezoid("x", area=-read.area / 2, duration=gdur, system=system)
     if mutation == "echo_outside_adc":
-        pre_x = make_trapezoid("x", area=read.area / 2, duration=0.0008, system=system)
+        pre_x = make_trapezoid("x", area=read.area / 2, duration=gdur, system=system)
     spoil = make_trapezoid(
-        "x", area=max(nx, 32) / fov[0] * 1.3, duration=0.0008, system=system
+        "x", area=max(nx, 32) / fov[0] * 1.3, duration=gdur, system=system
     )
-    end_x = make_trapezoid("x", area=-read.area / 2, duration=0.0008, system=system)
+    end_x = make_trapezoid("x", area=-read.area / 2, duration=gdur, system=system)
     rf_center = rf.delay + rf.shape_dur / 2
     ref_center = ref.delay + ref.shape_dur / 2
     read_center = read.rise_time + read.flat_time / 2
@@ -113,15 +128,11 @@ def make_sequence(
                 continue
             yy = 0 if y < 0 or mutation == "repeated_lines" else y - ny // 2
             zz = z - (nz[0] // 2 if nz else 0)
-            pre_y = make_trapezoid(
-                "y", area=yy / fov[1], duration=0.0008, system=system
-            )
+            pre_y = make_trapezoid("y", area=yy / fov[1], duration=gdur, system=system)
             pre = [pre_x, pre_y]
             if nz:
                 pre.append(
-                    make_trapezoid(
-                        "z", area=zz / fov[2], duration=0.0008, system=system
-                    )
+                    make_trapezoid("z", area=zz / fov[2], duration=gdur, system=system)
                 )
             phase = (
                 np.pi * (shot % 2)
@@ -135,7 +146,10 @@ def make_sequence(
             if mutation == "tiny_rf":
                 r.signal = r.signal * 1e-6
             a = copy.copy(adc)
-            a.phase_offset = -phase if se else phase
+            ref_phase = phase + (np.pi / 2 if refocusing_phase == "cpmg" else 0.0)
+            a.phase_offset = 2 * ref_phase - phase + np.pi if se else phase
+            if mutation == "receiver_pi":
+                a.phase_offset += np.pi
             if mutation == "receiver_phase":
                 a.phase_offset += np.pi * ((y + z) % 2)
             seq.add_block(r)
@@ -149,6 +163,7 @@ def make_sequence(
                     seq.add_block(make_delay(calc_duration(ref)))
                 else:
                     rr = copy.copy(ref)
+                    rr.phase_offset = ref_phase
                     if mutation == "lying_refocusing_label":
                         rr.signal = rr.signal / 2
                     seq.add_block(rr)
@@ -166,13 +181,13 @@ def make_sequence(
                 post = [
                     end_x,
                     make_trapezoid(
-                        "y", area=-yy / fov[1], duration=0.0008, system=system
+                        "y", area=-yy / fov[1], duration=gdur, system=system
                     ),
                 ]
                 if nz:
                     post.append(
                         make_trapezoid(
-                            "z", area=-zz / fov[2], duration=0.0008, system=system
+                            "z", area=-zz / fov[2], duration=gdur, system=system
                         )
                     )
                 if mutation == "unbalanced":

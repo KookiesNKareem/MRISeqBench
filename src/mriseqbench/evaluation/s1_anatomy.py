@@ -6,6 +6,7 @@ cells and positions within them; the Fourier oracle integrates every cell exactl
 
 import hashlib
 import json
+import tempfile
 from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
@@ -14,7 +15,6 @@ from pathlib import Path
 import finufft
 import h5py
 import numpy as np
-from scipy.stats import qmc
 
 
 @dataclass(frozen=True)
@@ -135,7 +135,26 @@ def _geometry(anatomy):
     return shape, anatomy.center_m - shape * anatomy.voxel_size_m / 2
 
 
-def sampled_anatomy(case, root, samples, replicate):
+def strata_per_cell(samples, cells, dims):
+    """Per-axis strata so that cells * prod(strata) is close to the sample budget."""
+    per_cell = max(1.0, samples / cells)
+    side = max(1, int(np.floor(per_cell ** (1 / dims))))
+    strata = [side] * dims
+    # Spend the remainder on the leading axes so each budget doubling refines.
+    for axis in range(dims):
+        if np.prod(strata) * (strata[axis] + 1) / strata[axis] <= per_cell:
+            strata[axis] += 1
+    return strata
+
+
+def sampled_anatomy(case, root, samples, replicate, *, directory=None):
+    """Jittered-grid quadrature: each labeled cell splits into equal strata.
+
+    Every stratum receives one uniform point, independently per replicate, with
+    its exact volume as weight. The estimate is unbiased, and within-pixel
+    structure (e.g. spoiler-induced isochromat dependence) is integrated far
+    more evenly than with unstratified points.
+    """
     from .s1_phantom import Spins
 
     anatomy = load_anatomy(str(root), case["object"]["phantom"])
@@ -143,35 +162,50 @@ def sampled_anatomy(case, root, samples, replicate):
     shape, lower = _geometry(anatomy)
     seed = case["evaluation"].get("spatial_seed")
     seed = 1729 if seed is None else seed
-    count = 2 ** int(np.floor(np.log2(samples / len(anatomy.materials))))
-    if count < 1:
-        raise ValueError("Spatial sample budget must cover every anatomical tissue")
     spec = case["task"]["sequence"]
     image_voxel = np.prod(np.asarray(spec["fov_mm"]) / 1000 / spec["matrix"])
     cell_volume = np.prod(anatomy.voxel_size_m)
-    positions, labels, weights = [], [], []
-    for label in range(len(anatomy.materials)):
-        active = np.flatnonzero(anatomy.labels.ravel() == label + 1)
-        if not len(active):
-            continue
-        unit = qmc.Sobol(
-            d=dims + 1, scramble=True, seed=seed + replicate + 65537 * label
-        ).random_base2(int(np.log2(count)))
-        selected = active[
-            np.minimum((unit[:, 0] * len(active)).astype(int), len(active) - 1)
-        ]
-        cells = np.column_stack(np.unravel_index(selected, shape))
-        xyz = np.zeros((count, 3))
-        xyz[:, :dims] = lower + (cells + unit[:, 1:]) * anatomy.voxel_size_m
-        positions.append(xyz)
-        labels.append(np.full(count, label, dtype=np.int64))
-        weights.append(np.full(count, len(active) * cell_volume / image_voxel / count))
+    flat = anatomy.labels.ravel()
+    active = np.flatnonzero(flat > 0)
+    if not len(active):
+        raise ValueError("Registered anatomy has no labeled integration cells")
+    strata = np.asarray(strata_per_cell(samples, len(active), dims))
+    per_cell = int(np.prod(strata))
+    total = len(active) * per_cell
+
+    def allocate(shape, dtype):
+        if directory is None:
+            return np.empty(shape, dtype=dtype)
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        # Anonymous disk-backed mappings are reclaimable under the worker's RAM
+        # cap and disappear with the array. No source/data file is overwritten.
+        with tempfile.TemporaryFile(dir=directory) as handle:
+            return np.memmap(handle, dtype=dtype, mode="w+", shape=shape)
+
+    positions = allocate((total, 3), np.float64)
+    labels = allocate((total,), np.int64)
+    weights = allocate((total,), np.float64)
+    offsets = np.indices(strata).reshape(dims, -1).T  # (per_cell, dims)
+    rng = np.random.default_rng([seed, replicate])
+    chunk = max(1, 1048576 // per_cell)
+    for start in range(0, len(active), chunk):
+        cells_ids = active[start : start + chunk]
+        cells = np.column_stack(np.unravel_index(cells_ids, shape))
+        jitter = rng.random((len(cells_ids), per_cell, dims))
+        unit = (offsets[None] + jitter) / strata  # position within the cell
+        target = slice(start * per_cell, (start + len(cells_ids)) * per_cell)
+        positions[target] = 0
+        positions[target, :dims] = (
+            lower + (cells[:, None, :] + unit) * anatomy.voxel_size_m
+        ).reshape(-1, dims)
+        labels[target] = np.repeat(flat[cells_ids] - 1, per_cell)
+        weights[target] = cell_volume / per_cell / image_voxel
     return Spins(
-        np.concatenate(positions),
-        np.concatenate(labels),
+        positions,
+        labels,
         anatomy.materials,
         anatomy.properties,
-        np.concatenate(weights),
+        weights,
         tuple(spec["matrix"]),
         anatomy.source_sha256,
     )
@@ -307,7 +341,7 @@ def anatomical_reference(
                     *targets,
                     isign=-1,
                     eps=1e-10,
-                    nthreads=4,
+                    nthreads=1,
                 )
             raw += transform * factors * response[label]
     return raw

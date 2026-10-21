@@ -1,0 +1,51 @@
+schema_version: 1
+id: deepseek_v41_flash_gre_s5_pulseq_julia_koma
+version: 1
+suite: julia_cost_probe@1
+arm: s5_pulseq_julia_koma@1
+arm_runtime:
+  author_image: sha256:593e8471abb4dad658de02f559921465b353ffe52f13c1c7179ebcbe1473dc0f
+  simulator_image: sha256:cd04765fc2c26001114cbe66994fd0aca61b1e5a2132b1576e648adbee4bfa37
+  probe_timeout_s: 600
+  simulation_timeout_s: 300
+  julia_heap_size_hint_mb: 100
+repeats: 3
+submission_mode: submit
+max_submissions: 3
+agent:
+  uses_model: true
+  adapter: pi
+  pi_version: 0.87.0
+  auto_compaction: false
+  model: deepseek/deepseek-v4.1-flash
+  command:
+  - pi
+  - --provider
+  - openrouter
+  - --model
+  - '{model}'
+  - --thinking
+  - '{thinking_level}'
+  - --session-dir
+  - '{workspace}/transcript'
+  - --mode
+  - json
+  - -p
+  - '{prompt_text}'
+  timeout_s: 1200
+  sandbox:
+    backend: docker
+api_proxy:
+  provider_endpoint: deepinfra/fp8
+  temperature: 0.6
+  top_p: 0.95
+  reasoning_effort: medium
+  max_output_tokens: 16384
+  upstream_url: https://openrouter.ai/api/v1
+  key_env: OPENROUTER_API_KEY
+feedback:
+  timeout_s: 300
+seed: 42
+concurrency:
+  agents: 1
+  graders: 1

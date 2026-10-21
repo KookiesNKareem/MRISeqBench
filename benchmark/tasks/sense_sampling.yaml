@@ -12,4 +12,4 @@ sequence:
   sampling:
     acceleration: 2
     calibration_lines: 8
-evaluation: s3@2
+evaluation: s3@3

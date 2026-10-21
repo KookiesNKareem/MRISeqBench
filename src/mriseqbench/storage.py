@@ -14,7 +14,6 @@ import shutil
 import stat
 import tempfile
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -189,11 +188,13 @@ def result_artifacts(report):
     return artifacts
 
 
-def finalize_evaluation(report, workspace, store=None):
+def finalize_evaluation(report, workspace, store=None, *, archive_replays=True):
     """Seal complete evidence, deduplicate images, then archive restart caches.
 
     Archive bytes and their receipt are durable before any checkpoint is removed.
     Errors/unresolved jobs retain their original restart files. No report is edited.
+    Graders may defer replay archival and retain ordinary raw checkpoints; explicit
+    storage maintenance keeps the lossless archival behavior by default.
     """
     workspace = Path(workspace).resolve()
     if not completed_evidence(report):
@@ -223,8 +224,9 @@ def finalize_evaluation(report, workspace, store=None):
                 raise ValueError(f"Sealed result changed: {receipt_path}")
             if receipt["artifact_sha256"] != hashes:
                 raise ValueError(f"Sealed evidence changed: {receipt_path}")
-            for record in receipt["checkpoints"]:
-                verify_checkpoint(record)
+            if archive_replays:
+                for record in receipt["checkpoints"]:
+                    verify_checkpoint(record)
         else:
             receipt = {
                 "schema_version": 1,
@@ -239,7 +241,12 @@ def finalize_evaluation(report, workspace, store=None):
             receipt["image_bundles"] = images
         known = {row["path"]: row for row in receipt["checkpoints"]}
         pending = []
-        for cache in sorted(caches):
+        receipt["replay_storage"] = {
+            "mode": "archived" if archive_replays else "retained_raw",
+            "directories": [str(path) for path in sorted(caches)],
+            "archival_deferred_outside_grading": not archive_replays,
+        }
+        for cache in sorted(caches) if archive_replays else ():
             if not cache.is_dir() or cache.is_symlink():
                 continue
             for path in sorted(cache.glob("*.npy")):
@@ -283,184 +290,12 @@ def restore_checkpoints(receipt_path):
     return restored
 
 
-def inventory(root, excluded=()):
-    root = Path(root).resolve()
-    entries = {}
-    for directory, children, files in os.walk(root):
-        for name in children:
-            path = Path(directory) / name
-            if path.is_symlink() and not any(
-                path.is_relative_to(item) for item in excluded
-            ):
-                entries[str(path.relative_to(root))] = {"symlink": os.readlink(path)}
-        children[:] = sorted(
-            name
-            for name in children
-            if name not in {".artifacts", ".storage-migrations"}
-            and not (Path(directory) / name).is_symlink()
-            and not any(
-                (Path(directory) / name).is_relative_to(item) for item in excluded
-            )
-        )
-        for name in sorted(files):
-            path = Path(directory) / name
-            rel = str(path.relative_to(root))
-            if any(path.is_relative_to(item) for item in excluded):
-                continue
-            if path.is_symlink():
-                entries[rel] = {"symlink": os.readlink(path)}
-            elif path.is_file():
-                before = _identity(path)
-                entries[rel] = {"sha256": sha256(path), "bytes": path.stat().st_size}
-                if _identity(path) != before:
-                    raise ValueError(f"File changed during inventory: {path}")
-    return entries
-
-
-def verify_migration(directory):
-    directory = Path(directory).resolve()
-    manifest = json.loads((directory / "before.json").read_text())
-    root = Path(manifest["root"])
-    archives_path = directory / "archives.json"
-    archives = json.loads(archives_path.read_text()) if archives_path.exists() else {}
-    # A crash between cache finalization and the migration index is recoverable
-    # from the receipt that was persisted before removing any checkpoint.
-    for receipt_path in root.rglob("storage-finalization.json"):
-        if {"source", "agent", ".artifacts", ".storage-migrations"}.intersection(
-            receipt_path.relative_to(root).parts
-        ):
-            continue
-        for row in json.loads(receipt_path.read_text())["checkpoints"]:
-            path = Path(row["path"])
-            if path.is_relative_to(root):
-                rel = str(path.relative_to(root))
-                if rel in manifest["files"]:
-                    archives.setdefault(rel, row)
-    verified_archives = set()
-    for archive in archives.values():
-        identity = (archive["blob"], archive["sha256"], archive["bytes"])
-        if identity not in verified_archives:
-            verify_checkpoint(archive)
-            verified_archives.add(identity)
-    for rel, record in manifest["files"].items():
-        path = root / rel
-        if "symlink" in record:
-            if not path.is_symlink() or os.readlink(path) != record["symlink"]:
-                raise ValueError(f"Changed symlink: {path}")
-        elif path.is_file() and not path.is_symlink():
-            if (
-                path.stat().st_size != record["bytes"]
-                or sha256(path) != record["sha256"]
-            ):
-                raise ValueError(f"Changed evidence: {path}")
-        elif path.exists() or path.is_symlink():
-            raise ValueError(f"Changed evidence type: {path}")
-        elif rel in archives:
-            archive = archives[rel]
-            if any(archive[key] != record[key] for key in ("sha256", "bytes")):
-                raise ValueError(f"Archive identity mismatch: {path}")
-        else:
-            raise ValueError(f"Missing evidence: {path}")
-    return {
-        "verified_original_files": len(manifest["files"]),
-        "archived_files": len(archives),
-    }
-
-
-def migrate_runs(root, *, exclude=()):
-    """Inventory first; add lossless storage without modifying existing receipts."""
-    root = Path(root).resolve()
-    excluded = tuple(Path(path).resolve() for path in exclude)
-    if any(not path.is_relative_to(root) or path == root for path in excluded):
-        raise ValueError("Excluded campaigns must be inside the runs directory")
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
-    directory = root / ".storage-migrations" / stamp
-    directory.mkdir(parents=True)
-    before = {
-        "schema_version": 1,
-        "root": str(root),
-        "excluded": list(map(str, excluded)),
-        "files": inventory(root, excluded),
-    }
-    atomic_json(directory / "before.json", before)
-    store = ArtifactStore(root / ".artifacts")
-    completed = {}
-    for rel in before["files"]:
-        path = root / rel
-        if path.name != "result.json" or {"agent", "source"}.intersection(
-            path.relative_to(root).parts
-        ):
-            continue
-        try:
-            report = json.loads(path.read_text())
-        except (ValueError, UnicodeDecodeError):
-            continue
-        if isinstance(report, dict) and completed_evidence(report):
-            completed[rel] = report
-    eligible_images = {
-        Path(path).resolve()
-        for report in completed.values()
-        for name, path in result_artifacts(report).items()
-        if name.rsplit("/", 1)[-1] == "images"
-    }
-    images = []
-    with store.locked():
-        for rel, record in before["files"].items():
-            path = root / rel
-            if (
-                path.name == "images.npz"
-                and path.resolve() in eligible_images
-                and not {"agent", "source"}.intersection(path.relative_to(root).parts)
-                and "sha256" in record
-            ):
-                if sha256(path) != record["sha256"]:
-                    raise ValueError(f"Artifact changed since inventory: {path}")
-                images.append({"path": rel, **store.deduplicate(path)})
-    atomic_json(directory / "images.json", images)
-    archives = {}
-    for rel, report in completed.items():
-        path = root / rel
-        receipt = finalize_evaluation(report, path.parent, store.directory)
-        if receipt:
-            for record in receipt["checkpoints"]:
-                cache = Path(record["path"])
-                if cache.is_relative_to(root):
-                    archives[str(cache.relative_to(root))] = record
-    # Individual durable receipts already journal every archival. Avoid rewriting
-    # the growing campaign-wide index once per result (quadratic I/O).
-    atomic_json(directory / "archives.json", archives)
-    verification = verify_migration(directory)
-    summary = {
-        **verification,
-        "image_paths": len(images),
-        "unique_image_blobs": len({row["sha256"] for row in images}),
-        "duplicate_image_bytes": sum(row["bytes"] for row in images)
-        - sum({row["sha256"]: row["bytes"] for row in images}.values()),
-        "archived_checkpoint_bytes": sum(row["bytes"] for row in archives.values()),
-        "migration": str(directory),
-    }
-    atomic_json(directory / "verification.json", summary)
-    return summary
-
-
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    commands = parser.add_subparsers(dest="command", required=True)
-    migrate = commands.add_parser("migrate", help="losslessly migrate existing runs")
-    migrate.add_argument("runs", type=Path)
-    migrate.add_argument("--exclude", type=Path, action="append", default=[])
-    verify = commands.add_parser("verify", help="verify every original file/hash")
-    verify.add_argument("migration", type=Path)
-    restore = commands.add_parser("restore", help="restore exact checkpoint bytes")
-    restore.add_argument("receipt", type=Path)
+    parser = argparse.ArgumentParser(description="Restore exact checkpoint bytes")
+    parser.add_argument("restore", choices=["restore"])
+    parser.add_argument("receipt", type=Path)
     args = parser.parse_args(argv)
-    if args.command == "migrate":
-        result = migrate_runs(args.runs, exclude=args.exclude)
-    elif args.command == "verify":
-        result = verify_migration(args.migration)
-    else:
-        result = {"restored_checkpoints": restore_checkpoints(args.receipt)}
-    print(json.dumps(result, indent=2))
+    print(json.dumps({"restored_checkpoints": restore_checkpoints(args.receipt)}))
 
 
 if __name__ == "__main__":

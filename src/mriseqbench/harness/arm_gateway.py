@@ -42,6 +42,11 @@ class Handler(BaseHTTPRequestHandler):
                     "path": "/" + route,
                     "method": self.command,
                     "token": self.headers.get("X-MRISeqBench-Token", ""),
+                    "headers": {
+                        k: v
+                        for k, v in self.headers.items()
+                        if k.lower() == "x-session-id"
+                    },
                     "body": base64.b64encode(self.rfile.read(length)).decode(),
                 }
             )
@@ -71,6 +76,15 @@ class Handler(BaseHTTPRequestHandler):
                     if "status" in value:
                         self.send_response(value["status"])
                         self.send_header("Content-Type", value["content_type"])
+                        for key, header_value in value.get("headers", {}).items():
+                            if (
+                                key.lower()
+                                in {"x-openrouter-cache-status", "x-generation-id"}
+                                and isinstance(header_value, str)
+                                and "\r" not in header_value
+                                and "\n" not in header_value
+                            ):
+                                self.send_header(key, header_value)
                         self.end_headers()
                         headers_sent = True
                     if "error" in value:

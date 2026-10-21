@@ -1,0 +1,289 @@
+{
+  "case_id": "rfov_epi-v1--static_b0-v1",
+  "status": "failed",
+  "checks": [
+    {
+      "name": "grad_raster_time",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "rf_raster_time",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "adc_raster_time",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "block_duration_raster",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "pulseq_parse",
+      "passed": true,
+      "detail": "Pulseq file parsed"
+    },
+    {
+      "name": "timing",
+      "passed": true,
+      "detail": "[]"
+    },
+    {
+      "name": "duration",
+      "passed": true,
+      "detail": {
+        "duration_s": 0.20393000000000017,
+        "max_s": 0.25
+      }
+    },
+    {
+      "name": "supported_events",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "name": "has_rf_and_adc",
+      "passed": true,
+      "detail": {
+        "adc_samples": 512,
+        "rf_events": 1
+      }
+    },
+    {
+      "name": "finite_rf",
+      "passed": true,
+      "detail": "RF samples, times, frequency and phase must be finite"
+    },
+    {
+      "name": "finite_adc",
+      "passed": true,
+      "detail": "ADC timing, frequency, phase and modulation must be finite"
+    },
+    {
+      "name": "peak_b1",
+      "passed": true,
+      "detail": {
+        "peak_uT": 11.51620631341601,
+        "max_uT": 20.0
+      }
+    },
+    {
+      "name": "finite_gradient_x",
+      "passed": true,
+      "detail": "finite samples with increasing time"
+    },
+    {
+      "name": "gradient_x",
+      "passed": true,
+      "detail": {
+        "peak_mT_per_m": 11.74370537391958,
+        "max": 80.0
+      }
+    },
+    {
+      "name": "slew_x",
+      "passed": true,
+      "detail": {
+        "peak_T_per_m_per_s": 39.399795995060586,
+        "max": 200.0
+      }
+    },
+    {
+      "name": "finite_gradient_y",
+      "passed": true,
+      "detail": "finite samples with increasing time"
+    },
+    {
+      "name": "gradient_y",
+      "passed": true,
+      "detail": {
+        "peak_mT_per_m": 4.817925591882751,
+        "max": 80.0
+      }
+    },
+    {
+      "name": "slew_y",
+      "passed": true,
+      "detail": {
+        "peak_T_per_m_per_s": 36.699079293500176,
+        "max": 200.0
+      }
+    },
+    {
+      "name": "sar_360s",
+      "passed": true,
+      "detail": {
+        "model": "homogeneous_sphere_v1",
+        "field_strength_T": 3.0,
+        "peak_W_per_kg": 0.27761572029387954,
+        "limit_W_per_kg": 2.0,
+        "window_start_s": 0.0,
+        "averaging_duration_s": 0.20393000000000017,
+        "b1_rms_uT": 0.4376881494418557,
+        "coefficient_W_per_kg_per_uT2": 1.449153795659431,
+        "load": {
+          "model": "homogeneous_sphere_v1",
+          "radius_m": 0.15,
+          "conductivity_S_per_m": 0.5,
+          "density_kg_per_m3": 1000.0,
+          "whole_body_limit_W_per_kg": 2.0
+        },
+        "scope": "synthetic global SAR; no local SAR or scanner certification"
+      }
+    },
+    {
+      "name": "sar_10s",
+      "passed": true,
+      "detail": {
+        "model": "homogeneous_sphere_v1",
+        "field_strength_T": 3.0,
+        "peak_W_per_kg": 0.27761572029387954,
+        "limit_W_per_kg": 4.0,
+        "window_start_s": 0.0,
+        "averaging_duration_s": 0.20393000000000017,
+        "b1_rms_uT": 0.4376881494418557,
+        "coefficient_W_per_kg_per_uT2": 1.449153795659431,
+        "load": {
+          "model": "homogeneous_sphere_v1",
+          "radius_m": 0.15,
+          "conductivity_S_per_m": 0.5,
+          "density_kg_per_m3": 1000.0,
+          "whole_body_limit_W_per_kg": 2.0
+        },
+        "scope": "synthetic global SAR; no local SAR or scanner certification"
+      }
+    },
+    {
+      "name": "rf_before_adc",
+      "passed": true,
+      "detail": "Every ADC line follows a completed excitation"
+    },
+    {
+      "name": "cartesian",
+      "passed": true,
+      "detail": {
+        "max_lattice_error_samples": 7.034373084024992e-13,
+        "readout_axis": "x"
+      }
+    },
+    {
+      "name": "fov_mm",
+      "passed": true,
+      "detail": {
+        "fov_mm": [
+          200.0,
+          200.0
+        ],
+        "lattice_offset": [
+          0.5000639999987071,
+          -4.000000075231818e-05
+        ]
+      }
+    },
+    {
+      "name": "matrix",
+      "passed": true,
+      "detail": {
+        "in_bounds": true,
+        "unique_samples": 512,
+        "adc_samples": 512
+      }
+    },
+    {
+      "name": "te_ms",
+      "passed": true,
+      "detail": {
+        "effective_te_ms": 58.69056512729997,
+        "contract": {
+          "target": null,
+          "tolerance": null,
+          "max": 80.0
+        }
+      }
+    },
+    {
+      "name": "echo_in_adc",
+      "passed": true,
+      "detail": "Every EPI line brackets kx=0 after the excitation endpoint"
+    },
+    {
+      "name": "single_shot_epi",
+      "passed": true,
+      "detail": {
+        "readout_lines": 16,
+        "shots": 1,
+        "polarities": [
+          1.0,
+          -1.0,
+          1.0,
+          -1.0,
+          1.0,
+          -1.0,
+          1.0,
+          -1.0,
+          1.0,
+          -1.0,
+          1.0,
+          -1.0,
+          1.0,
+          -1.0,
+          1.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "name": "two_dimensional_rf_encoding",
+      "passed": false,
+      "detail": {
+        "rf_overlaps_x_gradient": false,
+        "rf_overlaps_y_gradient": true
+      }
+    },
+    {
+      "name": "sampling_pattern",
+      "passed": true,
+      "detail": {
+        "family": "rfov_epi",
+        "missing_samples": 0,
+        "extra_samples": 0
+      }
+    },
+    {
+      "name": "no_refocusing",
+      "passed": true,
+      "detail": "Gradient echoes contain no nominal 180-degree pulses"
+    },
+    {
+      "name": "gre",
+      "passed": true,
+      "detail": "Non-refocused gradient echoes"
+    },
+    {
+      "name": "positive_echo_times",
+      "passed": true,
+      "detail": {}
+    }
+  ],
+  "metrics": {},
+  "sequence_valid": false,
+  "ideal_imaging_success": null,
+  "imaging_success_under_case_physics": null,
+  "image_verdict": "not_evaluated",
+  "image_acceptance_basis": "case_physics",
+  "evaluation_contract": "s3@2",
+  "nominal_contrast_model": "finite_rf_intrinsic_materials_central_echo@1",
+  "reconstruction": "bart_sampling_sense@1",
+  "artifacts": {
+    "sequence": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/high_performance--one_dimensional_rf/evaluation/s3/sequence.json",
+    "policy": "/home/kfareed/mriseqbench/rfov-epi-qualification-20261019/qualification_final/high_performance--one_dimensional_rf/evaluation/s3/policy.json"
+  },
+  "limitations": [
+    "BART_fixed_L2_SENSE_for_parallel_and_CS_masks; BART_zero_fill_FFT_for_partial_and_elliptical_support",
+    "synthetic_receive_maps_are_comoving; no_scanner_coil_or_noise_claim"
+  ]
+}

@@ -1,0 +1,35 @@
+[
+  {
+    "hardware": "low_field",
+    "sequence_sha256": "9fcb8c55e157dd3ab525b9f7b285cff29a8a6464999e5afcb842d7da98c28e88",
+    "status": "passed",
+    "metrics": {
+      "case_complex_image_nrmse": 0.11712873695335049,
+      "case_magnitude_image_nrmse": 0.10678083171497985,
+      "case_phase_error_rad": 0.04133019384181773,
+      "selection_leakage_ratio": 0.07169722242206814
+    }
+  },
+  {
+    "hardware": "standard_1_5t",
+    "sequence_sha256": "b8642e8ae31c617470b95eaf6ec9449098737b154e84206b28e0ecdae7d365ee",
+    "status": "passed",
+    "metrics": {
+      "case_complex_image_nrmse": 0.13612315704141792,
+      "case_magnitude_image_nrmse": 0.1195618794873908,
+      "case_phase_error_rad": 0.06146908823873732,
+      "selection_leakage_ratio": 0.07961793429344927
+    }
+  },
+  {
+    "hardware": "high_performance",
+    "sequence_sha256": "6a6a9f8bdfabf1e86698f92cd062e8e6a84180570a3e880f7042f33a0c450ba9",
+    "status": "passed",
+    "metrics": {
+      "case_complex_image_nrmse": 0.21590933573396928,
+      "case_magnitude_image_nrmse": 0.18952688168545218,
+      "case_phase_error_rad": 0.10751880785018475,
+      "selection_leakage_ratio": 0.04663753898971945
+    }
+  }
+]

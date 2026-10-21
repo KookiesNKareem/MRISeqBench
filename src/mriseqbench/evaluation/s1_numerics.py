@@ -18,7 +18,19 @@ class ReplayCache:
         self.simulator = simulator
         self.chunk_size = chunk_size
         self.hits = 0
+        self.density_scaled_hits = 0
         self.signal_shape = signal_shape
+
+    def _path(self, part, effects, steps, weights):
+        digest = hashlib.sha256(self.identity)
+        digest.update(
+            json.dumps(
+                [effects, steps, part.materials, part.source_sha256], sort_keys=True
+            ).encode()
+        )
+        for values in (part.positions, part.labels, weights, part.properties):
+            digest.update(np.ascontiguousarray(values).tobytes())
+        return self.directory / (digest.hexdigest() + ".npy")
 
     def __call__(self, acq, spins, effects=(), **steps):
         """Bloch sums are linear in spin density, including signed inclusions."""
@@ -37,15 +49,7 @@ class ReplayCache:
                 labels=spins.labels[start:stop],
                 weight=weights[start:stop],
             )
-            digest = hashlib.sha256(self.identity)
-            digest.update(
-                json.dumps(
-                    [effects, steps, part.materials, part.source_sha256], sort_keys=True
-                ).encode()
-            )
-            for values in (part.positions, part.labels, part.weight, part.properties):
-                digest.update(np.ascontiguousarray(values).tobytes())
-            path = self.directory / (digest.hexdigest() + ".npy")
+            path = self._path(part, effects, steps, part.weight)
             if path.exists():
                 try:
                     values = np.load(path, allow_pickle=False)
@@ -61,7 +65,26 @@ class ReplayCache:
             else:
                 values = None
             if values is None:
-                values = self.simulator(acq, part, effects, **steps)
+                # Nested spatial refinement halves the old nodes' quadrature
+                # density. Bloch evolution is linear in equilibrium density,
+                # including relaxation and signed inclusions. Reuse only an
+                # exact input-key match at twice these weights; no dynamics,
+                # integration steps, fields, or acceptance criteria are changed.
+                previous = self._path(part, effects, steps, part.weight * 2)
+                if previous.exists():
+                    try:
+                        cached = np.load(previous, allow_pickle=False)
+                        if (
+                            cached.shape == (self.signal_shape or acq.adc.shape)
+                            and np.isfinite(cached).all()
+                        ):
+                            values = cached / 2
+                            self.hits += 1
+                            self.density_scaled_hits += 1
+                    except (OSError, ValueError, EOFError):
+                        pass
+                if values is None:
+                    values = self.simulator(acq, part, effects, **steps)
                 if (
                     values.shape != (self.signal_shape or acq.adc.shape)
                     or not np.isfinite(values).all()

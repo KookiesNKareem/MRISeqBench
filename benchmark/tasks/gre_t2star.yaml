@@ -12,4 +12,4 @@ sequence:
   te_ms: {target: 20, tolerance: 2.0}
   tr_ms: {target: 30, tolerance: 1.5}
   flip_angle_deg: 20
-evaluation: s1@3
+evaluation: s1@4

@@ -56,9 +56,13 @@ class Catalog:
             entries = {}
             for path in sorted(manifest_directory(self.root, kind).glob("*.yaml")):
                 doc = model.model_validate(load_yaml(path))
-                if path.stem != doc.id:
-                    raise ValueError(f"{path}: filename must match id {doc.id}")
-                entries[f"{doc.id}@{doc.version}"] = doc
+                ref = f"{doc.id}@{doc.version}"
+                # A later version of a document lives beside the first as id@N.yaml.
+                if path.stem not in (doc.id, ref):
+                    raise ValueError(f"{path}: filename must be {doc.id} or {ref}")
+                if ref in entries:
+                    raise ValueError(f"{path}: duplicate {ref}")
+                entries[ref] = doc
             self.documents[kind] = entries
         if not self.documents["tasks"]:
             raise ValueError(f"no tasks found in {self.root}/benchmark/tasks")
@@ -70,12 +74,12 @@ class Catalog:
             validate_assets(self.root)
 
     def get(self, kind, ref):
-        # CLI convenience: a bare id is accepted only when it is unambiguous.
+        # CLI convenience: a bare id selects its latest version.
         entries = self.documents[kind]
         if "@" not in ref:
             matches = [doc for key, doc in entries.items() if key.split("@")[0] == ref]
-            if len(matches) == 1:
-                return matches[0]
+            if matches:
+                return max(matches, key=lambda doc: doc.version)
         if ref not in entries:
             raise ValueError(f"unknown {kind} reference {ref!r}")
         return entries[ref]
@@ -91,12 +95,16 @@ class Catalog:
                 ("evaluators", task.evaluation),
             ]:
                 self.get(kind, ref)
-            if not self.get("objects", task.object).phantom.startswith("cardiac_"):
+            rf_task = task.id == "rf_excitation_2d" and task.object == "uniform_disc@1"
+            if rf_task and self.get("objects", task.object).phantom != "uniform_disc@1":
+                raise ValueError("AI excitation requires the fixed uniform water-disc phantom")
+            if not rf_task and not self.get("objects", task.object).phantom.startswith("cardiac_"):
                 raise ValueError(f"{task.id}: active tasks require cardiac anatomy")
             evaluator = self.get("evaluators", task.evaluation)
             if (
                 evaluator.scope == "benchmark"
                 and evaluator.id != task.sequence.level.lower()
+                and not (rf_task and evaluator.id == "rf_excitation")
             ):
                 raise ValueError(
                     f"{task.id}: evaluator must match sequence tier {task.sequence.level}"
@@ -130,6 +138,8 @@ class Catalog:
 
     def validate_geometry(self, task, object_ref=None):
         obj = self.get("objects", object_ref or task.object)
+        if task.id == "rf_excitation_2d" and obj.phantom != "uniform_disc@1":
+            raise ValueError("AI excitation requires the fixed uniform water-disc phantom")
         if obj.phantom not in self.phantoms:
             raise ValueError(f"unknown KomaMRI phantom {obj.phantom!r}")
         definition = self.phantoms[obj.phantom]
@@ -297,7 +307,10 @@ class Catalog:
                     if len(task.sequence.matrix) == 3
                     else "static_b0@1"
                 )
-                if entry.objects is not None or not task.object.startswith("cardiac_"):
+                rf_task = task.id == "rf_excitation_2d" and task.object == "uniform_disc@1"
+                if entry.objects is not None or (
+                    not rf_task and not task.object.startswith("cardiac_")
+                ):
                     raise ValueError(
                         "benchmark suites require fixed cardiac anatomy without an object axis"
                     )

@@ -1,0 +1,15 @@
+[Unit]
+Description=MRISeqBench rootless Docker (arm images live in its data-root)
+
+[Service]
+Environment=PATH=%h/mriseqbench/rootless-tools/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=LD_LIBRARY_PATH=%h/mriseqbench/rootless-tools/usr/lib/x86_64-linux-gnu
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_NET=slirp4netns
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR=%t/mriseqbench-rootlesskit
+ExecStart=/usr/bin/dockerd-rootless.sh --host=unix://%t/mriseqbench-docker.sock --data-root=%h/mriseqbench/docker-data --exec-root=%t/mriseqbench-docker-exec --pidfile=%t/mriseqbench-docker.pid --storage-driver=overlay2 --exec-opt native.cgroupdriver=systemd
+Delegate=yes
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

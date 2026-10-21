@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from .s1_sequence import MissingExcitation, check, family
+from .s1_sequence import MissingExcitation, check, family, gradient_integrals
 from .s1_sequence import inspect_sequence as inspect_base
 
 FAMILIES = {
@@ -14,8 +14,8 @@ FAMILIES = {
     "compressed_sensing",
     "variable_density",
     "partial_fourier",
-    "asymmetric_echo",
     "reduced_fov",
+    "rfov_epi",
     "elliptical_kspace",
 }
 PARALLEL = {
@@ -25,6 +25,18 @@ PARALLEL = {
     "compressed_sensing",
     "variable_density",
 }
+REDUCED_FOV = {"reduced_fov", "rfov_epi"}
+
+
+def rf_block_endpoints(seq):
+    """Physical end of each RF-containing block, including authored rewinding."""
+    ends, clock = {}, 0.0
+    for number in seq.block_events:
+        end = clock + seq.block_durations[number]
+        if seq.get_block(number).rf is not None:
+            ends[clock] = end
+        clock = end
+    return ends
 
 
 def central_indices(n, width):
@@ -38,7 +50,7 @@ def prescribed_mask(fam, matrix, sampling):
     Linear density and the RNG algorithm are frozen here, not delegated to an
     agent library. Returned coordinates are array indices, not Pulseq labels.
     """
-    nx, ny, *nz = matrix
+    _, ny, *nz = matrix
     mask = np.zeros(matrix, bool)
     width = sampling.get("calibration_lines") or 0
     central = central_indices(ny, width)
@@ -71,10 +83,7 @@ def prescribed_mask(fam, matrix, sampling):
     elif fam == "partial_fourier":
         count = int(np.ceil(ny * sampling.get("partial_fourier_fraction", 0.75)))
         mask[:, ny - count :] = True
-    elif fam == "asymmetric_echo":
-        count = int(np.ceil(nx * sampling.get("asymmetric_echo_fraction", 0.75)))
-        mask[nx - count :, :] = True
-    elif fam == "reduced_fov":
+    elif fam in REDUCED_FOV:
         step = round(1 / sampling.get("reduced_fov_fraction", 0.5))
         if step < 2:
             raise ValueError("Reduced FOV must be smaller than the prescribed FOV")
@@ -106,93 +115,6 @@ def calibration_width(mask):
     return hi - lo
 
 
-def research_pattern(fam, mask):
-    """Qualitative research identity, with no hidden detailed mask/seed targets."""
-    n = np.asarray(mask.shape)
-    if fam == "asymmetric_echo":
-        occupied = np.flatnonzero(mask.any(axis=1))
-        return (
-            n[0] / 2 < len(occupied) < n[0]
-            and mask[occupied].all()
-            and np.all(np.diff(occupied) == 1)
-            and occupied[0] <= n[0] // 2 <= occupied[-1]
-            and abs((occupied[0] + occupied[-1]) / 2 - (n[0] - 1) / 2) >= 0.5
-        )
-    if fam == "elliptical_kspace":
-        expected = prescribed_mask(fam, tuple(n), {})
-        return np.array_equal(mask, expected)
-    phase = mask.all(axis=0)
-    if fam == "caipirinha":
-        zs = np.flatnonzero(phase.any(axis=0))
-        if len(zs) < 2 or not 0 < mask.mean() < 1:
-            return False
-        patterns = [phase[:, z] for z in zs if not phase[:, z].all()]
-        # Exclude central ACS rows; infer a period and a changing residue.
-        for ry in range(2, max(3, n[1] // 2 + 1)):
-            residues = []
-            for pattern in patterns:
-                ys = np.flatnonzero(pattern)
-                outer = ys[abs(ys - n[1] // 2) >= n[1] // 4]
-                if len(outer) < 2 or len(set(outer % ry)) != 1:
-                    break
-                residue = int(outer[0] % ry)
-                required = np.arange(n[1])[np.arange(n[1]) % ry == residue]
-                if not pattern[required].all():
-                    break
-                residues.append(residue)
-            if len(residues) >= 2 and len(set(residues)) > 1:
-                differences = np.diff(residues) % ry
-                if np.all(differences == differences[0]) and differences[0] != 0:
-                    return True
-        return False
-    ys = np.flatnonzero(phase)
-    if (
-        len(ys) < 2
-        or len(ys) >= n[1]
-        or not np.array_equal(mask, np.broadcast_to(phase, mask.shape))
-    ):
-        return False
-    if fam == "partial_fourier":
-        return (
-            len(ys) > n[1] / 2
-            and np.all(np.diff(ys) == 1)
-            and ys[0] <= n[1] // 2 <= ys[-1]
-            and abs((ys[0] + ys[-1]) / 2 - (n[1] - 1) / 2) >= 0.5
-        )
-    if fam == "reduced_fov":
-        step = int(np.diff(ys)[0])
-        return (
-            np.all(np.diff(ys) == step)
-            and step >= 2
-            and n[1] % step == 0
-            and np.array_equal(
-                ys, np.arange(n[1])[np.arange(n[1]) % step == ys[0] % step]
-            )
-            and n[1] // 2 in ys
-        )
-    if fam in {"sense_sampling", "grappa_sampling"}:
-        # A uniform accelerated lattice plus optional contiguous ACS.
-        for step in range(2, int(n[1]) // 2 + 1):
-            for offset in range(step):
-                lattice = np.arange(n[1]) % step == offset
-                extra = np.flatnonzero(phase & ~lattice)
-                if (
-                    phase[lattice].all()
-                    and (not len(extra) or np.all(phase[extra[0] : extra[-1] + 1]))
-                    and (
-                        fam == "sense_sampling"
-                        or calibration_width(mask) >= max(4, 2 * step)
-                    )
-                ):
-                    return True
-        return False
-    centre = abs(np.arange(n[1]) - n[1] // 2) < n[1] / 4
-    denser = phase[centre].mean() > phase[~centre].mean()
-    if fam == "compressed_sensing":
-        return denser and calibration_width(mask) >= 3 and len(set(np.diff(ys))) >= 2
-    return bool(denser)
-
-
 def inspect_sequence(path, case):
     try:
         a = inspect_base(path, case)
@@ -208,6 +130,19 @@ def inspect_sequence(path, case):
     matrix = np.asarray(spec["matrix"])
     dims = len(matrix)
     fov = np.asarray(spec["fov_mm"]) / 1000
+    if fam == "rfov_epi":
+        # A shaped 2D excitation prepares a spatial state at its RF endpoint.
+        # Encoding starts there; a hard-pulse RF-centre k reset is inapplicable.
+        excitation_pulses = [p for p in a.pulses if not p.refocusing]
+        block_ends = rf_block_endpoints(a.seq)
+        origins = np.array(
+            [
+                block_ends[excitation_pulses[max(a.excitation[j], 0)].block_start]
+                for j, ids in enumerate(a.lines)
+                for _ in ids
+            ]
+        )
+        a.k = gradient_integrals(a.seq, a.adc) - gradient_integrals(a.seq, origins)
     q = a.k[:, :dims] * fov
     # Fixed centred physical grid. S3's asymmetric support cannot estimate its
     # origin from its extrema: doing so silently recentres partial acquisitions.
@@ -227,7 +162,7 @@ def inspect_sequence(path, case):
     )
     straight = all(
         len(ids) >= 2
-        and (fam == "asymmetric_echo" or len(ids) == matrix[0])
+        and len(ids) == matrix[0]
         and np.all(abs(abs(np.diff(q[ids, 0])) - 1) <= 0.01)
         and np.max(np.ptp(q[ids, 1:], axis=0)) <= 0.01
         for ids in a.lines
@@ -270,17 +205,93 @@ def inspect_sequence(path, case):
             },
         ),
     ]
-    detailed = case["task"].get("prompt_mode") != "research"
-    if detailed:
-        expected = prescribed_mask(fam, tuple(matrix), spec.get("sampling") or {})
-        valid = np.array_equal(mask, expected)
-        detail = {
-            "missing_samples": int(np.sum(expected & ~mask)),
-            "extra_samples": int(np.sum(mask & ~expected)),
-        }
-    else:
-        valid = research_pattern(fam, mask)
-        detail = {"qualitative_identity": case["task"]["identity_requirements"]}
+    if fam == "rfov_epi":
+        checks = [
+            c
+            for c in checks
+            if c["name"] not in {"single_line_per_excitation", "echo_in_adc", "te_ms"}
+        ]
+        echo_times, centre_samples = [], []
+        for ids in a.lines:
+            span = q[ids[-1], 0] - q[ids[0], 0]
+            fraction = -q[ids[0], 0] / span if abs(span) > 1e-12 else 0.5
+            echo_times.append(
+                a.adc[ids[0]] + fraction * (a.adc[ids[-1]] - a.adc[ids[0]])
+            )
+            centre_samples.append(ids[np.argmin(abs(q[ids, 0]))])
+        a.te = np.asarray(echo_times) - np.array(
+            [excitation_pulses[max(j, 0)].center for j in a.excitation]
+        )
+        central_line = int(np.argmin(np.linalg.norm(q[centre_samples], axis=1)))
+        effective_te_ms = float(a.te[central_line] * 1000)
+        a.measurements["echo_times_s"] = echo_times
+        a.measurements["te_ms"] = (a.te * 1000).tolist()
+        a.measurements["effective_te_ms"] = effective_te_ms
+        limit = spec.get("te_ms")
+        if limit:
+            valid_te = effective_te_ms > 0
+            if limit.get("max") is not None:
+                valid_te &= effective_te_ms <= limit["max"] + 1e-6
+            if limit.get("target") is not None:
+                valid_te &= (
+                    abs(effective_te_ms - limit["target"]) <= limit["tolerance"] + 1e-6
+                )
+            checks.append(
+                check(
+                    "te_ms",
+                    valid_te,
+                    {"effective_te_ms": effective_te_ms, "contract": limit},
+                )
+            )
+        checks.append(
+            check(
+                "echo_in_adc",
+                all(np.min(q[ids, 0]) <= 0 <= np.max(q[ids, 0]) for ids in a.lines),
+                "Every EPI line brackets kx=0 after the excitation endpoint",
+            )
+        )
+        polarities = np.array(
+            [np.sign(q[ids[-1], 0] - q[ids[0], 0]) for ids in a.lines]
+        )
+        checks.append(
+            check(
+                "single_shot_epi",
+                len(np.unique(a.excitation)) == 1
+                and len(a.lines) == matrix[1] // 2
+                and np.all(polarities[1:] * polarities[:-1] == -1),
+                {
+                    "readout_lines": len(a.lines),
+                    "shots": len(np.unique(a.excitation)),
+                    "polarities": polarities.tolist(),
+                },
+            )
+        )
+        gradients = a.seq.get_gradients()
+        encoded = np.zeros(2, bool)
+        for pulse in a.pulses:
+            times = (pulse.edges[1:] + pulse.edges[:-1]) / 2
+            active = np.abs(pulse.signal) > np.max(np.abs(pulse.signal)) * 1e-5
+            for axis in range(2):
+                grad = gradients[axis]
+                if grad is not None and active.any():
+                    values = grad(np.clip(times[active], grad.x[0], grad.x[-1]))
+                    encoded[axis] |= np.max(np.abs(values)) > 1
+        checks.append(
+            check(
+                "two_dimensional_rf_encoding",
+                encoded.all(),
+                {
+                    "rf_overlaps_x_gradient": bool(encoded[0]),
+                    "rf_overlaps_y_gradient": bool(encoded[1]),
+                },
+            )
+        )
+    expected = prescribed_mask(fam, tuple(matrix), spec.get("sampling") or {})
+    valid = np.array_equal(mask, expected)
+    detail = {
+        "missing_samples": int(np.sum(expected & ~mask)),
+        "extra_samples": int(np.sum(mask & ~expected)),
+    }
     checks.append(check("sampling_pattern", valid, {"family": fam, **detail}))
     if fam != "reduced_fov":
         checks.extend(c for c in a.checks if c["name"] in {"gre", "no_refocusing"})
@@ -323,7 +334,7 @@ def inspect_sequence(path, case):
         reconstruction="bart_sampling_sense@1",
         receive_model="s3_trigonometric_comoving@1" if fam in PARALLEL else "uniform@1",
     )
-    if fam == "reduced_fov":
+    if fam in REDUCED_FOV:
         ys = np.flatnonzero(mask.all(axis=0))
         step = int(np.diff(ys)[0]) if len(ys) >= 2 else 1
         a.measurements["reduced_fov_fraction"] = 1 / step

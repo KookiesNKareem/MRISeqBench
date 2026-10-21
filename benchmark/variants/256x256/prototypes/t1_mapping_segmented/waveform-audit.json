@@ -1,0 +1,495 @@
+{
+  "status": "waveform_geometry_timing_SAR_prototype_only",
+  "qualified_for_agent_dispatch": false,
+  "current_s4_at1_compatible": false,
+  "MRI_signal_simulations": 0,
+  "native_evaluations": 0,
+  "model_calls": 0,
+  "matrix": [
+    256,
+    256
+  ],
+  "FOV_mm": [
+    200,
+    200
+  ],
+  "nominal_pixel_mm": 0.78125,
+  "contrast_count": 3,
+  "segments_per_contrast": 8,
+  "imaging_lines_per_segment": 32,
+  "extra_navigator_lines_per_segment": 1,
+  "total_ADC_samples_including_navigators": 202752,
+  "imaging_ADC_samples": 196608,
+  "navigator_ADC_samples": 6144,
+  "duration_s": 119.99999999999969,
+  "TR_ms": 4.6,
+  "nominal_TE_ms": 2.3,
+  "actual_TE_ms": 2.2950000000000004,
+  "min_inversion_preparation_separation_s": 4.200000000000003,
+  "hardware_measurements": {
+    "x": {
+      "peak_mT_per_m": 38.524990605035704,
+      "peak_slew_T_per_m_per_s": 133.31538224588022
+    },
+    "y": {
+      "peak_mT_per_m": 35.79035137166479,
+      "peak_slew_T_per_m_per_s": 127.82268347182676
+    }
+  },
+  "hardware_checks": [
+    {
+      "name": "grad_raster_time",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "rf_raster_time",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "adc_raster_time",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "block_duration_raster",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "pulseq_parse",
+      "passed": true,
+      "detail": "Pulseq file parsed"
+    },
+    {
+      "name": "timing",
+      "passed": true,
+      "detail": "[]"
+    },
+    {
+      "name": "duration",
+      "passed": true,
+      "detail": {
+        "duration_s": 119.99999999999969,
+        "max_s": 120
+      }
+    },
+    {
+      "name": "supported_events",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "name": "has_rf_and_adc",
+      "passed": true,
+      "detail": {
+        "adc_samples": 202752,
+        "rf_events": 816
+      }
+    },
+    {
+      "name": "finite_rf",
+      "passed": true,
+      "detail": "RF samples, times, frequency and phase must be finite"
+    },
+    {
+      "name": "finite_adc",
+      "passed": true,
+      "detail": "ADC timing, frequency, phase and modulation must be finite"
+    },
+    {
+      "name": "peak_b1",
+      "passed": true,
+      "detail": {
+        "peak_uT": 11.743705373919578,
+        "max_uT": 20.0
+      }
+    },
+    {
+      "name": "finite_gradient_x",
+      "passed": true,
+      "detail": "finite samples with increasing time"
+    },
+    {
+      "name": "gradient_x",
+      "passed": true,
+      "detail": {
+        "peak_mT_per_m": 38.524990605035704,
+        "max": 80.0
+      }
+    },
+    {
+      "name": "slew_x",
+      "passed": true,
+      "detail": {
+        "peak_T_per_m_per_s": 133.31538224588022,
+        "max": 200.0
+      }
+    },
+    {
+      "name": "finite_gradient_y",
+      "passed": true,
+      "detail": "finite samples with increasing time"
+    },
+    {
+      "name": "gradient_y",
+      "passed": true,
+      "detail": {
+        "peak_mT_per_m": 35.79035137166479,
+        "max": 80.0
+      }
+    },
+    {
+      "name": "slew_y",
+      "passed": true,
+      "detail": {
+        "peak_T_per_m_per_s": 127.82268347182676,
+        "max": 200.0
+      }
+    }
+  ],
+  "synthetic_benchmark_SAR_checks": [
+    {
+      "name": "sar_360s",
+      "passed": true,
+      "detail": {
+        "model": "homogeneous_sphere_v1",
+        "field_strength_T": 3.0,
+        "peak_W_per_kg": 0.2893335075303862,
+        "limit_W_per_kg": 2.0,
+        "window_start_s": 0.0,
+        "averaging_duration_s": 119.99999999999969,
+        "b1_rms_uT": 0.44682979714056553,
+        "coefficient_W_per_kg_per_uT2": 1.449153795659431,
+        "load": {
+          "model": "homogeneous_sphere_v1",
+          "radius_m": 0.15,
+          "conductivity_S_per_m": 0.5,
+          "density_kg_per_m3": 1000.0,
+          "whole_body_limit_W_per_kg": 2.0
+        },
+        "scope": "synthetic global SAR; no local SAR or scanner certification"
+      }
+    },
+    {
+      "name": "sar_10s",
+      "passed": true,
+      "detail": {
+        "model": "homogeneous_sphere_v1",
+        "field_strength_T": 3.0,
+        "peak_W_per_kg": 0.30931945644754055,
+        "limit_W_per_kg": 4.0,
+        "window_start_s": 76.4029950000004,
+        "averaging_duration_s": 10.0,
+        "b1_rms_uT": 0.46200468526524313,
+        "coefficient_W_per_kg_per_uT2": 1.449153795659431,
+        "load": {
+          "model": "homogeneous_sphere_v1",
+          "radius_m": 0.15,
+          "conductivity_S_per_m": 0.5,
+          "density_kg_per_m3": 1000.0,
+          "whole_body_limit_W_per_kg": 2.0
+        },
+        "scope": "synthetic global SAR; no local SAR or scanner certification"
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "contrast_index": 0,
+      "unique_imaging_points": 65536,
+      "duplicates_after_explicit_navigator_exclusion": 0,
+      "q_min": [
+        -128,
+        -128
+      ],
+      "q_max": [
+        127,
+        127
+      ]
+    },
+    {
+      "contrast_index": 1,
+      "unique_imaging_points": 65536,
+      "duplicates_after_explicit_navigator_exclusion": 0,
+      "q_min": [
+        -128,
+        -128
+      ],
+      "q_max": [
+        127,
+        127
+      ]
+    },
+    {
+      "contrast_index": 2,
+      "unique_imaging_points": 65536,
+      "duplicates_after_explicit_navigator_exclusion": 0,
+      "q_min": [
+        -128,
+        -128
+      ],
+      "q_max": [
+        127,
+        127
+      ]
+    }
+  ],
+  "measured_segments": [
+    {
+      "contrast_index": 0,
+      "segment_index": 0,
+      "actual_TI_ms": 100.00000000000009,
+      "actual_TE_ms": 2.295000000000158,
+      "ADC_window_ms": [
+        601.2150000000003,
+        750.9650000000123
+      ]
+    },
+    {
+      "contrast_index": 0,
+      "segment_index": 1,
+      "actual_TI_ms": 100.00000000001386,
+      "actual_TE_ms": 2.2950000000134807,
+      "ADC_window_ms": [
+        601.2150000000131,
+        750.9650000000114
+      ]
+    },
+    {
+      "contrast_index": 0,
+      "segment_index": 2,
+      "actual_TI_ms": 100.0000000000103,
+      "actual_TE_ms": 2.295000000010816,
+      "ADC_window_ms": [
+        601.2150000000105,
+        750.9650000000079
+      ]
+    },
+    {
+      "contrast_index": 0,
+      "segment_index": 3,
+      "actual_TI_ms": 100.00000000000497,
+      "actual_TE_ms": 2.2950000000037107,
+      "ADC_window_ms": [
+        601.215000000007,
+        750.9650000000044
+      ]
+    },
+    {
+      "contrast_index": 0,
+      "segment_index": 4,
+      "actual_TI_ms": 100.00000000000142,
+      "actual_TE_ms": 2.295000000000158,
+      "ADC_window_ms": [
+        601.2150000000033,
+        750.9650000000008
+      ]
+    },
+    {
+      "contrast_index": 0,
+      "segment_index": 5,
+      "actual_TI_ms": 99.99999999999787,
+      "actual_TE_ms": 2.2949999999966053,
+      "ADC_window_ms": [
+        601.2149999999998,
+        750.9649999999972
+      ]
+    },
+    {
+      "contrast_index": 0,
+      "segment_index": 6,
+      "actual_TI_ms": 99.99999999998721,
+      "actual_TE_ms": 2.2949999999895,
+      "ADC_window_ms": [
+        601.2149999999892,
+        750.9650000001074
+      ]
+    },
+    {
+      "contrast_index": 0,
+      "segment_index": 7,
+      "actual_TI_ms": 100.0000000001009,
+      "actual_TE_ms": 2.2950000001031867,
+      "ADC_window_ms": [
+        601.2150000001029,
+        750.965000000221
+      ]
+    },
+    {
+      "contrast_index": 1,
+      "segment_index": 0,
+      "actual_TI_ms": 400.00000000021885,
+      "actual_TE_ms": 2.295000000223979,
+      "ADC_window_ms": [
+        601.2150000002237,
+        750.9650000003419
+      ]
+    },
+    {
+      "contrast_index": 1,
+      "segment_index": 1,
+      "actual_TI_ms": 400.00000000033964,
+      "actual_TE_ms": 2.2950000003447713,
+      "ADC_window_ms": [
+        601.2150000003444,
+        750.9650000004626
+      ]
+    },
+    {
+      "contrast_index": 1,
+      "segment_index": 2,
+      "actual_TI_ms": 400.00000000046043,
+      "actual_TE_ms": 2.2950000004655635,
+      "ADC_window_ms": [
+        601.2150000004652,
+        750.9650000005834
+      ]
+    },
+    {
+      "contrast_index": 1,
+      "segment_index": 3,
+      "actual_TI_ms": 400.0000000005812,
+      "actual_TE_ms": 2.295000000586356,
+      "ADC_window_ms": [
+        601.2150000005861,
+        750.9650000007042
+      ]
+    },
+    {
+      "contrast_index": 1,
+      "segment_index": 4,
+      "actual_TI_ms": 400.000000000702,
+      "actual_TE_ms": 2.295000000707148,
+      "ADC_window_ms": [
+        601.2150000007068,
+        750.9650000008251
+      ]
+    },
+    {
+      "contrast_index": 1,
+      "segment_index": 5,
+      "actual_TI_ms": 400.00000000085834,
+      "actual_TE_ms": 2.295000000842151,
+      "ADC_window_ms": [
+        601.2150000008347,
+        750.9650000007184
+      ]
+    },
+    {
+      "contrast_index": 1,
+      "segment_index": 6,
+      "actual_TI_ms": 400.00000000074465,
+      "actual_TE_ms": 2.2950000007284643,
+      "ADC_window_ms": [
+        601.215000000721,
+        750.9650000006047
+      ]
+    },
+    {
+      "contrast_index": 1,
+      "segment_index": 7,
+      "actual_TI_ms": 400.00000000063096,
+      "actual_TE_ms": 2.2950000006147775,
+      "ADC_window_ms": [
+        601.2150000006073,
+        750.965000000491
+      ]
+    },
+    {
+      "contrast_index": 2,
+      "segment_index": 0,
+      "actual_TI_ms": 1200.0000000005286,
+      "actual_TE_ms": 2.2950000005153015,
+      "ADC_window_ms": [
+        601.2150000005079,
+        750.9650000003916
+      ]
+    },
+    {
+      "contrast_index": 2,
+      "segment_index": 1,
+      "actual_TI_ms": 1200.0000000004293,
+      "actual_TE_ms": 2.2950000004158255,
+      "ADC_window_ms": [
+        601.2150000004084,
+        750.9650000002921
+      ]
+    },
+    {
+      "contrast_index": 2,
+      "segment_index": 2,
+      "actual_TI_ms": 1200.0000000003297,
+      "actual_TE_ms": 2.2950000003163495,
+      "ADC_window_ms": [
+        601.2150000003089,
+        750.9650000001926
+      ]
+    },
+    {
+      "contrast_index": 2,
+      "segment_index": 3,
+      "actual_TI_ms": 1200.00000000023,
+      "actual_TE_ms": 2.2950000002168736,
+      "ADC_window_ms": [
+        601.2150000002094,
+        750.9650000000931
+      ]
+    },
+    {
+      "contrast_index": 2,
+      "segment_index": 4,
+      "actual_TI_ms": 1200.0000000001307,
+      "actual_TE_ms": 2.2950000001173976,
+      "ADC_window_ms": [
+        601.21500000011,
+        750.9649999999937
+      ]
+    },
+    {
+      "contrast_index": 2,
+      "segment_index": 5,
+      "actual_TI_ms": 1200.0000000000314,
+      "actual_TE_ms": 2.2950000000179216,
+      "ADC_window_ms": [
+        601.2150000000105,
+        750.9649999998942
+      ]
+    },
+    {
+      "contrast_index": 2,
+      "segment_index": 6,
+      "actual_TI_ms": 1199.9999999999318,
+      "actual_TE_ms": 2.2949999999184456,
+      "ADC_window_ms": [
+        601.214999999911,
+        750.9649999997947
+      ]
+    },
+    {
+      "contrast_index": 2,
+      "segment_index": 7,
+      "actual_TI_ms": 1199.9999999998322,
+      "actual_TE_ms": 2.2949999998189696,
+      "ADC_window_ms": [
+        601.2149999998115,
+        750.9649999996952
+      ]
+    }
+  ],
+  "sequence_sha256": "eb64964cd90c75b1aa58aa4914b2c80cc89d7fda37918b4f4720daf7789e58a5",
+  "limits": [
+    "Block180degree inversion is not clinically robust or adiabatic; no RF/B0/B1response qualification.",
+    "35degree nonselective readout, no slice profile or catalyzation/dummyTRs qualified.",
+    "Same navigator-based nominalTI does not make every peripheral ky node have thatTI; intra-train dynamics must enter reference simulation.",
+    "All navigator lines explicitly excluded from imaging coverage and map fit; their utility for phase correction is unqualified.",
+    "Repeated preparations may leave tissue-dependent state even with >=3RR separation. No equilibrium or fitting accuracy claim.",
+    "CurrentS4@1 assumes one whole image per trigger; it cannot assemble this segmented acquisition.",
+    "Known-PD/known-T2 conditionalT1 fit has not been run or validated; nativeGPUimage replay and independent high-detail target are pending."
+  ],
+  "max_absolute_readout_TR_net_gradient_area_cycles_per_m": {
+    "x": 0.00020001327618501819,
+    "y": 1.4210854715202004e-13
+  }
+}

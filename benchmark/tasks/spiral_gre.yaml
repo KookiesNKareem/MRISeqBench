@@ -14,4 +14,4 @@ sequence:
     interleaves: 4
     turns: 8
     center_out: true
-evaluation: s2@3
+evaluation: s2@4

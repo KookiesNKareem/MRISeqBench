@@ -5,6 +5,49 @@ using .MRISeqBenchPhantoms
 const CoreMRI = KomaMRICore
 const SEQUENCES = Dict{String,Any}()
 
+function read_pulseq_sequence(path)
+    seq = read_seq(path)
+    # Files 0.12.0 decodes ADC(1) with delay=PulseqDelay+dwell/2 and
+    # T=dwell. Base 0.15.1's times(ADC(1)) adds T/2 once more. Remove
+    # only that duplicate half-dwell; keep the actual Pulseq sample centre.
+    # Multi-sample ADCs and the submitted file bytes are unchanged. The strict
+    # Python/native ADC timestamp check below remains the independent guard.
+    for adc in seq.ADC
+        adc.N == 1 && (adc.delay -= adc.T / 2)
+    end
+    return seq
+end
+
+const DEVICE = get(ENV, "MRISEQBENCH_KOMA_DEVICE", "cuda")
+DEVICE == "cuda" || error("MRISeqBench simulations require CUDA; CPU execution is disabled")
+using CUDA
+CUDA.functional() || error("A functional CUDA GPU is required for grading; no CPU fallback")
+CUDA.allowscalar(false)
+
+function simulation_backend()
+    backend = CoreMRI.get_backend(true)
+    backend isa CoreMRI.KA.GPU || error("CUDA grading cannot fall back to CPU")
+    CoreMRI.KA.supports_float64(backend) || error("Grading requires Float64 on the GPU")
+    return backend
+end
+
+on_device(x) = CoreMRI.gpu(x)
+
+function update_device_fields!(obj, host_obj, c, mid, offsets)
+    case_field_update!(host_obj,c,mid,offsets)
+    if DEVICE == "cuda"
+        copyto!(obj.ρ,host_obj.ρ)
+        copyto!(obj.Δw,host_obj.Δw)
+    end
+end
+
+function execution_device()
+    Dict("backend"=>DEVICE, "precision"=>"f64",
+         "device"=>CUDA.name(CUDA.device()),
+         "cuda_version"=>string(pkgversion(CUDA)),
+         "cpu_fallback"=>false)
+end
+
 function case_field_update!(obj, c, t, offsets)
     p = hcat(c.phantom.x, c.phantom.y, c.phantom.z)
     for e in c.effects
@@ -33,106 +76,31 @@ function case_field_update!(obj, c, t, offsets)
     return nothing
 end
 
-function clear_rf_outside_support!(seqd, seq)
-    # KomaMRIBase 0.11.3 interpolates RF edges separated by 1e-14 s. At
-    # accumulated block times, roundoff can leave a nonzero endpoint which is
-    # then integrated across a long RF-free delay. Step halving cannot remove
-    # this spurious tail. Enforce the imported pulse's exact open support using
-    # the same block/start/end arithmetic as native get_variable_times.
-    starts, stops = Float64[], Float64[]
-    block_starts = get_block_start_times(seq)
-    for (i,rf) in enumerate(seq.RF)
-        iszero(sum(abs.(rf.A))) && continue
-        start = block_starts[i] + rf.delay
-        push!(starts,start)
-        push!(stops,start + sum(rf.T))
-    end
-    pulse = 1
-    for (i,t) in enumerate(seqd.t)
-        while pulse <= length(stops) && t >= stops[pulse]
-            pulse += 1
-        end
-        if pulse > length(stops) || t <= starts[pulse]
-            seqd.B1[i] = 0
-        end
-    end
-    return seqd
+# Use the current upstream sampler; RF samples/support and explicit waveform
+# boundaries are retained by its public sampling rule rather than historical
+# fixes for KomaMRIBase 0.11's interpolation grid.
+struct CaseTimeSampling{R} <: CoreMRI.KomaMRIBase.SamplingRule
+    rule::R
+    maxdt::Float64
 end
-
-function preserve_rf_samples(seq, seqd)
-    # Keep native pulse support and every imported RF envelope transition.
-    # times(rf,:A) includes outer zero knots: waveform sample i is knot i+1.
-    # Losing that offset drops a full coarse RF step after a plateau jump.
-    base = CoreMRI.KomaMRIBase
-    extra = Float64[]
-    block_starts = get_block_start_times(seq)
-    for (i,rf) in enumerate(seq.RF)
-        iszero(sum(abs.(rf.A))) && continue
-        start = block_starts[i] + rf.delay
-        stop = start + sum(rf.T)
-        append!(extra,[start,nextfloat(start),prevfloat(stop),stop])
-        any(a->a != first(rf.A),rf.A) || continue
-        knots = base.times(rf,:A)
-        changes = findall(diff(rf.A) .!= 0)
-        keep = sort!(unique!(vcat(1,length(knots),2,length(knots)-1,
-                                  changes .+ 1,changes .+ 2)))
-        append!(extra,block_starts[i] .+ knots[keep])
-        append!(extra,block_starts[i] .+ base.times(rf,:Δf))
-    end
-    isempty(extra) && return seqd
-    t = sort!(unique!(vcat(seqd.t,extra)))
-    B1, Δf, ψ = base.get_rfs(seq,t)
-    Gx, Gy, Gz = base.get_grads(seq,t)
-    adc_times = Set(get_adc_sampling_times(seq))
-    adc = [time in adc_times for time in t]
-    return CoreMRI.DiscreteSequence(Gx,Gy,Gz,complex.(B1),Δf,ψ,adc,t,diff(t))
-end
-
-function retain_keyframe_jumps(seq, seqd, effects)
-    # KomaMRIBase 0.11.3 adds native motion period endpoints, but omits
-    # interior TimeCurve knots. A previous-pose jump must not be integrated
-    # as a ramp across a gradient/RF step. Preserve both sides of the jump.
-    extra = Float64[]
-    for e in effects
-        e["kind"] == "motion" && e["model"] == "rigid_keyframes" || continue
-        get(e,"interpolation","previous") == "previous" || continue
-        for pose in e["poses"][2:end]
-            t = Float64(pose["time_s"])
-            first(seqd.t) < t < last(seqd.t) || continue
-            append!(extra,[prevfloat(t),t])
-        end
-    end
-    isempty(extra) && return seqd
-    t = sort!(unique!(vcat(seqd.t,extra)))
-    base = CoreMRI.KomaMRIBase
-    B1, Δf, ψ = base.get_rfs(seq,t)
-    Gx, Gy, Gz = base.get_grads(seq,t)
-    adc_times = Set(get_adc_sampling_times(seq))
-    adc = [time in adc_times for time in t]
-    return CoreMRI.DiscreteSequence(Gx,Gy,Gz,complex.(B1),Δf,ψ,adc,t,diff(t))
+CoreMRI.KomaMRIBase.preserved_samples(r::CaseTimeSampling) = CoreMRI.KomaMRIBase.preserved_samples(r.rule)
+function CoreMRI.KomaMRIBase.additional_sampling_times(r::CaseTimeSampling, times, context::CoreMRI.KomaMRIBase.BlockSamplingContext)
+    extra = CoreMRI.KomaMRIBase.additional_sampling_times(r.rule, times, context)
+    n = max(1,ceil(Int,context.duration/r.maxdt))
+    return sort!(unique!(vcat(extra,collect(range(0.0,context.duration;length=n+1)))))
 end
 
 function discretize_case(seq, params, motion, has_dynamic, effects=Any[])
-    seqd = preserve_rf_samples(seq,discretize(seq; sampling_params=params,motion))
-    seqd = retain_keyframe_jumps(seq,seqd,effects)
+    rule = CoreMRI.simulation_sampling_rule(params["sim_method"],params)
     if has_dynamic
-        # Native event sampling leaves RF/gradient-free delays unsplit. Fields
-        # and equilibrium can still vary there, so temporal refinement must
-        # also bound those intervals. Retain every original event/ADC knot.
-        t = copy(seqd.t)
-        for i in eachindex(seqd.Δt)
-            count = ceil(Int,seqd.Δt[i]/params["Δt"])
-            count > 1 && append!(t,range(seqd.t[i],seqd.t[i+1];length=count+1))
-        end
-        sort!(unique!(t))
-        base = CoreMRI.KomaMRIBase
-        B1, Δf, ψ = base.get_rfs(seq,t)
-        Gx, Gy, Gz = base.get_grads(seq,t)
-        adc_times = Set(get_adc_sampling_times(seq))
-        adc = [time in adc_times for time in t]
-        seqd = CoreMRI.DiscreteSequence(Gx,Gy,Gz,complex.(B1),Δf,ψ,adc,t,diff(t))
+        # Add the dynamic-field time grid before the method inserts its RF
+        # quadrature nodes, so higher-order integration groups stay intact.
+        rule = rule isa CoreMRI.IntegrationNodeSamplingRule ?
+            CoreMRI.IntegrationNodeSamplingRule(rule.method,CaseTimeSampling(rule.rule,params["Δt"])) :
+            CaseTimeSampling(rule,params["Δt"])
     end
-    return clear_rf_outside_support!(seqd,seq)
+    return discretize(seq; sampling_rule=rule, motion,
+                      freq_in_phase=params["freq_in_phase"])
 end
 
 function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
@@ -143,108 +111,152 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
     # State persists throughout; every step delegates rotation/relaxation/acquisition
     # to the pinned KomaMRI kernels, including their native motion coordinates.
     method = individual ? CoreMRI.BlochDict() : params["sim_method"]
+    # Static S4 replay can use the public simulator end to end. The file already
+    # contains upstream-resolved waits; NoPhysioSignal prevents double waiting.
+    if !has_dynamic && get(params,"spoil_times_s",nothing) === nothing
+        simulation_backend() # Fail closed before upstream's automatic fallback.
+        p = copy(params)
+        p["sim_method"] = method
+        p["max_block_length"] = DEVICE == "cuda" ? 256 : Inf
+        p["max_rf_block_length"] = DEVICE == "cuda" ? 256 : Inf
+        result = CoreMRI.simulate(obj,seq,sys;sim_params=p,verbose=false,physio=NoPhysioSignal())
+        return individual ? dropdims(result;dims=4) : result
+    end
     seqd = discretize_case(seq,params,obj.motion,has_dynamic,c.effects)
     spoil_times = get(params,"spoil_times_s",nothing)
-    block_length = has_dynamic || spoil_times !== nothing ? 1 : Inf
-    ranges, rf_on = CoreMRI.get_sim_ranges(seqd;max_block_length=block_length,max_rf_block_length=block_length)
+    # Bound GPU temporaries, including the per-spin diagnostic dictionaries.
+    # The discretization and every ADC/integration step remain unchanged.
+    block_length = has_dynamic ? 1 : (DEVICE == "cuda" ? 256 : Inf)
+    ranges, rf_on = CoreMRI.get_sim_ranges(seqd;max_block_length=block_length,max_rf_block_length=block_length,eval_intervals_per_step=CoreMRI.eval_intervals_per_step(method))
+
+    if spoil_times !== nothing && !has_dynamic
+        # Retain the exact one-interval implementation's reset locations while
+        # batching native GPU work between resets. Never batch dynamic fields.
+        rf_steps = findall(seqd.excitation_bool)
+        end_times = seqd.t[rf_steps .+ 1]
+        reset_steps = sort!(unique!([rf_steps[j] for t in spoil_times
+            for j in (searchsortedlast(end_times,t)+1,)
+            if j <= length(rf_steps)]))
+        split_ranges, split_rf = UnitRange{Int}[], Bool[]
+        for (r,rf) in zip(ranges,rf_on)
+            cuts = rf ? [first(r); filter(i->first(r)<i<last(r),reset_steps); last(r)] : [first(r); last(r)]
+            for j in 1:(length(cuts)-1)
+                push!(split_ranges,cuts[j]:cuts[j+1]);push!(split_rf,rf)
+            end
+        end
+        ranges,rf_on = split_ranges,split_rf
+    end
     state, obj = CoreMRI.initialize_spins_state(obj,method)
     state.z = copy(state.z) # Keep evolving Mz separate from equilibrium rho.
-    backend = CoreMRI.KA.CPU()
-    nthreads = individual ? 1 : min(Threads.nthreads(),length(obj))
+    backend = simulation_backend()
+    host_obj, host_seqd = obj, seqd
+    obj, seqd, state = on_device(obj), on_device(seqd), on_device(state)
+    nthreads = individual || DEVICE == "cuda" ? 1 : min(Threads.nthreads(),length(obj))
     groupsize = CoreMRI.DEFAULT_PRECESSION_GROUPSIZE
-    prealloc = CoreMRI.prealloc(method,backend,obj,state,2,groupsize)
-    signal = individual ? zeros(ComplexF64,sum(seq.ADC.N),length(obj),1,1) : zeros(ComplexF64,sum(seq.ADC.N),1,nthreads)
+    max_adc = maximum(r -> sum(@view host_seqd.ADC[(first(r)+1):last(r)]), ranges; init=0)
+    prealloc = CoreMRI.prealloc(method,backend,obj,state,maximum(length.(ranges)),max_adc,groupsize,sys)
+    signal = on_device(individual ? zeros(ComplexF64,sum(seq.ADC.N),length(obj),1,1) : zeros(ComplexF64,sum(seq.ADC.N),1,nthreads))
     sample = 1
-    phase_windows = get(params,"phase_windows",nothing)
-    active_phase_window = 0
     next_spoil = 1
     for (range,rf) in zip(ranges,rf_on)
+        host_step = @view host_seqd[range]
         step = @view seqd[range]
-        mid = (first(step.t)+last(step.t))/2
-        count = sum(step.ADC[2:end])
+        mid = (first(host_step.t)+last(host_step.t))/2
+        count = sum(host_step.ADC[2:end])
         if spoil_times !== nothing && rf
             # Destroy old transverse coherence before each excitation while
             # retaining longitudinal saturation and recovery. Composite RF
             # subpulses share one imported RF event and one reset.
-            while next_spoil <= length(spoil_times) && spoil_times[next_spoil] < last(step.t)
+            while next_spoil <= length(spoil_times) && spoil_times[next_spoil] < last(host_step.t)
                 fill!(state.xy,0)
                 next_spoil += 1
             end
         end
-        if phase_windows !== nothing
-            # RF-only oracle: each selected excitation starts from equilibrium,
-            # independently of earlier RF. Absolute timestamps and declared
-            # fields/motion remain intact. Skip idle gaps erased by that reset.
-            window = findfirst(w->w[1] < last(step.t) && first(step.t) < w[2],phase_windows)
-            if window === nothing
-                count == 0 || error("Phase ADC outside selected echo windows")
-                continue
-            end
-            has_dynamic && case_field_update!(obj,c,mid,offsets)
-            if window != active_phase_window
-                fill!(state.xy,0)
-                state.z .= obj.ρ
-                active_phase_window = window
-            end
-        else
-            has_dynamic && case_field_update!(obj,c,mid,offsets)
-        end
-        individual || (prealloc.ΔBz .= obj.Δw ./ (2π * γ))
-        count = sum(step.ADC[2:end])
+        has_dynamic && update_device_fields!(obj,host_obj,c,mid,offsets)
+        hasproperty(prealloc,:ΔBz) && (prealloc.ΔBz .= obj.Δw ./ (2π * γ))
         slots = sample:(sample+count-1)
         if rf
             target = individual ? @view(signal[slots,:,:,:]) : @view(signal[slots,:,:])
-            CoreMRI.run_spin_excitation_parallel!(obj,step,target,state,method,groupsize,backend,prealloc;Nthreads=nthreads)
+            CoreMRI.run_spin_excitation_parallel!(obj,step,target,state,sys,method,groupsize,backend,prealloc;Nthreads=nthreads)
         else
             target = individual ? @view(signal[slots,:,:,:]) : @view(signal[slots,:,:])
-            CoreMRI.run_spin_precession_parallel!(obj,step,target,state,method,groupsize,backend,prealloc;Nthreads=nthreads)
+            CoreMRI.run_spin_precession_parallel!(obj,step,target,state,sys,method,groupsize,backend,prealloc;Nthreads=nthreads)
         end
+        CoreMRI.KA.synchronize(backend)
         sample += count
     end
-    return individual ? dropdims(signal;dims=4) : sum(signal;dims=3)
+    return CoreMRI.cpu(individual ? dropdims(signal;dims=4) : sum(signal;dims=3))
 end
 
 # Receive encoding accumulates each short ADC block from native per-spin Bloch
 # responses. State is advanced once, independent of receive sensitivity. This
 # is exactly the same density-linear operation as separate coil-weighted Bloch
 # replays, with bounded memory instead of a full ADC-by-spins dictionary.
-function simulate_receive_case(obj,seq,c,offsets,params,receive)
+# Exact static per-spin receive maps, materialized once by the native GPU
+# receiver API. No interpolation or change to sensitivities/physical dynamics.
+struct ExactStaticReceive{M} <: CoreMRI.KomaMRIBase.AbstractRFReceiveSystem
+    weights::M
+end
+CoreMRI.KomaMRIBase.get_n_coils(r::ExactStaticReceive) = size(r.weights,2)
+CoreMRI.prealloc_receiver(r::ExactStaticReceive, obj, backend, ::NoMotion) = CoreMRI.gpu(r.weights,backend)
+
+function simulate_receive_case(obj,seq,sys,c,offsets,params,receive)
     has_dynamic = any(e->e["kind"]=="time_variation",c.effects) ||
         (any(e->e["kind"]=="motion",c.effects) && any(e->e["kind"]=="b0",c.effects))
     case_field_update!(obj,c,0.0,offsets)
+    if !has_dynamic && obj.motion isa NoMotion
+        size(receive,1)==length(obj) || error("Receive/spin dimension mismatch")
+        simulation_backend() # Fail closed before native automatic fallback.
+        scanner = Scanner(limits=sys.limits, gradient=sys.gradient,
+                          receiver=ExactStaticReceive(receive), transmitter=sys.transmitter)
+        p = copy(params)
+        p["sim_method"] = CoreMRI.Bloch()
+        p["max_block_length"] = 256
+        p["max_rf_block_length"] = 256
+        # Native fused GPU acquisition accumulates the same linear coil sums as
+        # BlochDict followed by matrix multiplication, without per-step broadcasts.
+        result = CoreMRI.simulate(obj,seq,scanner;sim_params=p,verbose=false,physio=NoPhysioSignal())
+        return reshape(result,sum(seq.ADC.N),size(receive,2))
+    end
     method = CoreMRI.BlochDict()
     seqd = discretize_case(seq,params,obj.motion,has_dynamic,c.effects)
-    block_length = has_dynamic ? 1 : Inf
-    ranges, rf_on = CoreMRI.get_sim_ranges(seqd;max_block_length=block_length,max_rf_block_length=block_length)
+    block_length = has_dynamic ? 1 : (DEVICE == "cuda" ? 256 : Inf)
+    ranges, rf_on = CoreMRI.get_sim_ranges(seqd;max_block_length=block_length,max_rf_block_length=block_length,eval_intervals_per_step=CoreMRI.eval_intervals_per_step(method))
     state, obj = CoreMRI.initialize_spins_state(obj,method)
     state.z = copy(state.z)
-    backend = CoreMRI.KA.CPU()
+    backend = simulation_backend()
+    host_obj, host_seqd = obj, seqd
+    obj, seqd, state = on_device(obj), on_device(seqd), on_device(state)
     groupsize = CoreMRI.DEFAULT_PRECESSION_GROUPSIZE
-    prealloc = CoreMRI.prealloc(method,backend,obj,state,2,groupsize)
+    max_adc = maximum(r -> sum(@view host_seqd.ADC[(first(r)+1):last(r)]), ranges; init=0)
+    prealloc = CoreMRI.prealloc(method,backend,obj,state,maximum(length.(ranges)),max_adc,groupsize,sys)
     size(receive,1)==length(obj) || error("Receive/spin dimension mismatch")
-    signal = zeros(ComplexF64,sum(seq.ADC.N),size(receive,2))
+    signal = on_device(zeros(ComplexF64,sum(seq.ADC.N),size(receive,2)))
+    receive = on_device(receive)
     sample = 1
     for (range,rf) in zip(ranges,rf_on)
+        host_step = @view host_seqd[range]
         step = @view seqd[range]
-        has_dynamic && case_field_update!(obj,c,(first(step.t)+last(step.t))/2,offsets)
-        count = sum(step.ADC[2:end])
-        target = zeros(ComplexF64,count,length(obj),1,1)
+        has_dynamic && update_device_fields!(obj,host_obj,c,(first(host_step.t)+last(host_step.t))/2,offsets)
+        count = sum(host_step.ADC[2:end])
+        target = on_device(zeros(ComplexF64,count,length(obj),1,1))
         if rf
-            CoreMRI.run_spin_excitation_parallel!(obj,step,target,state,method,groupsize,backend,prealloc;Nthreads=1)
+            CoreMRI.run_spin_excitation_parallel!(obj,step,target,state,sys,method,groupsize,backend,prealloc;Nthreads=1)
         else
-            CoreMRI.run_spin_precession_parallel!(obj,step,target,state,method,groupsize,backend,prealloc;Nthreads=1)
+            CoreMRI.run_spin_precession_parallel!(obj,step,target,state,sys,method,groupsize,backend,prealloc;Nthreads=1)
         end
         if count > 0
             @views mul!(signal[sample:sample+count-1,:],reshape(target,count,length(obj)),receive)
         end
+        CoreMRI.KA.synchronize(backend)
         sample += count
     end
-    return signal
+    return CoreMRI.cpu(signal)
 end
 
 function simulate_request(req)
     seq = deepcopy(get!(SEQUENCES,req["sequence_sha256"]) do
-        read_seq(req["sequence"])
+        read_pulseq_sequence(req["sequence"])
     end)
     # Receiver demodulation uses the exact original Pulseq phases in the judge;
     # prevent duplicate demodulation in KomaMRI, including diagnostic acquisitions.
@@ -274,13 +286,13 @@ function simulate_request(req)
     integrator = get(req,"integration_method","bloch")
     integrator in ("bloch","magnus4") || error("Unsupported integration method: $integrator")
     params = CoreMRI.default_sim_params(Dict{String,Any}(
-        "gpu"=>false,"precision"=>"f64","return_type"=>"mat",
+        "gpu"=>(DEVICE == "cuda"),"precision"=>"f64","return_type"=>"mat",
         "sim_method"=>(integrator=="magnus4" ? CoreMRI.BlochMagnus4() : CoreMRI.Bloch()),
         "Δt"=>req["step_s"],"Δt_rf"=>req["rf_step_s"],
         "max_block_length"=>Inf,"max_rf_block_length"=>Inf,
+        "preserve_samples"=>(:rf,:gradients,:rf_center),
         "Nthreads"=>min(Threads.nthreads(),length(obj))))
     individual = get(req,"individual",false)
-    params["phase_windows"] = get(req,"phase_windows",nothing)
     params["spoil_times_s"] = get(req,"spoil_times_s",nothing)
     if individual
         params["sim_method"] = CoreMRI.BlochDict()
@@ -290,16 +302,16 @@ function simulate_request(req)
         isempty(req["effects"]) || error("Encoding-demodulated probes require ideal physics")
         params["sim_method"] = CoreMRI.BlochDict()
         obj.Δw .= 2π .* input["offset_hz"]
-        individual = simulate_case(obj,seq,Scanner(B0=req["field_strength_T"]),c,input["offset_hz"],params;individual=true)
+        individual = simulate_case(obj,seq,Scanner(limits=HardwareLimits(B0=req["field_strength_T"])),c,input["offset_hz"],params;individual=true)
         signal = zeros(ComplexF64,length(times))
         for i in eachindex(times), s in eachindex(obj.x)
             phase = 2π * (input["k0"][i]*obj.x[s] + input["k1"][i]*obj.y[s] + input["k2"][i]*obj.z[s])
             signal[i] += individual[i,s,1] * cis(phase)
         end
     elseif haskey(input,"receive_weights")
-        signal = simulate_receive_case(obj,seq,c,input["offset_hz"],params,input["receive_weights"])
+        signal = simulate_receive_case(obj,seq,Scanner(limits=HardwareLimits(B0=req["field_strength_T"])),c,input["offset_hz"],params,input["receive_weights"])
     else
-        output = simulate_case(obj,seq,Scanner(B0=req["field_strength_T"]),c,input["offset_hz"],params;individual)
+        output = simulate_case(obj,seq,Scanner(limits=HardwareLimits(B0=req["field_strength_T"])),c,input["offset_hz"],params;individual)
         signal = individual ? output[:,:,1] : vec(output)
     end
     h5open(req["output"],"w") do f
@@ -308,20 +320,44 @@ function simulate_request(req)
     end
 end
 
+function resolve_physio_request(req)
+    # Resolve with the upstream scheduler before Python inspection, SAR, target
+    # generation or native replay. The returned waits become explicit delays;
+    # the custom kernel bridge must not resolve them for a second time.
+    seq = read_pulseq_sequence(req["sequence"])
+    signal = CardiacSignal(; heart_rate=Float64(req["heart_rate_hz"]),
+                            first_peak=Float64(req["first_peak_s"]))
+    resolved = resolve_triggers(seq, signal)
+    before, after = Float64.(seq.DUR), Float64.(resolved.DUR)
+    Dict("ok"=>true, "block_durations_before_s"=>before,
+         "block_durations_after_s"=>after, "waits_s"=>after .- before,
+         "adc_times_s"=>Float64.(get_adc_sampling_times(resolved)),
+         "resolver"=>"KomaMRIBase.resolve_triggers/CardiacSignal",
+         "versions"=>Dict("KomaMRIBase"=>string(pkgversion(KomaMRIBase)),
+                         "KomaMRICore"=>string(pkgversion(KomaMRICore)),
+                         "KomaMRIFiles"=>string(pkgversion(KomaMRIFiles))))
+end
+
 for line in eachline(stdin)
     response = try
         req = JSON.parse(line)
         if req["operation"] == "versions"
             Dict("ok"=>true,"versions"=>Dict("KomaMRICore"=>string(pkgversion(KomaMRICore)),
                 "KomaMRIBase"=>string(pkgversion(KomaMRIBase)),"KomaMRIFiles"=>string(pkgversion(KomaMRIFiles)),
-                "Julia"=>string(VERSION)))
+                "Julia"=>string(VERSION)),"execution"=>execution_device())
+        elseif req["operation"] == "resolve_physio"
+            redirect_stdout(stderr) do
+                with_logger(NullLogger()) do
+                    resolve_physio_request(req)
+                end
+            end
         else
             redirect_stdout(stderr) do
                 with_logger(NullLogger()) do
                     req["operation"]=="simulate" ? simulate_request(req) : error("Unsupported KomaMRI worker operation; reconstruction requires BART")
                 end
             end
-            Dict("ok"=>true)
+            Dict("ok"=>true,"execution"=>execution_device())
         end
     catch e
         Dict("ok"=>false,"error"=>sprint(showerror,e,catch_backtrace()))

@@ -1,0 +1,76 @@
+{
+  "id": "t1_mapping@2",
+  "replaces_contract": "t1_mapping@1",
+  "source_sha256": "38bc2cc5abfa8085352f0fd0983ae18f565d97b402689f4129650a537c0f374d",
+  "matrix": [
+    256,
+    256
+  ],
+  "fov_mm": [
+    200,
+    200
+  ],
+  "nominal_pixel_mm": [
+    0.78125,
+    0.78125
+  ],
+  "delta_k_per_m": 5.0,
+  "nyquist_kmax_per_m": 640.0,
+  "qualified": false,
+  "paid_dispatch_allowed": false,
+  "common_blockers": [
+    "Independent high-detail phantom/object contract is not yet qualified.",
+    "No CUDA reference replay or task acceptance thresholds qualified at this matrix."
+  ],
+  "status": "protocol_redesign_required",
+  "blockers": [
+    "Current evaluator defines each trigger-window train as one full frame; it cannot join segmented heartbeats into one image.",
+    "256 readoutTRs at the previously observed2.3\u20134.6ms consume588.8\u20131177.6ms, exceeding the200ms acquisition window.",
+    "A single-window full-frame256-line acquisition requiresTR<=0.78125ms before overhead, not established by any current reference.",
+    "A segmented proposal atTR5ms uses at most40lines/200ms and at least7heartbeats/image; mapping needs at least21 imaging heartbeats plus preparation/recovery. These are arithmetic bounds, not qualified new timings.",
+    "Repeated preparations, central-kyTI, recovery and fitting model must be specified per segment; current single-preparation/single-frame evaluator must be versioned."
+  ],
+  "preserved_v1_contract": {
+    "id": "t1_mapping",
+    "objective": "Acquire three ECG-triggered cardiac inversion-prepared Cartesian bSSFP images with TI 100, 400 and 1200 ms measured from the inversion-pulse center to each image's central-k-space echo. Acquire all source images at the same cardiac phase and retain their preparation metadata; an inversion may occur in a preceding heartbeat. Allow at least three RR intervals of recovery between separate inversion preparations. Every acquired ADC sample must lie between 600 and 800 ms after its ECG R-wave trigger, using nominal RR 1000 ms on physio1; preparations may precede that window. Use ordinary Cartesian reconstruction. Complete magnetization preparation before the imaging window. Balance net gradient area on all three axes in every readout TR; alternate excitation RF phase by 180 degrees between readout TRs and keep receiver phases coherent with that RF phase cycle. Use symmetric echo timing in every acquired readout TR: TE is measured from the excitation RF center to the readout k-space-center echo, and abs(TE - TR/2) must be no more than max(0.01 ms, 0.05 times TR). Each prepared frame must have exactly one inversion RF event before the bSSFP readout train, with a waveform-derived nominal flip of at least 170 degrees. Inversion timing is measured between RF center and central-k-space echo; the timing tolerance is twice the larger of the RF and block-duration rasters.",
+    "object": "cardiac_2d@1",
+    "evaluation": "s4@1",
+    "sequence": {
+      "level": "S4",
+      "capabilities": [
+        "bssfp",
+        "cartesian",
+        "inversion",
+        "multi_contrast",
+        "mapping",
+        "triggering",
+        "gating"
+      ],
+      "matrix": [
+        32,
+        32
+      ],
+      "fov_mm": [
+        200,
+        200
+      ],
+      "duration_s": 16,
+      "application": {
+        "inversion_times_ms": [
+          100,
+          400,
+          1200
+        ]
+      },
+      "temporal": {
+        "frames": 3,
+        "frame_duration_ms": 1000,
+        "ordering": "sequential",
+        "trigger_source": "ecg",
+        "rr_interval_ms": 1000,
+        "trigger_delay_ms": 600,
+        "acquisition_window_ms": 200
+      }
+    }
+  }
+}

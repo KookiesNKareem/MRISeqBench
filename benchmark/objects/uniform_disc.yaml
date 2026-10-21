@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=../../schemas/objects.schema.json
+schema_version: 1
+id: uniform_disc
+version: 1
+description: Uniform water disc for RF excitation; radius 60 mm, PD 1, T1 1 s, T2 0.1 s, z=0.
+phantom: uniform_disc@1

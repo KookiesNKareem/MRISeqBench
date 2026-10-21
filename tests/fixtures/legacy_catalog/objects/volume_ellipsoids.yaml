@@ -1,7 +1,0 @@
-# yaml-language-server: $schema=../../../../schemas/objects.schema.json
-schema_version: 1
-id: volume_ellipsoids
-version: 1
-description: 3D ellipsoid with a box inclusion.
-level: P1
-phantom: volume_ellipsoids@1

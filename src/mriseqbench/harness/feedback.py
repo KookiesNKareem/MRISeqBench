@@ -1,4 +1,4 @@
-"""Blind first submission, immutable attempts and failure-driven retries."""
+"""Immutable submission attempts with failure-driven retries."""
 
 import hashlib
 import hmac
@@ -19,7 +19,14 @@ from .proxy import QuietHTTPServer
 
 class FeedbackServer:
     def __init__(
-        self, case, config, root, control_dir, backend=None, max_submissions=3
+        self,
+        case,
+        config,
+        root,
+        control_dir,
+        backend=None,
+        max_submissions=3,
+        grading_slots=None,
     ):
         self.case, self.config, self.root = case, config, Path(root).resolve()
         self.directory = Path(control_dir).resolve()
@@ -34,19 +41,19 @@ class FeedbackServer:
         self.closed = threading.Event()
         self.lock = threading.Lock()
         self.checks_used, self.lints, self.seconds, self.requests = 0, 0, 0.0, 0
-        if not 1 <= max_submissions <= 3:
-            raise ValueError("max_submissions must be between 1 and 3")
         self.max_submissions = max_submissions
+        self.grading_slots = grading_slots or threading.BoundedSemaphore(1)
         self.attempts = []
         self.submissions_started = 0
         self.evaluation_failure = None
-        self.numerical_retries = 0
-        self.retry_seconds = 0.0
-        self.retry_started = None
         self.grading_seconds = 0.0
+        self.backoff_seconds = 0.0
         self.grading_started = None
         self.retry_time_lock = threading.Lock()
         self.submission_path = self.directory / "accepted.seq"
+        self.agent_started = None
+        self.agent_timeout_s = None
+        self.agent_credit_start = 0.0
         self.httpd = QuietHTTPServer(("127.0.0.1", 0), self._handler())
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -67,32 +74,64 @@ class FeedbackServer:
     def stats(self):
         return {
             "checks_used": self.checks_used,
-            "max_checks": self.config.max_checks if self.max_submissions == 1 else None,
             "lints": self.lints,
             "feedback_wall_s": round(self.seconds, 6),
             "submitted": self.submitted.is_set(),
             "submissions_used": self.submissions_started,
             "max_submissions": self.max_submissions,
-            "numerical_retries": self.numerical_retries,
-            "numerical_retry_wall_s": round(self.retry_credit(), 6),
-            "grading_wall_s": round(self.grading_credit(), 6),
+            "grading_wall_s": round(self.grading_credit() - self.backoff_seconds, 6),
+            "provider_backoff_wall_s": round(self.backoff_seconds, 6),
         }
 
-    def retry_credit(self):
-        """Only trusted numerical-retry time is excluded from the agent deadline."""
-        with self.retry_time_lock:
-            started = self.retry_started
-            return self.retry_seconds + (
-                time.monotonic() - started if started is not None else 0.0
-            )
+    def start_agent_clock(self, timeout_s):
+        self.agent_timeout_s = timeout_s
+        self.agent_credit_start = self.grading_credit()
+        self.agent_started = time.monotonic()
+
+    def runtime_status(self):
+        # Do not acquire the submission lock: status must remain available while
+        # a submission is being graded or is waiting for a grader slot.
+        elapsed = (
+            time.monotonic() - self.agent_started
+            if self.agent_started is not None
+            else 0.0
+        )
+        credit = max(0.0, self.grading_credit() - self.agent_credit_start)
+        charged = max(0.0, elapsed - credit)
+        remaining = (
+            max(0.0, self.agent_timeout_s - charged)
+            if self.agent_timeout_s is not None
+            else None
+        )
+        return {
+            "status": "closed"
+            if self.closed.is_set() or self.submitted.is_set()
+            else "running"
+            if self.agent_started is not None
+            else "preparing",
+            "agent_wall_s": elapsed,
+            "charged_wall_s": charged,
+            "excluded_grading_wall_s": min(elapsed, credit),
+            "remaining_s": remaining,
+            "submissions_used": self.submissions_started,
+            "submissions_remaining": max(
+                0, self.max_submissions - self.submissions_started
+            ),
+        }
 
     def grading_credit(self):
-        """Submission grading, including numerical retries, is excluded from the agent deadline."""
+        """Submission grading and provider back-off are excluded from the agent deadline."""
         with self.retry_time_lock:
             started = self.grading_started
-            return self.grading_seconds + (
-                time.monotonic() - started if started is not None else 0.0
+            return (
+                self.grading_seconds
+                + self.backoff_seconds
+                + (time.monotonic() - started if started is not None else 0.0)
             )
+
+    def exclude(self, seconds):
+        with self.retry_time_lock:
+            self.backoff_seconds += seconds
 
     @contextmanager
     def grading(self):
@@ -104,18 +143,6 @@ class FeedbackServer:
             with self.retry_time_lock:
                 self.grading_seconds += time.monotonic() - self.grading_started
                 self.grading_started = None
-
-    @contextmanager
-    def numerical_retry(self):
-        self.numerical_retries += 1
-        with self.retry_time_lock:
-            self.retry_started = time.monotonic()
-        try:
-            yield
-        finally:
-            with self.retry_time_lock:
-                self.retry_seconds += time.monotonic() - self.retry_started
-                self.retry_started = None
 
     def _submit(self, body):
         """Called under the run lock; grade the frozen bytes before any disclosure."""
@@ -136,7 +163,7 @@ class FeedbackServer:
         write_json(directory / "receipt.json", receipt)
         started = time.monotonic()
         try:
-            with self.grading():
+            with self.grading(), self.grading_slots:
                 result = grade_frozen(
                     snapshot,
                     self.case,
@@ -183,6 +210,36 @@ class FeedbackServer:
             token.encode(), self.token.encode()
         ):
             return 403, {"status": "forbidden", "reason": "unknown run token"}
+        if kind not in {"lint", "check", "submit", "status", "receipt"}:
+            return 403, {"status": "feedback_disabled"}
+        if kind == "status":
+            return 200, self.runtime_status()
+        if kind == "receipt":
+            with self.lock:
+                path = self.directory / "last-submit-feedback.json"
+                if not path.exists():
+                    path = self.directory / "last-feedback.json"
+                return (
+                    (200, json.loads(path.read_text()))
+                    if path.exists()
+                    else (
+                        404,
+                        {
+                            "status": "no_feedback",
+                            "reason": "No feedback has been disclosed yet.",
+                        },
+                    )
+                )
+        code, value = self._handle(kind, body)
+        value = {**value, "runtime": self.runtime_status()}
+        # Store only the response actually disclosed to the participant. The
+        # blind final-submission path never gains access to the private verdict.
+        with self.lock:
+            write_json(self.directory / "last-feedback.json", value)
+            write_json(self.directory / f"last-{kind}-feedback.json", value)
+        return code, value
+
+    def _handle(self, kind, body):
         if not body or len(body) > self.config.max_submission_bytes:
             return 400, {
                 "status": "invalid_submission",
@@ -192,36 +249,9 @@ class FeedbackServer:
             if self.closed.is_set() or self.submitted.is_set():
                 return 403, {"status": "closed", "reason": "run is already finished"}
             if kind == "submit":
-                if self.max_submissions > 1:
-                    return self._submit(body)
-                # Publish the receipt last; acceptance cannot be changed by later agent writes.
-                self.submissions_started += 1
-                self.submission_path.write_bytes(body)
-                receipt = {
-                    "case_id": self.case["case_id"],
-                    "sha256": hashlib.sha256(body).hexdigest(),
-                    "bytes": len(body),
-                    "accepted_at_unix_s": time.time(),
-                }
-                temporary = self.directory / "receipt.tmp"
-                write_json(temporary, receipt)
-                temporary.replace(self.directory / "receipt.json")
-                self._log({"kind": "submit", **receipt})
-                self.submitted.set()
-                return 200, {
-                    "status": "submitted",
-                    "reason": "Final sequence accepted. Stop now; no verdict is shown.",
-                }
-            if kind not in ("lint", "check") or (
-                self.max_submissions == 1 and self.config.mode == "none"
-            ):
+                return self._submit(body)
+            if kind not in ("lint", "check"):
                 return 403, {"status": "feedback_disabled"}
-            if (
-                self.max_submissions == 1
-                and kind == "check"
-                and self.checks_used >= self.config.max_checks
-            ):
-                return 403, {"status": "budget_exhausted", **self.stats()}
             if kind == "lint":
                 self.lints += 1
             else:
@@ -269,23 +299,15 @@ class FeedbackServer:
                     raise ValueError("feedback worker returned no valid result")
             except (OSError, ValueError) as exc:
                 result = {"error": str(exc)}
-            refunded = kind == "check" and "error" in result
-            if refunded:
-                self.checks_used -= 1
             self._log(
                 {
                     "kind": kind,
                     "sha256": hashlib.sha256(body).hexdigest(),
-                    "refunded": refunded,
                     "result": result,
                     **self.stats(),
                 }
             )
-            return 503 if "error" in result else 200, {
-                **result,
-                "check_refunded": refunded,
-                "budget": self.stats(),
-            }
+            return 503 if "error" in result else 200, result
 
     def _handler(server):
         class Handler(BaseHTTPRequestHandler):
@@ -319,6 +341,15 @@ class FeedbackServer:
                 except EvaluationIncomplete as exc:
                     return self.reply(503, {"error": str(exc)})
                 self.reply(*reply)
+
+            def do_GET(self):
+                if self.path not in ("/status", "/receipt"):
+                    return self.reply(404, {"status": "not_found"})
+                self.reply(
+                    *server.handle(
+                        self.path[1:], self.headers.get("X-MRISeqBench-Token", ""), b""
+                    )
+                )
 
             def log_message(self, *args):
                 pass

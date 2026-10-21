@@ -1,5 +1,6 @@
 """S2 readout judge on the shared registered-phantom KomaMRI replay pipeline."""
 
+import os
 from copy import copy
 from types import SimpleNamespace
 
@@ -9,8 +10,7 @@ import numpy as np
 from .s1 import evaluate_s1
 from .s1_case import phase_reference as shared_phase_reference
 from .s1_case import uses_case_image
-from .s1_image import canonical_response as shared_canonical_response
-from .s1_image import expected_receiver_phase, nrmse
+from .s1_image import canonical_response, expected_receiver_phase, nrmse
 from .s1_koma import reconstruct as cartesian_reconstruct
 from .s1_koma import simulate
 from .s1_phantom import Spins
@@ -18,27 +18,6 @@ from .s1_probes import radical_inverse
 from .s1_sampling import analytic_reference
 from .s1_sequence import MissingExcitation, check, family
 from .s2_sequence import CARTESIAN, REFOCUSED, inspect_sequence
-
-
-def canonical_response(acq, properties, fam, *, finite_rf=False):
-    """Use a consistent transverse phase across all RF-refocused train echoes.
-
-    A pi rotation maps m+ to exp(2i*RF_phase)*conj(m+). Relative to
-    excitation's -i convention, its receiver phase therefore gains an additional
-    pi. Omitting this term creates an alternating-sign CPMG image target.
-    The established single-echo S1 convention is versioned separately.
-    """
-    response = shared_canonical_response(acq, properties, fam, finite_rf=finite_rf)
-    if fam in REFOCUSED:
-        parity = np.zeros(len(acq.adc), dtype=int)
-        for pulse in acq.pulses:
-            after = acq.adc >= pulse.center
-            if pulse.refocusing:
-                parity[after] += 1
-            else:
-                parity[after] = 0
-        response *= (-1.0) ** parity
-    return response
 
 
 def reference_signal(acq, spins, spec, response):
@@ -56,7 +35,9 @@ def reference_signal(acq, spins, spec, response):
             *[np.ascontiguousarray(2 * np.pi * acq.k[:, j]) for j in range(dims)],
             eps=1e-10,
             isign=-1,
-            nthreads=1,
+            nthreads=max(
+                1, min(4, int(os.environ.get("MRISEQBENCH_REFERENCE_THREADS", "1")))
+            ),
         )
         raw += values * response[label]
     return raw
@@ -71,10 +52,6 @@ def reconstruct(raw, acq, matrix):
 
 
 def reference_image(acq, case, root, response, reference_raw):
-    if family(case) in CARTESIAN and case["evaluation"]["version"] < 3:
-        return reconstruct(
-            reference_raw, acq, tuple(case["task"]["sequence"]["matrix"])
-        )
     # The image target uses a full independent Cartesian grid. Reconstructing the
     # submitted trajectory as its own target would excuse a missing sector/PSF.
     spec = case["task"]["sequence"]
@@ -137,26 +114,9 @@ def phase_reference(acq, case, root, reference, *, temporal_scale=1):
     )
 
 
-def legacy_phase_reference(acq, case, root, reference, *, temporal_scale=1):
-    """Preserve the frozen S2@1 single-centre phase convention."""
-    return shared_phase_reference(
-        acq,
-        case,
-        root,
-        reference,
-        temporal_scale=temporal_scale,
-        sample_index=reference_index(acq, case["task"]["sequence"]),
-    )
-
-
 def mechanism_probes(acq, case, materials, properties):
     fam = family(case)
-    response = canonical_response(
-        acq,
-        properties,
-        fam,
-        finite_rf=case["evaluation"].get("intrinsic_tissue_response", False),
-    )
+    response = canonical_response(acq, properties, fam, finite_rf=True)
     props = np.array([[1.0, 0.8, 0.08]])
     ideal = canonical_response(acq, props, fam)[0]
     centres = np.asarray(acq.measurements["centre_sample_indices"])
@@ -197,9 +157,7 @@ def mechanism_probes(acq, case, materials, properties):
             a = copy(acq)
             a.adc, a.adc_phase, a.k = (
                 acq.adc[centres],
-                expected_receiver_phase(acq)[centres]
-                if case["evaluation"]["version"] >= 3
-                else acq.adc_phase[centres],
+                expected_receiver_phase(acq)[centres],
                 acq.k[centres],
             )
             errors.append(
@@ -257,10 +215,8 @@ def mechanism_probes(acq, case, materials, properties):
             )
         )
         if fam == "tse_t2w":
-            weighting_samples = (
-                np.array([reference_index(acq, case["task"]["sequence"])])
-                if case["evaluation"]["version"] >= 3
-                else centres
+            weighting_samples = np.array(
+                [reference_index(acq, case["task"]["sequence"])]
             )
             sensitivity = []
             for axis in (1, 2):
@@ -284,10 +240,6 @@ def mechanism_probes(acq, case, materials, properties):
                     {"t1": sensitivity[0], "t2": sensitivity[1]},
                 )
             )
-    if case["task"].get("prompt_mode") == "research":
-        checks.append(
-            check("reasonable_parameters", all(c["passed"] for c in checks), metrics)
-        )
     return checks, metrics, response
 
 
@@ -304,9 +256,7 @@ def evaluate_s2(submission, case, root, workspace, *, deadline=None):
             reconstructor=reconstruct,
             sampler=reference_signal,
             reference_builder=reference_image,
-            phase_builder=phase_reference
-            if case["evaluation"]["version"] >= 2
-            else legacy_phase_reference,
+            phase_builder=phase_reference,
             # S2 thresholds and encoded replay retain the native Bloch integrator.
             encoded_integrator="bloch",
         )

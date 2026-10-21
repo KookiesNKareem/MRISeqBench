@@ -17,4 +17,4 @@ sequence:
     caipi_shift: 1
     pattern: uniform
 object: cardiac_3d@1
-evaluation: s3@2
+evaluation: s3@3

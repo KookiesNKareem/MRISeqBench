@@ -1,0 +1,50 @@
+[
+  {
+    "step_s": 1e-05,
+    "metrics": {
+      "excitation_magnitude_nrmse": 1.9291982477916596,
+      "inside_signal_fraction": 0.9594200581527101,
+      "outside_rms_fraction": 0.9471410616303888
+    },
+    "estimated_error": null
+  },
+  {
+    "step_s": 5e-06,
+    "metrics": {
+      "excitation_magnitude_nrmse": 1.9307511473036785,
+      "inside_signal_fraction": 0.9601693300131636,
+      "outside_rms_fraction": 0.9478807322768568
+    },
+    "estimated_error": {
+      "excitation_magnitude_nrmse": 0.0031057990240377364,
+      "inside_signal_fraction": 0.001498543720906964,
+      "outside_rms_fraction": 0.0014793412929359206
+    }
+  },
+  {
+    "step_s": 2.5e-06,
+    "metrics": {
+      "excitation_magnitude_nrmse": 1.931986919440332,
+      "inside_signal_fraction": 0.9607654800584537,
+      "outside_rms_fraction": 0.94846924316673
+    },
+    "estimated_error": {
+      "excitation_magnitude_nrmse": 0.0024715442733072024,
+      "inside_signal_fraction": 0.001192300090580245,
+      "outside_rms_fraction": 0.0011770217797464344
+    }
+  },
+  {
+    "step_s": 1.25e-06,
+    "metrics": {
+      "excitation_magnitude_nrmse": 1.9328089097032983,
+      "inside_signal_fraction": 0.9611619641467976,
+      "outside_rms_fraction": 0.9488606466326331
+    },
+    "estimated_error": {
+      "excitation_magnitude_nrmse": 0.001643980525932509,
+      "inside_signal_fraction": 0.000792968176687614,
+      "outside_rms_fraction": 0.0007828069318063235
+    }
+  }
+]

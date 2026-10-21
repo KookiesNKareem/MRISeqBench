@@ -44,6 +44,7 @@ SEQUENCE_CATEGORIES = {
         "mapping",
         "triggering",
         "gating",
+        "rf_excitation_2d",
     ),
 }
 Capability = Literal[
@@ -92,11 +93,8 @@ class ReadoutSpec(Strict):
     echo_train_length: Annotated[int, Field(gt=0)] | None = None
     interleaves: Annotated[int, Field(gt=0)] | None = None
     spokes: Annotated[int, Field(gt=0)] | None = None
-    dwell_us: Positive | None = None
     bandwidth_hz_per_pixel: Positive | None = None
     turns: Positive | None = None
-    rings: Annotated[int, Field(gt=0)] | None = None
-    rosette_lobes: Annotated[int, Field(gt=0)] | None = None
     blade_width_lines: Annotated[int, Field(gt=0)] | None = None
     echo_spacing_ms: Positive | None = None
     center_out: StrictBool | None = None
@@ -114,13 +112,11 @@ class SamplingSpec(Strict):
             "variable_density",
             "poisson_disc",
             "elliptical",
-            "asymmetric_echo",
             "reduced_fov",
         ]
         | None
     ) = None
     caipi_shift: Annotated[int, Field(ge=0)] | None = None
-    asymmetric_echo_fraction: Annotated[float, Field(gt=0.5, le=1)] | None = None
     reduced_fov_fraction: Annotated[float, Field(gt=0, le=1)] | None = None
 
 
@@ -225,10 +221,6 @@ class Task(Document):
     version: Annotated[int, Field(gt=0)] = 1
     objective: Annotated[str, Field(min_length=1)]
     sequence: SequenceSpec
-    prompt_mode: Literal["detailed"] = "detailed"
-    identity_requirements: list[Annotated[str, Field(min_length=1)]] = Field(
-        default_factory=list, max_length=0
-    )
     object: Reference = "cardiac_2d@1"
     hardware: Reference = "high_performance@1"
     evaluation: Reference
@@ -236,7 +228,30 @@ class Task(Document):
 
     @model_validator(mode="after")
     def cardiac_application_contract(self):
-        if self.sequence.level == "S4":
+        if self.id == "rf_excitation_2d" and (
+            self.sequence.level != "S4"
+            or self.evaluation != "rf_excitation@2"
+            or self.object != "uniform_disc@1"
+            or self.sequence.capabilities != ["rf_excitation_2d"]
+            or self.sequence.matrix != (64, 64)
+            or self.sequence.fov_mm != (200, 200)
+            or any(
+                value is not None
+                for value in (
+                    self.sequence.readout,
+                    self.sequence.sampling,
+                    self.sequence.temporal,
+                    self.sequence.application,
+                    self.sequence.flip_angle_deg,
+                    self.sequence.te_ms,
+                    self.sequence.tr_ms,
+                )
+            )
+        ):
+            raise ValueError(
+                "AI excitation requires the fixed S4 excitation-only water-disc contract"
+            )
+        if self.sequence.level == "S4" and self.id != "rf_excitation_2d":
             if not {"triggering", "gating"} <= set(self.sequence.capabilities):
                 raise ValueError(
                     "S4 cardiac applications require triggering and gating capabilities"
@@ -534,12 +549,9 @@ class Evaluation(Document):
         "bart_cartesian_fft@1",
         "bart_readout@1",
         "bart_sampling_sense@1",
-        "cartesian_fft@1",
-        "noncartesian_direct@1",
-        "sampling_sense@1",
+        "direct_magnetization@1",
         "none",
     ]
-    intrinsic_tissue_response: StrictBool = False
     metrics: list[Metric]
     spatial_samples: Annotated[int, Field(ge=4096, le=1048576)] | None = None
     spatial_replicates: Annotated[int, Field(ge=4, le=32)] | None = None
@@ -547,101 +559,57 @@ class Evaluation(Document):
     spatial_seed: Annotated[int, Field(ge=0, le=2147483616)] | None = None
     image_precision: ImagePrecision | None = None
     temporal_refinement: Literal[0, 1] | None = None
-    case_image_criteria: (
-        dict[Literal["static", "P2", "P3"], CaseImageCriteria] | None
-    ) = None
+    case_image_criteria: dict[Literal["static"], CaseImageCriteria] | None = None
     preparation_effect_fraction_min: Annotated[float, Field(gt=0, le=1)] | None = None
     mapping_relative_error_max: Annotated[float, Field(gt=0, lt=1)] | None = None
     mapping_relative_error_precision: Annotated[float, Field(gt=0, lt=1)] | None = None
 
     @model_validator(mode="after")
     def contract(self):
-        cardiac_reconstructions = {
+        imaging = self.id in {"s1", "s2", "s3", "s4"}
+        expected = {
             "s1": "bart_cartesian_fft@1",
             "s2": "bart_readout@1",
             "s3": "bart_sampling_sense@1",
             "s4": "bart_cartesian_fft@1",
+            "rf_excitation": "direct_magnetization@1",
         }
-        if (
-            self.intrinsic_tissue_response
-            and self.id in cardiac_reconstructions
-            and self.reconstruction != cardiac_reconstructions[self.id]
+        if self.id in expected and self.reconstruction != expected[self.id]:
+            raise ValueError(f"{self.id} requires {expected[self.id]}")
+        if imaging != (self.case_image_criteria is not None):
+            raise ValueError("s1-s4 (only) require static case image criteria")
+        if not imaging and any(
+            value is not None
+            for value in (
+                self.spatial_samples,
+                self.spatial_replicates,
+                self.spatial_max_samples,
+                self.spatial_seed,
+                self.image_precision,
+                self.temporal_refinement,
+            )
+        ):
+            raise ValueError("spatial/numerical settings require s1-s4")
+        for value in (self.spatial_samples, self.spatial_max_samples):
+            if value is not None and value & (value - 1):
+                raise ValueError("spatial sample counts must be powers of two")
+        if (self.spatial_max_samples or 1 << 20) < (self.spatial_samples or 32768):
+            raise ValueError("spatial_max_samples must be >= spatial_samples")
+        s4 = (
+            self.preparation_effect_fraction_min,
+            self.mapping_relative_error_max,
+            self.mapping_relative_error_precision,
+        )
+        if (self.id == "s4") != all(v is not None for v in s4) or (
+            self.id != "s4" and any(v is not None for v in s4)
         ):
             raise ValueError(
-                "cardiac evaluation requires its fixed BART reconstruction"
+                "preparation and mapping criteria are required by (only) s4"
             )
-        if self.case_image_criteria is not None and (
-            self.id not in {"s1", "s2", "s3", "s4"}
-            or (self.id == "s1" and self.version < 2)
-            or set(self.case_image_criteria) not in ({"static"}, {"P2", "P3"})
-        ):
-            raise ValueError(
-                "case image criteria require s1 version >=2 or s2/s3/s4 and a static policy (or legacy P2/P3 policies)"
-            )
-        if (
-            (self.id == "s1" and self.version >= 2) or self.id in {"s2", "s3", "s4"}
-        ) and self.case_image_criteria is None:
-            raise ValueError(
-                "s1 version >=2 and s2/s3/s4 require explicit case image criteria"
-            )
-        if self.spatial_samples is not None and (
-            self.id not in {"s1", "s2", "s3", "s4"}
-            or self.spatial_samples & (self.spatial_samples - 1)
-        ):
-            raise ValueError(
-                "spatial_samples requires s1, s2, s3 or s4 and a power of two"
-            )
-        if self.spatial_replicates is not None and self.id not in {
-            "s1",
-            "s2",
-            "s3",
-            "s4",
-        }:
-            raise ValueError("spatial_replicates requires s1, s2, s3 or s4")
-        if self.spatial_max_samples is not None and (
-            self.id not in {"s1", "s2", "s3", "s4"}
-            or self.spatial_max_samples & (self.spatial_max_samples - 1)
-            or self.spatial_max_samples < (self.spatial_samples or 32768)
-        ):
-            raise ValueError(
-                "spatial_max_samples requires s1, s2, s3 or s4, a power of two, and >= spatial_samples"
-            )
-        if (
-            self.spatial_seed is not None
-            or self.image_precision is not None
-            or self.temporal_refinement is not None
-        ) and self.id not in {"s1", "s2", "s3", "s4"}:
-            raise ValueError("numerical precision settings require s1, s2, s3 or s4")
-        if self.id == "s4" and (
-            self.preparation_effect_fraction_min is None
-            or self.mapping_relative_error_max is None
-            or self.mapping_relative_error_precision is None
-        ):
-            raise ValueError(
-                "s4 requires explicit preparation, mapping acceptance and numerical precision criteria"
-            )
-        if (
-            self.mapping_relative_error_precision is not None
-            and self.mapping_relative_error_max is not None
-            and self.mapping_relative_error_precision >= self.mapping_relative_error_max
-        ):
+        if self.id == "s4" and s4[2] >= s4[1]:
             raise ValueError(
                 "mapping numerical precision must be below its acceptance limit"
             )
-        if self.id == "s4" and (
-            set(self.case_image_criteria or {}) != {"static"}
-            or self.reconstruction != "bart_cartesian_fft@1"
-            or not self.intrinsic_tissue_response
-        ):
-            raise ValueError(
-                "s4 requires intrinsic tissue response, the static cardiac policy and BART Cartesian FFT"
-            )
-        if self.id != "s4" and (
-            self.preparation_effect_fraction_min is not None
-            or self.mapping_relative_error_max is not None
-            or self.mapping_relative_error_precision is not None
-        ):
-            raise ValueError("preparation and mapping criteria require s4")
         if self.scope == "benchmark" and (
             not self.metrics or self.reconstruction == "none"
         ):
@@ -683,13 +651,18 @@ class SandboxConfig(Strict):
 
 
 class FeedbackConfig(Strict):
-    mode: Literal["none", "preflight", "evaluation"] = "none"
-    max_checks: Annotated[int, Field(ge=0)] = 0
     max_submission_bytes: Annotated[int, Field(gt=0)] = 16777216
     timeout_s: Positive = 300
 
 
 class ApiProxyConfig(Strict):
+    provider_endpoint: str | None = None
+    temperature: Annotated[float, Field(ge=0, le=2)] = 0.6
+    top_p: Annotated[float, Field(gt=0, le=1)] = 0.95
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = (
+        "medium"
+    )
+    max_output_tokens: Annotated[int, Field(gt=0)] = 16384
     upstream_url: str = "https://openrouter.ai/api/v1"
     key_env: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] = (
         "OPENROUTER_API_KEY"
@@ -699,6 +672,9 @@ class ApiProxyConfig(Strict):
     )
     timeout_s: Positive = 300
     max_request_bytes: Annotated[int, Field(gt=0)] = 8388608
+    # Provider-reported USD; model campaigns must set the campaign cap.
+    max_campaign_usd: Annotated[float, Field(gt=0)] | None = None
+    max_trial_usd: Annotated[float, Field(gt=0)] | None = None
 
     @model_validator(mode="after")
     def safe_upstream(self):
@@ -727,6 +703,9 @@ class ApiProxyConfig(Strict):
 
 
 class Agent(Strict):
+    uses_model: StrictBool = True
+    pi_version: str = "0.87.0"
+    auto_compaction: StrictBool = False
     adapter: Literal["command", "pi"] = "command"
     command: Annotated[list[str], Field(min_length=1)]
     timeout_s: Positive = 60
@@ -773,6 +752,12 @@ class ArmRuntime(Strict):
     probe_timeout_s: Positive = 120
     simulation_timeout_s: Positive = 300
     julia_heap_size_hint_mb: Annotated[int, Field(ge=32)] | None = None
+    author_memory_mb: Annotated[int, Field(ge=256)] = 2048
+
+
+class Concurrency(Strict):
+    agents: Annotated[int, Field(ge=1, le=64)] = 1
+    graders: Annotated[int, Field(ge=1, le=64)] = 1
 
 
 class Experiment(Document):
@@ -787,9 +772,14 @@ class Experiment(Document):
     submission_mode: Literal["file", "submit"] = "submit"
     arm: Reference | None = None
     arm_runtime: ArmRuntime | None = None
+    concurrency: Concurrency = Field(default_factory=Concurrency)
+    # Fresh attempts allowed after an interrupted attempt that already cost money.
+    retries_after_spend: Annotated[int, Field(ge=0, le=5)] = 1
 
     @model_validator(mode="after")
     def arm_isolation(self):
+        if self.agent.uses_model and self.api_proxy is None:
+            raise ValueError("model runs require an api_proxy")
         if (self.arm is None) != (self.arm_runtime is None):
             raise ValueError("arm and arm_runtime must be configured together")
         if self.arm is None and self.agent.sandbox.backend == "docker":

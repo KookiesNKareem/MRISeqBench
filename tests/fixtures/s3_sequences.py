@@ -5,6 +5,8 @@ import copy
 import numpy as np
 import pypulseq as pp
 
+from tests.fixtures.gradients import trapezoid
+
 
 def mask_for(fam, matrix, sampling):
     """Author mask without importing any judge geometry or reconstruction code."""
@@ -185,11 +187,9 @@ def make_sequence(
         )
     elif reduced_refocusing != "hard":
         raise ValueError(f"Unsupported reduced-FOV refocusing: {reduced_refocusing}")
-    read = pp.make_trapezoid(
-        "x", flat_area=nx / fov[0], flat_time=readout_flat, system=system
-    )
-    pre_x = pp.make_trapezoid("x", area=-read.area / 2, duration=0.0008, system=system)
-    spoil = pp.make_trapezoid(
+    read = trapezoid("x", flat_area=nx / fov[0], flat_time=readout_flat, system=system)
+    pre_x = trapezoid("x", area=-read.area / 2, duration=0.0008, system=system)
+    spoil = trapezoid(
         "x", area=max(nx, 32) * 2 / fov[0], duration=0.0012, system=system
     )
     if reduced:
@@ -202,8 +202,8 @@ def make_sequence(
         )
         seq.add_block(saturation)
         seq.add_block(
-            pp.make_trapezoid("x", area=1280, duration=0.003, system=system),
-            pp.make_trapezoid("y", area=960, duration=0.003, system=system),
+            trapezoid("x", area=1280, duration=0.003, system=system),
+            trapezoid("y", area=960, duration=0.003, system=system),
         )
     fat_saturation = None
     if reduced and reduced_fat_saturation:
@@ -251,14 +251,12 @@ def make_sequence(
                 duration = max(
                     0.0012,
                     *(
-                        pp.calc_duration(
-                            pp.make_trapezoid(axis, area=area, system=system)
-                        )
+                        pp.calc_duration(trapezoid(axis, area=area, system=system))
                         for axis, area in areas.items()
                     ),
                 )
                 gradients = [
-                    pp.make_trapezoid(axis, area=area, duration=duration, system=system)
+                    trapezoid(axis, area=area, duration=duration, system=system)
                     for axis, area in areas.items()
                 ]
                 seq.add_block(*gradients)
@@ -273,7 +271,7 @@ def make_sequence(
             seq.add_block(r)
             elapsed += pp.calc_duration(r)
         if reduced:
-            crusher = pp.make_trapezoid("x", area=400, duration=0.0012, system=system)
+            crusher = trapezoid("x", area=400, duration=0.0012, system=system)
             seq.add_block(crusher)
             elapsed += pp.calc_duration(crusher)
             rr = copy.copy(ref)
@@ -291,11 +289,11 @@ def make_sequence(
         )
         gradients = [
             pre_x,
-            pp.make_trapezoid("y", area=y / fov[1], duration=0.0008, system=system),
+            trapezoid("y", area=y / fov[1], duration=0.0008, system=system),
         ]
         if nz:
             gradients.append(
-                pp.make_trapezoid("z", area=z / fov[2], duration=0.0008, system=system)
+                trapezoid("z", area=z / fov[2], duration=0.0008, system=system)
             )
         seq.add_block(*gradients)
         elapsed += pp.calc_duration(*gradients)
@@ -321,13 +319,13 @@ def make_sequence(
             # Vary two in-plane spoiler moments to prevent long-T2 stimulated
             # pathways from returning at later selective spin echoes.
             post = [
-                pp.make_trapezoid(
+                trapezoid(
                     "x",
                     area=1280 * (1 + (shot % 13) / 13),
                     duration=0.003,
                     system=system,
                 ),
-                pp.make_trapezoid(
+                trapezoid(
                     "y",
                     area=960 * (1 + ((shot * 7) % 11) / 11),
                     duration=0.003,

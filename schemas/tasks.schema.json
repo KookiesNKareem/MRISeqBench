@@ -180,19 +180,6 @@
           "default": null,
           "title": "Spokes"
         },
-        "dwell_us": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Dwell Us"
-        },
         "bandwidth_hz_per_pixel": {
           "anyOf": [
             {
@@ -218,32 +205,6 @@
           ],
           "default": null,
           "title": "Turns"
-        },
-        "rings": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Rings"
-        },
-        "rosette_lobes": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Rosette Lobes"
         },
         "blade_width_lines": {
           "anyOf": [
@@ -364,7 +325,6 @@
                 "variable_density",
                 "poisson_disc",
                 "elliptical",
-                "asymmetric_echo",
                 "reduced_fov"
               ],
               "type": "string"
@@ -388,20 +348,6 @@
           ],
           "default": null,
           "title": "Caipi Shift"
-        },
-        "asymmetric_echo_fraction": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0.5,
-              "maximum": 1,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Asymmetric Echo Fraction"
         },
         "reduced_fov_fraction": {
           "anyOf": [
@@ -467,7 +413,8 @@
               "multi_contrast",
               "mapping",
               "triggering",
-              "gating"
+              "gating",
+              "rf_excitation_2d"
             ],
             "type": "string"
           },
@@ -851,21 +798,6 @@
     },
     "sequence": {
       "$ref": "#/$defs/SequenceSpec"
-    },
-    "prompt_mode": {
-      "const": "detailed",
-      "default": "detailed",
-      "title": "Prompt Mode",
-      "type": "string"
-    },
-    "identity_requirements": {
-      "items": {
-        "minLength": 1,
-        "type": "string"
-      },
-      "maxItems": 0,
-      "title": "Identity Requirements",
-      "type": "array"
     },
     "object": {
       "default": "cardiac_2d@1",

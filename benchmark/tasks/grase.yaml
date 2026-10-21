@@ -15,4 +15,4 @@ sequence:
   readout:
     shots: 4
     echo_train_length: 8
-evaluation: s2@3
+evaluation: s2@4

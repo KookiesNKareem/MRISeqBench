@@ -3,6 +3,21 @@
     "Agent": {
       "additionalProperties": false,
       "properties": {
+        "uses_model": {
+          "default": true,
+          "title": "Uses Model",
+          "type": "boolean"
+        },
+        "pi_version": {
+          "default": "0.87.0",
+          "title": "Pi Version",
+          "type": "string"
+        },
+        "auto_compaction": {
+          "default": false,
+          "title": "Auto Compaction",
+          "type": "boolean"
+        },
         "adapter": {
           "default": "command",
           "enum": [
@@ -51,6 +66,51 @@
     "ApiProxyConfig": {
       "additionalProperties": false,
       "properties": {
+        "provider_endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Endpoint"
+        },
+        "temperature": {
+          "default": 0.6,
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "top_p": {
+          "default": 0.95,
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Top P",
+          "type": "number"
+        },
+        "reasoning_effort": {
+          "default": "medium",
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "title": "Reasoning Effort",
+          "type": "string"
+        },
+        "max_output_tokens": {
+          "default": 16384,
+          "exclusiveMinimum": 0,
+          "title": "Max Output Tokens",
+          "type": "integer"
+        },
         "upstream_url": {
           "default": "https://openrouter.ai/api/v1",
           "title": "Upstream Url",
@@ -80,6 +140,32 @@
           "exclusiveMinimum": 0,
           "title": "Max Request Bytes",
           "type": "integer"
+        },
+        "max_campaign_usd": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Campaign Usd"
+        },
+        "max_trial_usd": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Trial Usd"
         }
       },
       "title": "ApiProxyConfig",
@@ -132,6 +218,12 @@
           ],
           "default": null,
           "title": "Julia Heap Size Hint Mb"
+        },
+        "author_memory_mb": {
+          "default": 2048,
+          "minimum": 256,
+          "title": "Author Memory Mb",
+          "type": "integer"
         }
       },
       "required": [
@@ -164,25 +256,30 @@
       "title": "Backend",
       "type": "object"
     },
+    "Concurrency": {
+      "additionalProperties": false,
+      "properties": {
+        "agents": {
+          "default": 1,
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Agents",
+          "type": "integer"
+        },
+        "graders": {
+          "default": 1,
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Graders",
+          "type": "integer"
+        }
+      },
+      "title": "Concurrency",
+      "type": "object"
+    },
     "FeedbackConfig": {
       "additionalProperties": false,
       "properties": {
-        "mode": {
-          "default": "none",
-          "enum": [
-            "none",
-            "preflight",
-            "evaluation"
-          ],
-          "title": "Mode",
-          "type": "string"
-        },
-        "max_checks": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Max Checks",
-          "type": "integer"
-        },
         "max_submission_bytes": {
           "default": 16777216,
           "exclusiveMinimum": 0,
@@ -345,6 +442,16 @@
         }
       ],
       "default": null
+    },
+    "concurrency": {
+      "$ref": "#/$defs/Concurrency"
+    },
+    "retries_after_spend": {
+      "default": 1,
+      "maximum": 5,
+      "minimum": 0,
+      "title": "Retries After Spend",
+      "type": "integer"
     }
   },
   "required": [

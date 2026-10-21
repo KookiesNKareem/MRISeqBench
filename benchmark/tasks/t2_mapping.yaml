@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: t2_mapping
-objective: Acquire three ECG-triggered cardiac T2-prepared Cartesian bSSFP images
+objective: >-
+  Acquire three ECG-triggered cardiac T2-prepared Cartesian bSSFP images
   at preparation durations 0, 25 and 50 ms, with an unprepared reference at 0 ms.
   Acquire all source images at the same cardiac phase, allow at least three RR intervals
   of recovery between prepared images, and retain their preparation metadata for T2
@@ -10,8 +11,21 @@ objective: Acquire three ECG-triggered cardiac T2-prepared Cartesian bSSFP image
   before the imaging window. Balance net gradient area on all three axes in every
   readout TR; alternate excitation RF phase by 180 degrees between readout TRs and
   keep receiver phases coherent with that RF phase cycle.
+  Use symmetric echo timing in every acquired readout TR: TE is measured from the
+  excitation RF center to the readout k-space-center echo, and abs(TE - TR/2)
+  must be no more than max(0.01 ms, 0.05 times TR).
+  For every nonzero T2 preparation, use exactly four separate RF events:
+  a 90-degree tip-down, two 180-degree refocusers and a 90-degree tip-up. Measure
+  preparation duration from tip-down RF center to tip-up RF center. Place the
+  refocusing RF centers at one-quarter and three-quarters of that duration.
+  Relative RF phases must be phi, phi + 90 degrees, phi + 90 degrees and
+  phi + 180 degrees, respectively. Tip pulses must be within 2 degrees of 90;
+  refocusers must reach at least 178 degrees of waveform-derived nominal flip.
+  RF phase tolerances are 0.01 rad. Preparation duration and refocuser-center
+  timing tolerances are twice the larger of the RF and block-duration rasters.
+  The zero-duration reference must have no preparation RF events.
 object: cardiac_2d@1
-evaluation: s4@1
+evaluation: s4@2
 sequence:
   level: S4
   capabilities:

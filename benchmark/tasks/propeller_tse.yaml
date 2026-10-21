@@ -16,4 +16,4 @@ sequence:
     echo_train_length: 8
     blade_width_lines: 8
     echo_spacing_ms: 10
-evaluation: s2@3
+evaluation: s2@4

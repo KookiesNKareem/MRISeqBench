@@ -1,15 +1,15 @@
 import argparse
-import json
 import math
+import signal
 import sys
 from pathlib import Path
 
 from .catalog import Catalog, load_yaml
 from .evaluation import evaluate
 from .harness.prepare import prompt
-from .harness.runner import run
+from .harness.runner import CampaignStop, run
 from .io import write_json
-from .models import MODELS, SEQUENCE_CATEGORIES, ArmRuntime, Backend, Experiment
+from .models import MODELS, SEQUENCE_CATEGORIES, Backend, Experiment
 
 
 def parser():
@@ -26,15 +26,6 @@ def parser():
     commands.add_parser(
         "axes", help="show sequence capabilities, cardiac anatomy and hardware profiles"
     )
-    doctor = commands.add_parser(
-        "doctor", help="probe native sandbox access restrictions"
-    )
-    doctor.add_argument(
-        "--sandbox", choices=["auto", "macos", "bubblewrap"], default="auto"
-    )
-    doctor.add_argument("--arm", help="audit a restricted arm's local Docker images")
-    doctor.add_argument("--author-image")
-    doctor.add_argument("--simulator-image")
     schema = commands.add_parser(
         "schema", help="write JSON schemas for editor completion"
     )
@@ -65,7 +56,8 @@ def parser():
         "--out", type=Path, required=True, help="new evaluation directory"
     )
     running = commands.add_parser(
-        "run", help="run an experiment's agent and evaluator separately"
+        "run",
+        help="run or resume an experiment campaign (rerun the same --out to resume)",
     )
     running.add_argument("--experiment", type=Path, required=True)
     running.add_argument("--arm", help="override the experiment's arm reference")
@@ -76,7 +68,13 @@ def parser():
         "--simulator-image", help="local fixed-adapter simulator image"
     )
     running.add_argument(
-        "--out", type=Path, help="new run directory (default: runs/<unique id>)"
+        "--out",
+        type=Path,
+        help="campaign directory, new or resumed (default: runs/<id>)",
+    )
+    running.add_argument("--cases", default="*", help="case_id glob, e.g. for a canary")
+    running.add_argument(
+        "--repeats", type=int, help="override repeats (selection only)"
     )
     return p
 
@@ -84,34 +82,6 @@ def parser():
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
-        if args.command == "doctor":
-            if not args.arm and (args.author_image or args.simulator_image):
-                raise ValueError("doctor image options require --arm")
-            if args.arm:
-                from .harness.arm_runtime import resolve_runtime
-
-                arm = Catalog(args.root).get("arms", args.arm)
-                if not args.author_image:
-                    raise ValueError("doctor --arm requires --author-image")
-                experiment = Experiment(
-                    schema_version=1,
-                    id="arm_doctor",
-                    version=1,
-                    suite="smoke@1",
-                    arm=f"{arm.id}@{arm.version}",
-                    arm_runtime=ArmRuntime(
-                        author_image=args.author_image,
-                        simulator_image=args.simulator_image,
-                    ),
-                    agent={"command": ["true"], "sandbox": {"backend": "docker"}},
-                )
-                print(json.dumps(resolve_runtime(experiment, arm), indent=2))
-                return 0
-            from .harness.doctor import doctor
-
-            result = doctor(args.root.resolve(), args.sandbox)
-            print(json.dumps(result, indent=2))
-            return 0 if result["ok"] else 1
         if args.command == "schema":
             args.out.mkdir(parents=True, exist_ok=True)
             for kind, model in MODELS.items():
@@ -223,17 +193,28 @@ def main(argv=None):
             selected_arm = catalog.get("arms", args.arm)
             data["arm"] = f"{selected_arm.id}@{selected_arm.version}"
         if args.author_image:
-            data["arm_runtime"] = ArmRuntime(
-                author_image=args.author_image, simulator_image=args.simulator_image
-            ).model_dump(mode="json")
+            data["arm_runtime"] = {
+                **(data.get("arm_runtime") or {}),
+                "author_image": args.author_image,
+                "simulator_image": args.simulator_image,
+            }
         elif args.simulator_image:
             raise ValueError("--simulator-image requires --author-image")
         experiment = Experiment.model_validate(data)
-        output, reports = run(catalog, experiment, args.out)
-        print(f"Results: {output / 'results.jsonl'}")
-        return (
-            0 if all(r["status"] in ("passed", "smoke_passed") for r in reports) else 1
+        # systemd stops with SIGTERM: unwind so in-flight trials record interruption.
+        signal.signal(signal.SIGTERM, signal.default_int_handler)
+        output, reports, complete = run(
+            catalog, experiment, args.out, cases=args.cases, repeats=args.repeats
         )
+        print(f"Results: {output / 'results.jsonl'} ({len(reports)} trials)")
+        # 0: every selected trial is final; 1: some are resumable (rerun later).
+        return 0 if complete else 1
+    except KeyboardInterrupt:
+        print("interrupted; rerun the same command to resume", file=sys.stderr)
+        return 130
+    except CampaignStop as exc:
+        print(f"stopped: {exc}", file=sys.stderr)
+        return 3
     except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

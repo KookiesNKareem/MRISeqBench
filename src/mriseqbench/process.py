@@ -1,11 +1,13 @@
 """Argument-list subprocesses with deadlines and process-group cleanup."""
 
+import json
 import os
 import re
 import signal
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -26,6 +28,25 @@ def execute(
     command, cwd, timeout_s, log_prefix, env=None, stop_when=None, timeout_credit=None
 ):
     prefix = Path(log_prefix)
+    started = time.monotonic()
+    started_at = datetime.now(UTC).isoformat()
+    credit_start = timeout_credit() if timeout_credit else 0.0
+
+    def finish(result):
+        elapsed = time.monotonic() - started
+        credit = max(0.0, (timeout_credit() if timeout_credit else 0.0) - credit_start)
+        result.update(
+            started_at=started_at,
+            finished_at=datetime.now(UTC).isoformat(),
+            wall_s=elapsed,
+            excluded_grading_wall_s=min(credit, elapsed),
+            charged_wall_s=max(0.0, elapsed - credit),
+        )
+        prefix.with_suffix(".execution.json").write_text(
+            json.dumps(result, indent=2, allow_nan=False) + "\n"
+        )
+        return result
+
     with (
         prefix.with_suffix(".stdout.log").open("w") as out,
         prefix.with_suffix(".stderr.log").open("w") as err,
@@ -41,7 +62,7 @@ def execute(
                 env=env,
             )
         except OSError as exc:
-            return {"status": "launch_error", "error": str(exc)}
+            return finish({"status": "launch_error", "error": str(exc)})
         timed_out = False
         submitted = False
         deadline = time.monotonic() + timeout_s if timeout_s is not None else None
@@ -75,13 +96,15 @@ def execute(
             except ProcessLookupError:
                 pass
             proc.wait()
-    return {
-        "status": "submitted"
-        if submitted
-        else "timeout"
-        if timed_out
-        else "completed"
-        if code == 0
-        else "error",
-        "returncode": code,
-    }
+    return finish(
+        {
+            "status": "submitted"
+            if submitted
+            else "timeout"
+            if timed_out
+            else "completed"
+            if code == 0
+            else "error",
+            "returncode": code,
+        }
+    )

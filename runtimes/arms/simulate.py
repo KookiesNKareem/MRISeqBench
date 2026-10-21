@@ -32,6 +32,8 @@ def simulate(source, output):
             [
                 "julia",
                 "--startup-file=no",
+                "--heap-size-hint=1G",
+                "--compiled-modules=existing",
                 "--project=/opt/simulator",
                 "/opt/mriseqbench/simulate_koma.jl",
                 str(source),
@@ -42,12 +44,24 @@ def simulate(source, output):
         return
     if ENGINE == "komamripy":
         import komamripy as km
+        from juliacall import Main as jl
+
+        device = str(
+            jl.seval("""begin
+            using CUDA, KomaMRICore
+            CUDA.functional() || error("CUDA is required; no CPU fallback")
+            CUDA.allowscalar(false)
+            KomaMRICore.get_backend(true) isa KomaMRICore.KA.GPU ||
+                error("KomaMRI simulation cannot fall back to CPU")
+            CUDA.name(CUDA.device())
+        end""")
+        )
 
         obj = km.files.read_phantom(str(source / "phantom.phantom"))
         seq = km.files.read_seq(str(source / "sequence.seq"))
         sim_params = km.core.default_sim_params()
         sim_params["return_type"] = "mat"
-        sim_params["gpu"] = False
+        sim_params["gpu"] = True
         signal = np.asarray(
             km.simulate(
                 obj,
@@ -60,6 +74,13 @@ def simulate(source, output):
         )
     elif ENGINE == "mrzero":
         import MRzeroCore as mr0
+        import torch
+
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA is required for MRzero simulation; no CPU fallback"
+            )
+        device = torch.cuda.get_device_name()
 
         if any(
             e["kind"] in {"motion", "time_variation"}
@@ -90,7 +111,10 @@ def simulate(source, output):
             ).build()
         seq = mr0.Sequence.import_file(str(source / "sequence.seq"))
         graph = mr0.compute_graph(seq, obj, 200, 1e-5)
-        signal = mr0.execute_graph(graph, seq, obj).detach().cpu().numpy()
+        result = mr0.execute_graph(graph, seq.cuda(), obj.cuda())
+        if result.device.type != "cuda":
+            raise RuntimeError("MRzero simulation returned a CPU signal")
+        signal = result.detach().cpu().numpy()
     else:
         raise ValueError("unsupported engine: " + ENGINE)
     with h5py.File(output / "signal.h5", "w") as f:
@@ -103,6 +127,9 @@ def simulate(source, output):
                 "diagnostic": True,
                 "phantom": "public materialized spin centres",
                 "signal_shape": list(signal.shape),
+                "backend": "cuda",
+                "device": device,
+                "cpu_fallback": False,
             }
         )
     )
@@ -147,7 +174,51 @@ def probe():
                 or not np.any(np.abs(signal) > 0.01)
             ):
                 raise ValueError("Pulseq-to-signal self-test failed")
-    print(json.dumps({"engine": ENGINE, "pulseq_input": True, "self_test": True}))
+            if ENGINE in {"koma", "komamripy"}:
+                # Independent closed form for one resonant rectangular RF
+                # pulse, with T1/T2 relaxation; no CPU simulator or fitted gain.
+                omega, duration, r1, r2 = (np.pi / 6) / 1e-3, 1e-3, 1.0, 10.0
+                frequency = np.sqrt(omega**2 - ((r1 - r2) / 2) ** 2)
+                y_eq = omega * r1 / (omega**2 + r1 * r2)
+                z_eq = r1 * r2 / (omega**2 + r1 * r2)
+                y = y_eq + np.exp(-(r1 + r2) * duration / 2) * (
+                    -y_eq * np.cos(frequency * duration)
+                    + np.sin(frequency * duration)
+                    / frequency
+                    * ((r1 - r2) / 2 * -y_eq + omega * (1 - z_eq))
+                )
+                expected = y * np.exp(-(np.arange(4) + 0.5) * 1e-5 * r2)
+                relative_error = float(
+                    np.linalg.norm(np.abs(signal).ravel() - expected)
+                    / np.linalg.norm(expected)
+                )
+                if relative_error > 1e-3:
+                    raise ValueError(
+                        f"CUDA RF self-test disagrees with closed form: {relative_error}"
+                    )
+        execution = json.loads((output / "simulation.json").read_text())
+        if (
+            execution.get("backend") != "cuda"
+            or execution.get("cpu_fallback") is not False
+        ):
+            raise ValueError("Simulator did not verify CUDA execution")
+    print(
+        json.dumps(
+            {
+                "engine": ENGINE,
+                "pulseq_input": True,
+                "self_test": True,
+                "backend": "cuda",
+                "device": execution["device"],
+                "cpu_fallback": False,
+                **(
+                    {"RF_closed_form_magnitude_relative_error": relative_error}
+                    if ENGINE in {"koma", "komamripy"}
+                    else {}
+                ),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

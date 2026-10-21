@@ -8,16 +8,17 @@ submission_mode: submit
 max_submissions: 3
 agent:
   adapter: pi
+  pi_version: 0.87.0
+  auto_compaction: false
   model: REPLACE_WITH_OPENROUTER_MODEL_ID
-  command: [pi, --provider, openrouter, --model, '{model}', --thinking, medium, --session-dir, '{workspace}/transcript', --mode, json, -p, '{prompt_text}']
+  command: [pi, --provider, openrouter, --model, '{model}', --thinking, '{thinking_level}', --session-dir, '{workspace}/transcript', --mode, json, -p, '{prompt_text}']
   timeout_s: 1200
   sandbox:
     backend: auto
     read_paths: ['~/.nvm']
 api_proxy:
+  provider_endpoint: REPLACE_WITH_PROVIDER_ENDPOINT
   upstream_url: https://openrouter.ai/api/v1
   key_env: OPENROUTER_API_KEY
 feedback:
-  mode: none
-  max_checks: 0
   timeout_s: 300

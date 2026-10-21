@@ -90,6 +90,8 @@ def run(command, arrays, *, output="out", timeout=300):
     placeholder. Returned arrays omit trailing singleton dimensions only.
     """
     command = [str(token) for token in command]
+    if command and command[0] in {"nufft", "pics"} and "-g" not in command:
+        command.insert(1, "-g")
     if not command or "{" + output + "}" not in command:
         raise ValueError("BART command must contain its named output placeholder")
     with tempfile.TemporaryDirectory(prefix="mriseqbench-bart-") as directory:
@@ -226,6 +228,7 @@ def _trajectory(nodes, matrix):
 def _inverse_nufft(data, trajectory, shape):
     command = [
         "nufft",
+        "-g",
         "-i",
         "-P",
         "-r",

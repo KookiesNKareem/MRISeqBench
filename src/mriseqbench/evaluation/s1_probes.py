@@ -4,7 +4,7 @@ from copy import copy
 
 import numpy as np
 
-from .s1_image import canonical_response, nrmse
+from .s1_image import canonical_response, expected_receiver_phase, nrmse
 from .s1_koma import simulate
 from .s1_phantom import Spins
 from .s1_sequence import check
@@ -70,7 +70,7 @@ def echo_formation_probe(acq, case, probe_props):
 
 
 def mechanism_probes(acq, case, materials, properties):
-    fam = case["task"]["id"].removesuffix("_research")
+    fam = case["task"]["id"]
     center_ids = np.array(
         [
             ids[
@@ -85,7 +85,7 @@ def mechanism_probes(acq, case, materials, properties):
         acq,
         properties,
         fam,
-        finite_rf=case["evaluation"].get("intrinsic_tissue_response", False),
+        finite_rf=True,
     )
     metrics, checks = {}, []
     if "wm" in materials and "gm" in materials:
@@ -156,7 +156,9 @@ def mechanism_probes(acq, case, materials, properties):
             centered = copy(acq)
             centered.adc, centered.adc_phase, centered.k = (
                 acq.adc[center_ids],
-                acq.adc_phase[center_ids],
+                # RF-derived receiver: spoiling is judged apart from receiver
+                # errors, which the image phase criterion scores.
+                expected_receiver_phase(acq)[center_ids],
                 acq.k[center_ids],
             )
             actual = simulate(centered, spins, demodulate_encoding=True)
@@ -218,22 +220,6 @@ def mechanism_probes(acq, case, materials, properties):
                 and metrics["diagnostic_t1_sensitivity"]
                 > metrics["diagnostic_t2_sensitivity"],
                 {k: v for k, v in metrics.items() if "diagnostic" in k},
-            )
-        )
-    if case["task"].get("prompt_mode") == "research":
-        suitable = mean_signal >= 0.01
-        if fam == "gre_t2star":
-            suitable &= metrics["off_resonance_ensemble_retention"] <= 0.9
-        if fam == "spin_echo_t2w":
-            suitable &= (
-                metrics["diagnostic_t2_sensitivity"]
-                > metrics["diagnostic_t1_sensitivity"]
-            )
-        checks.append(
-            check(
-                "reasonable_parameters",
-                suitable,
-                {"signal_min": 0.01, "diagnostics": metrics},
             )
         )
     return checks, metrics, diagnostic

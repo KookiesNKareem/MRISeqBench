@@ -1,11 +1,10 @@
 # yaml-language-server: $schema=../../schemas/evaluators.schema.json
 schema_version: 1
 id: s4
-version: 1
+version: 2
 scope: benchmark
 calibrated: true
 reconstruction: bart_cartesian_fft@1
-intrinsic_tissue_response: true
 spatial_samples: 32768
 spatial_replicates: 8
 spatial_max_samples: 131072

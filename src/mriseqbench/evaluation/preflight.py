@@ -106,9 +106,10 @@ def preflight(submission, case, *, hardware_limits=True):
         check(
             "supported_events", not unsupported_events, sorted(set(unsupported_events))
         )
+        excitation_only = case["evaluation"]["id"] == "rf_excitation"
         check(
-            "has_rf_and_adc",
-            adc_count > 0 and rf_count > 0,
+            "has_rf_no_adc" if excitation_only else "has_rf_and_adc",
+            rf_count > 0 and (adc_count == 0 if excitation_only else adc_count > 0),
             {"adc_samples": adc_count, "rf_events": rf_count},
         )
         check(

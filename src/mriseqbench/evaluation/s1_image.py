@@ -21,12 +21,35 @@ def expected_receiver_phase(acq):
     return phase
 
 
+def refocusing_parity(acq):
+    """Sign that restores the excitation's -i convention after each refocusing.
+
+    A refocusing rotation about RF phase p maps m+ to exp(2ip)*conj(m+), so
+    demodulating with expected_receiver_phase leaves +i after an odd number of
+    refocusings. Every echo of a spin-echo train is scored in the FID convention:
+    the matching ADC phase is expected_receiver_phase + pi per refocusing.
+    """
+    parity = np.zeros(len(acq.adc), dtype=int)
+    for pulse in acq.pulses:
+        after = acq.adc >= pulse.center
+        if pulse.refocusing:
+            parity[after] += 1
+        else:
+            parity[after] = 0
+    return (-1.0) ** parity
+
+
 def canonical_response(acq, properties, fam, *, finite_rf=False):
     """Family oracle using measured RF/timing, with perfect spoiling when required.
 
     This deliberately does not copy encoding gradients or spoiler effectiveness.
     bSSFP uses finite-RF, zero-gradient Bloch dynamics, preserving transients.
+    Refocused echoes share the excitation phase convention (refocusing_parity).
     """
+    return _canonical_response(acq, properties, fam, finite_rf) * refocusing_parity(acq)
+
+
+def _canonical_response(acq, properties, fam, finite_rf):
     receiver = expected_receiver_phase(acq)
     n = len(properties)
     if finite_rf:
@@ -47,7 +70,7 @@ def canonical_response(acq, properties, fam, *, finite_rf=False):
             spins,
             zero_gradients=True,
             individual=True,
-            ideal_spoiling=fam != "bssfp",
+            ideal_spoiling=fam not in {"bssfp", "rfov_epi"},
         ).T
     if fam == "bssfp":
         out = []

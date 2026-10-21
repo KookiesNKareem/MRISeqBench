@@ -4,6 +4,7 @@ Authoring and simulation live in separate containers. The agent can invoke only
 one fixed simulator adapter, never evaluate arbitrary code in its environment.
 """
 
+import functools
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ from ..io import write_json
 from ..process import execute
 
 IMAGE_ID = re.compile(r"sha256:[a-f0-9]{64}\Z")
+CAMPAIGN = None  # Set by the runner; labels containers for orphan cleanup.
 
 
 def docker_output(args, timeout=120):
@@ -53,6 +55,26 @@ def pin_image(image):
     return value
 
 
+@functools.cache
+def rootless():
+    # Rootless dockerd maps container root to the invoking host user.
+    return "rootless" in docker_output(["info", "--format", "{{.SecurityOptions}}"])
+
+
+def remove_campaign_containers(campaign):
+    names = docker_output(
+        ["ps", "-aq", "--filter", f"label=mriseqbench.campaign={campaign}"]
+    ).split()
+    if names:
+        docker_output(["rm", "--force", *names])
+    return len(names)
+
+
+def with_memory(args, megabytes):
+    args = [arg for arg in args if not arg.startswith(("--memory=", "--memory-swap="))]
+    return args + [f"--memory={megabytes}m", f"--memory-swap={megabytes}m"]
+
+
 def container_args(image, *, name=None):
     executable = shutil.which("docker")
     if executable is None:
@@ -69,6 +91,11 @@ def container_args(image, *, name=None):
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--pids-limit=256",
+        "--memory=768m",
+        "--memory-swap=768m",
+        "--cpus=1",
+        "--env",
+        "NODE_OPTIONS=--max-old-space-size=128",
         "--no-healthcheck",
         "--env",
         "HOME=/tmp",
@@ -77,7 +104,7 @@ def container_args(image, *, name=None):
         "--env",
         "PYTHONNOUSERSITE=1",
         "--user",
-        f"{os.getuid()}:{os.getgid()}",
+        "0:0" if rootless() else f"{os.getuid()}:{os.getgid()}",
         "--tmpfs",
         "/tmp:rw,nosuid,nodev,size=512m",
         "--entrypoint",
@@ -85,6 +112,8 @@ def container_args(image, *, name=None):
     ]
     if name:
         args += ["--name", name]
+    if CAMPAIGN:
+        args += ["--label", f"mriseqbench.campaign={CAMPAIGN}"]
     return args, image
 
 
@@ -99,6 +128,81 @@ def mount(source, target, *, readonly=True):
     ]
 
 
+def simulator_gpu_args():
+    """Expose one scheduler-selected CUDA device only to the simulator service."""
+    device = os.environ.get(
+        "MRISEQBENCH_SIMULATOR_GPU", os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    )
+    if not re.fullmatch(r"(?:[0-9]+|GPU-[a-fA-F0-9-]+|MIG-[a-zA-Z0-9/-]+)", device):
+        raise ValueError(
+            "Simulation requires one selected CUDA GPU; CPU fallback is disabled"
+        )
+    cache_args = [
+        "--env",
+        "JULIA_DEPOT_PATH=/tmp/julia-depot:/opt/julia-depot",
+        "--env",
+        "CUDA_CACHE_PATH=/tmp/cuda-cache",
+        "--env",
+        "JULIA_CUDA_HARD_MEMORY_LIMIT=2GiB",
+    ]
+    mode = os.environ.get("MRISEQBENCH_SIMULATOR_GPU_ACCESS", "auto")
+    if mode == "auto":
+        runtimes = json.loads(
+            docker_output(["info", "--format", "{{json .Runtimes}}"], 10)
+        )
+        mode = "nvidia" if "nvidia" in runtimes else "devices"
+    if mode == "devices":
+        # Rootless daemons can expose device nodes without changing/restarting
+        # a shared daemon. Bind only the selected device and CUDA driver ABI.
+        rows = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.splitlines()
+        choices = [tuple(part.strip() for part in row.split(",")) for row in rows]
+        matches = [(index, uuid) for index, uuid in choices if device in (index, uuid)]
+        if len(matches) != 1:
+            raise ValueError("Selected simulator GPU was not found")
+        index, uuid = matches[0]
+        args = []
+        for node in (f"/dev/nvidia{index}", "/dev/nvidiactl", "/dev/nvidia-uvm"):
+            if not Path(node).exists():
+                raise ValueError(f"Required CUDA device is missing: {node}")
+            args += ["--device", node]
+        directory = Path("/usr/lib/x86_64-linux-gnu")
+        for library in ("libcuda.so.1", "libnvidia-ptxjitcompiler.so.1"):
+            source = directory / library
+            if not source.is_file():
+                raise ValueError(f"Required CUDA driver library is missing: {library}")
+            args += mount(source.resolve(), "/usr/local/nvidia/lib64/" + library)
+        return (
+            args
+            + cache_args
+            + [
+                "--env",
+                "LD_LIBRARY_PATH=/usr/local/nvidia/lib64",
+                "--env",
+                f"CUDA_VISIBLE_DEVICES={uuid}",
+            ]
+        )
+    if mode != "nvidia":
+        raise ValueError("Unknown simulator GPU access mode")
+    return [
+        "--gpus",
+        f"device={device}",
+        "--env",
+        "NVIDIA_DRIVER_CAPABILITIES=compute,utility",
+    ] + cache_args
+
+
+def configure_simulator_args(args):
+    # CUDA reserves large virtual mappings; an RLIMIT_DATA/AS cap can reject
+    # initialization despite low RSS. Bound physical RAM with the container.
+    return with_memory(args, 2048) + simulator_gpu_args()
+
+
 def remove_container(name):
     subprocess.run(
         [shutil.which("docker") or "docker", "rm", "--force", name],
@@ -111,6 +215,8 @@ def remove_container(name):
 def image_probe(image, command, timeout, mounts=()):
     name = "mriseqbench-probe-" + uuid.uuid4().hex
     args, image = container_args(image, name=name)
+    if command[0] == "/opt/mriseqbench/simulate":
+        args = configure_simulator_args(args)
     for source, target in mounts:
         args += mount(source, target)
     try:
@@ -156,6 +262,13 @@ def resolve_runtime(experiment, arm):
             "simulator_image must be supplied exactly for simulation-enabled arms"
         )
     author = pin_image(config.author_image)
+    pi_version = None
+    if experiment.agent.uses_model and experiment.agent.adapter == "pi":
+        pi_version = image_probe(author, ["pi", "--version"], config.probe_timeout_s)
+        if pi_version.strip() != experiment.agent.pi_version:
+            raise ValueError(
+                f"Pi version mismatch: expected {experiment.agent.pi_version}, found {pi_version}"
+            )
     audit = (
         probe_author(
             author, arm, config.probe_timeout_s, config.julia_heap_size_hint_mb
@@ -182,16 +295,33 @@ def resolve_runtime(experiment, arm):
             capabilities.get("engine") != arm.simulator
             or capabilities.get("pulseq_input") is not True
             or capabilities.get("self_test") is not True
+            or capabilities.get("backend") != "cuda"
+            or capabilities.get("cpu_fallback") is not False
         ):
             raise ValueError(
-                "simulator image must pass a Pulseq-input self-test for the selected engine"
+                "simulator image must pass a CUDA Pulseq-input self-test for the selected engine; no CPU fallback"
             )
     return {
         "arm": arm.model_dump(mode="json"),
+        "pi_version": pi_version,
+        "resource_limits": {
+            "memory_bytes": config.author_memory_mb * 2**20,
+            "memory_swap_bytes": 0,
+            "cpus": 1,
+            "node_heap_mb": 128,
+        },
         "author_image": author,
         "simulator_image": simulator,
         "audit": audit,
         "simulator_probe": capabilities,
+        "simulator_backend": "cuda" if simulator else None,
+        "simulator_resource_limits": {
+            "memory_bytes": 2147483648,
+            "memory_swap_bytes": 0,
+            "cpus": 1,
+        }
+        if simulator
+        else None,
         "setup_timeout_s": config.probe_timeout_s,
         "julia_heap_size_hint_mb": config.julia_heap_size_hint_mb,
     }
@@ -201,6 +331,7 @@ def resolve_runtime(experiment, arm):
 def launch_arm(runtime, command, workspace, control, env):
     name = "mriseqbench-" + uuid.uuid4().hex
     args, image = container_args(runtime["author_image"], name=name)
+    args = with_memory(args, runtime["resource_limits"]["memory_bytes"] // 2**20)
     args += mount(workspace, workspace, readonly=False)
     args += mount(control / "transport", "/run/mriseqbench", readonly=False)
     args += mount(
@@ -364,6 +495,7 @@ class Simulator:
             write_json(inputs / "case.json", self.public_case)
             name = "mriseqbench-sim-" + uuid.uuid4().hex
             args, image = container_args(self.runtime["simulator_image"], name=name)
+            args = configure_simulator_args(args)
             args += mount(inputs, "/input") + mount(outputs, "/output", readonly=False)
             args += [image, "/opt/mriseqbench/simulate", "/input", "/output"]
             try:
@@ -404,6 +536,21 @@ class Simulator:
                     ).decode()
             if not artifacts:
                 return 422, {"error": "simulator produced no output artifacts"}
+            execution_path = outputs / "simulation.json"
+            device = (
+                json.loads(execution_path.read_text())
+                if execution_path.is_file()
+                else {}
+            )
+            if (
+                device.get("backend") != "cuda"
+                or device.get("cpu_fallback") is not False
+            ):
+                raise RuntimeError(
+                    "Simulator did not verify CUDA execution; CPU results are rejected"
+                )
+            record["device"] = device
+            write_json(self.control / "simulations.json", self.calls)
             return 200, {
                 "engine": self.runtime["arm"]["simulator"],
                 "artifacts": artifacts,

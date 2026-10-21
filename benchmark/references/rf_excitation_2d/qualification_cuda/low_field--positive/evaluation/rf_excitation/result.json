@@ -1,0 +1,86 @@
+{
+  "case_id": "rf_excitation_2d-v1--static_b0-v1--hardware-low_field-v1",
+  "status": "uncalibrated",
+  "checks": [
+    {
+      "name": "excitation_only",
+      "passed": true,
+      "detail": "Nonzero RF, no ADC or triggers"
+    },
+    {
+      "name": "numerical_convergence",
+      "passed": true,
+      "detail": {
+        "step_s": 1.25e-06,
+        "metrics": {
+          "excitation_magnitude_nrmse": 0.017113414466849608,
+          "inside_signal_fraction": 0.9888457436898249,
+          "outside_rms_fraction": 0.004592921724666738
+        },
+        "estimated_error": {
+          "excitation_magnitude_nrmse": 0.0013170345379960452,
+          "inside_signal_fraction": 0.0007068156394007818,
+          "outside_rms_fraction": 0.000840452447912093
+        }
+      }
+    },
+    {
+      "name": "excitation_magnitude_nrmse",
+      "passed": true,
+      "detail": {
+        "value": 0.017113414466849608,
+        "name": "excitation_magnitude_nrmse",
+        "min": null,
+        "max": 0.3
+      }
+    },
+    {
+      "name": "inside_signal_fraction",
+      "passed": true,
+      "detail": {
+        "value": 0.9888457436898249,
+        "name": "inside_signal_fraction",
+        "min": 0.8,
+        "max": null
+      }
+    },
+    {
+      "name": "outside_rms_fraction",
+      "passed": true,
+      "detail": {
+        "value": 0.004592921724666738,
+        "name": "outside_rms_fraction",
+        "min": null,
+        "max": 0.1
+      }
+    }
+  ],
+  "metrics": {
+    "excitation_magnitude_nrmse": 0.017113414466849608,
+    "inside_signal_fraction": 0.9888457436898249,
+    "outside_rms_fraction": 0.004592921724666738
+  },
+  "numerically_converged": true,
+  "target_sha256": "8f65c3a74df053678a39eb0a245923811dc8557909500abb7f1e76695b95771f",
+  "submission_sha256": "e5a1d15677bce912afd2944d06b818b3f1699dbfdc2f671cd437490bdbb38517",
+  "diagnostic_sha256": "09b18bf8ff80cb8ac309a0adb3c04a68d6f1b857b0c6b33ab65f8317e6f39315",
+  "sample_time_s": 0.03476100000000001,
+  "reconstruction": "direct_magnetization@1",
+  "versions": {
+    "KomaMRIFiles": "0.12.0",
+    "KomaMRIBase": "0.15.1",
+    "Julia": "1.12.6",
+    "KomaMRICore": "0.14.0",
+    "SimulationBackend": "cuda",
+    "SimulationDevice": "NVIDIA TITAN RTX",
+    "SimulationPrecision": "f64",
+    "CUDA": "6.4.0"
+  },
+  "execution": {
+    "backend": "cuda",
+    "cuda_version": "6.4.0",
+    "device": "NVIDIA TITAN RTX",
+    "cpu_fallback": false,
+    "precision": "f64"
+  }
+}

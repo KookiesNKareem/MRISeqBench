@@ -6,12 +6,11 @@ suite: smoke@1
 repeats: 1
 submission_mode: file
 agent:
+  uses_model: false
   command: ['{python}', '{root}/tests/fixtures/make_smoke_submission.py', --case, '{case}', --output, '{submission}']
   timeout_s: 60
   sandbox:
     backend: auto
     read_paths: ['{root}/tests/fixtures/make_smoke_submission.py']
 feedback:
-  mode: preflight
-  max_checks: 2
   timeout_s: 60

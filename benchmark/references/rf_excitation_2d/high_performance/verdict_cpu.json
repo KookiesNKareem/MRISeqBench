@@ -1,0 +1,240 @@
+{
+  "case_id": "rf_excitation_2d-v1--static_b0-v1",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "grad_raster_time",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "rf_raster_time",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "adc_raster_time",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "block_duration_raster",
+      "passed": true,
+      "detail": "Submitted raster must match the hardware profile"
+    },
+    {
+      "name": "pulseq_parse",
+      "passed": true,
+      "detail": "Pulseq file parsed"
+    },
+    {
+      "name": "timing",
+      "passed": true,
+      "detail": "[]"
+    },
+    {
+      "name": "duration",
+      "passed": true,
+      "detail": {
+        "duration_s": 0.034760000000000006,
+        "max_s": 0.04
+      }
+    },
+    {
+      "name": "supported_events",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "name": "has_rf_no_adc",
+      "passed": true,
+      "detail": {
+        "adc_samples": 0,
+        "rf_events": 1
+      }
+    },
+    {
+      "name": "finite_rf",
+      "passed": true,
+      "detail": "RF samples, times, frequency and phase must be finite"
+    },
+    {
+      "name": "finite_adc",
+      "passed": true,
+      "detail": "ADC timing, frequency, phase and modulation must be finite"
+    },
+    {
+      "name": "peak_b1",
+      "passed": true,
+      "detail": {
+        "peak_uT": 2.621030627583615,
+        "max_uT": 20.0
+      }
+    },
+    {
+      "name": "finite_gradient_x",
+      "passed": true,
+      "detail": "finite samples with increasing time"
+    },
+    {
+      "name": "gradient_x",
+      "passed": true,
+      "detail": {
+        "peak_mT_per_m": 11.56487222848553,
+        "max": 80.0
+      }
+    },
+    {
+      "name": "slew_x",
+      "passed": true,
+      "detail": {
+        "peak_T_per_m_per_s": 36.02062411840462,
+        "max": 200.0
+      }
+    },
+    {
+      "name": "finite_gradient_y",
+      "passed": true,
+      "detail": "finite samples with increasing time"
+    },
+    {
+      "name": "gradient_y",
+      "passed": true,
+      "detail": {
+        "peak_mT_per_m": 11.499412814731304,
+        "max": 80.0
+      }
+    },
+    {
+      "name": "slew_y",
+      "passed": true,
+      "detail": {
+        "peak_T_per_m_per_s": 32.49419816988083,
+        "max": 200.0
+      }
+    },
+    {
+      "name": "sar_360s",
+      "passed": true,
+      "detail": {
+        "model": "homogeneous_sphere_v1",
+        "field_strength_T": 3.0,
+        "peak_W_per_kg": 0.4753355796509703,
+        "limit_W_per_kg": 2.0,
+        "window_start_s": 0.0,
+        "averaging_duration_s": 0.034760000000000006,
+        "b1_rms_uT": 0.5727207554173308,
+        "coefficient_W_per_kg_per_uT2": 1.449153795659431,
+        "load": {
+          "model": "homogeneous_sphere_v1",
+          "radius_m": 0.15,
+          "conductivity_S_per_m": 0.5,
+          "density_kg_per_m3": 1000.0,
+          "whole_body_limit_W_per_kg": 2.0
+        },
+        "scope": "synthetic global SAR; no local SAR or scanner certification"
+      }
+    },
+    {
+      "name": "sar_10s",
+      "passed": true,
+      "detail": {
+        "model": "homogeneous_sphere_v1",
+        "field_strength_T": 3.0,
+        "peak_W_per_kg": 0.4753355796509703,
+        "limit_W_per_kg": 4.0,
+        "window_start_s": 0.0,
+        "averaging_duration_s": 0.034760000000000006,
+        "b1_rms_uT": 0.5727207554173308,
+        "coefficient_W_per_kg_per_uT2": 1.449153795659431,
+        "load": {
+          "model": "homogeneous_sphere_v1",
+          "radius_m": 0.15,
+          "conductivity_S_per_m": 0.5,
+          "density_kg_per_m3": 1000.0,
+          "whole_body_limit_W_per_kg": 2.0
+        },
+        "scope": "synthetic global SAR; no local SAR or scanner certification"
+      }
+    },
+    {
+      "name": "excitation_only",
+      "passed": true,
+      "detail": "Nonzero RF, no ADC or triggers"
+    },
+    {
+      "name": "numerical_convergence",
+      "passed": true,
+      "detail": {
+        "step_s": 1.25e-06,
+        "metrics": {
+          "excitation_magnitude_nrmse": 0.01899719287673634,
+          "inside_signal_fraction": 0.9881788072645341,
+          "outside_rms_fraction": 0.005780682366957948
+        },
+        "estimated_error": {
+          "excitation_magnitude_nrmse": 0.0016193499206256443,
+          "inside_signal_fraction": 0.0008618987669490874,
+          "outside_rms_fraction": 0.0009143237759661801
+        }
+      }
+    },
+    {
+      "name": "excitation_magnitude_nrmse",
+      "passed": true,
+      "detail": {
+        "value": 0.01899719287673634,
+        "name": "excitation_magnitude_nrmse",
+        "min": null,
+        "max": 0.3
+      }
+    },
+    {
+      "name": "inside_signal_fraction",
+      "passed": true,
+      "detail": {
+        "value": 0.9881788072645341,
+        "name": "inside_signal_fraction",
+        "min": 0.8,
+        "max": null
+      }
+    },
+    {
+      "name": "outside_rms_fraction",
+      "passed": true,
+      "detail": {
+        "value": 0.005780682366957948,
+        "name": "outside_rms_fraction",
+        "min": null,
+        "max": 0.1
+      }
+    }
+  ],
+  "metrics": {
+    "excitation_magnitude_nrmse": 0.01899719287673634,
+    "inside_signal_fraction": 0.9881788072645341,
+    "outside_rms_fraction": 0.005780682366957948
+  },
+  "numerically_converged": true,
+  "target_sha256": "8f65c3a74df053678a39eb0a245923811dc8557909500abb7f1e76695b95771f",
+  "submission_sha256": "993147d5426bff40224826c70b4a05adadd1de432d25a6cabe827be5dd1db24c",
+  "diagnostic_sha256": "979c4b2fa0b710c002b67f664738410a86b9a82eac16faec398db530fc0005e1",
+  "sample_time_s": 0.03476100000000001,
+  "reconstruction": "direct_magnetization@1",
+  "versions": {
+    "KomaMRIFiles": "0.12.0",
+    "KomaMRIBase": "0.15.1",
+    "Julia": "1.12.6",
+    "KomaMRICore": "0.14.0",
+    "SimulationBackend": "cpu",
+    "SimulationDevice": "CPU",
+    "SimulationPrecision": "f64"
+  },
+  "execution": {
+    "backend": "cpu",
+    "cuda_version": null,
+    "device": "CPU",
+    "cpu_fallback": false,
+    "precision": "f64"
+  }
+}

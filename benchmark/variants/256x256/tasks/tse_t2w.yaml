@@ -1,0 +1,31 @@
+id: tse_t2w
+objective: Acquire a Cartesian T2-weighted image in 32 shots with eight refocused echoes per shot, 10 ms echo spacing, k-space center at TE 40 ms, and TR 1200 ms.
+object: cardiac_2d@1
+sequence:
+  level: S2
+  capabilities:
+  - spin_echo
+  - cartesian
+  - tse
+  - rare
+  matrix:
+  - 256
+  - 256
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 42
+  te_ms:
+    target: 40
+    tolerance: 4.0
+  tr_ms:
+    target: 1200
+    tolerance: 60.0
+  readout:
+    shots: 32
+    echo_train_length: 8
+    echo_spacing_ms: 10
+evaluation: s2@4
+schema_version: 1
+version: 2
+hardware: high_performance@1

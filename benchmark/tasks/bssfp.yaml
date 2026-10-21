@@ -13,4 +13,4 @@ sequence:
   te_ms: {target: 2.5, tolerance: 0.25}
   tr_ms: {target: 5, tolerance: 0.25}
   flip_angle_deg: 35
-evaluation: s1@3
+evaluation: s1@4

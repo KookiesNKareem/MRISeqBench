@@ -7,7 +7,7 @@ ARG PYTHON_LIB_PACKAGE=libpython3.13
 RUN apt-get update && apt-get install -y --no-install-recommends ${PYTHON_LIB_PACKAGE} \
     && rm -rf /var/lib/apt/lists/*
 ENV JULIA_PKG_OFFLINE=false JULIA_CONDAPKG_BACKEND=Null JULIA_PYTHONCALL_EXE=/opt/venv/bin/python3 \
-    PYTHON_JULIACALL_EXE=/usr/local/julia/bin/julia PYTHON_JULIACALL_PROJECT=/opt/simulator
+    PYTHON_JULIACALL_EXE=/usr/local/julia-gpu/bin/julia PYTHON_JULIACALL_PROJECT=/opt/simulator
 RUN /opt/venv/bin/pip install --no-cache-dir komamripy==0.0.12
 COPY KomaMRI /opt/sources/KomaMRI
 COPY KomaMRIPlots /opt/sources/KomaMRIPlots

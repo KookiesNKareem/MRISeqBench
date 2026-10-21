@@ -1,0 +1,510 @@
+{
+  "all_expected": true,
+  "complete": true,
+  "rows": [
+    {
+      "hardware": "low_field",
+      "control": "positive",
+      "expected_outcome": true,
+      "status": "passed",
+      "metrics": {
+        "selection_leakage_ratio": 0.07169722242206814,
+        "diagnostic_signal_fraction": 0.31997748424861167,
+        "ideal_image_nrmse": 0.39686527717490844,
+        "ideal_complex_image_nrmse": 0.63582616607835,
+        "ideal_outside_object_energy_fraction": 0.015850006570648563,
+        "ideal_signal_fraction": 0.9142744746782921,
+        "ideal_absolute_rms_signal": 0.019233640577321555,
+        "ideal_fat_mean_signal": 0.010042423979184268,
+        "ideal_myocardium_mean_signal": 0.027181387709118463,
+        "ideal_blood_mean_signal": 0.04866389460086241,
+        "case_image_nrmse": 0.10696479584210555,
+        "case_complex_image_nrmse": 0.11712873695335049,
+        "case_outside_object_energy_fraction": 0.00026545859993859494,
+        "case_signal_fraction": 0.9706516620303227,
+        "case_absolute_rms_signal": 0.020420123676979162,
+        "case_fat_mean_signal": 0.0018922290788978616,
+        "case_myocardium_mean_signal": 0.027115963014763867,
+        "case_blood_mean_signal": 0.053315096696911854,
+        "ideal_normalized_squared_error": 0.4042749134698934,
+        "case_normalized_squared_error": 0.013719141020287174,
+        "case_normalized_squared_magnitude_error": 0.011402146021742846,
+        "case_magnitude_image_nrmse": 0.10678083171497985,
+        "case_normalized_squared_phase_error": 0.0017081849230022282,
+        "case_phase_error_rad": 0.04133019384181773,
+        "case_min_tissue_signal_fraction": 0.9734681841168946,
+        "case_contrast_retention": 0.8266198208614943,
+        "temporal_nrmse": 0.007878449817927796,
+        "temporal_raw_nrmse": 0.007878449817927796,
+        "temporal_image_nrmse": 0.007645841534265604,
+        "case_vs_ideal_image_nrmse": 0.4026390673427315,
+        "case_signal_retention": 1.061687910558992
+      },
+      "failed_checks": [
+        "ideal_complex_image_nrmse"
+      ],
+      "sequence_sha256": "9fcb8c55e157dd3ab525b9f7b285cff29a8a6464999e5afcb842d7da98c28e88",
+      "seconds": 150.87863189168274
+    },
+    {
+      "hardware": "low_field",
+      "control": "no_selection",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "two_dimensional_rf_encoding"
+      ],
+      "sequence_sha256": "5daacece62e54abc572c27fdf1c1c27a703038158a15b6e5fbdd5bd08b79d6f7",
+      "seconds": 1.4299200158566236
+    },
+    {
+      "hardware": "low_field",
+      "control": "one_dimensional_rf",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "two_dimensional_rf_encoding"
+      ],
+      "sequence_sha256": "a40b44db3d1456bfb4e990ef0ab80bbb18a2d430550e0bc240e93ec2c0d3f399",
+      "seconds": 30.272233257070184
+    },
+    {
+      "hardware": "low_field",
+      "control": "wrong_polarity",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "single_shot_epi"
+      ],
+      "sequence_sha256": "eac5c9a7dd7c856c8881730c2bd2bf2664618e8318fa69dbf4f40e0e41ff8830",
+      "seconds": 11.350504433736205
+    },
+    {
+      "hardware": "low_field",
+      "control": "full_fov",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "sampling_pattern",
+        "single_shot_epi"
+      ],
+      "sequence_sha256": "a30396ba1031580c2045d2bd1848e2ef019656e0da37e67314e471e721e581ac",
+      "seconds": 11.411530276760459
+    },
+    {
+      "hardware": "low_field",
+      "control": "missing_line",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "sampling_pattern",
+        "single_shot_epi"
+      ],
+      "sequence_sha256": "647afc0310c2ff4757620622d980d14cd1528632d9534a31f727f1b430f2fcfa",
+      "seconds": 11.681621620431542
+    },
+    {
+      "hardware": "low_field",
+      "control": "shift_selection",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "selection_leakage_ratio": 1.580005243620465,
+        "diagnostic_signal_fraction": 0.24377875096999801
+      },
+      "failed_checks": [
+        "rfov_inside_signal",
+        "spatial_selection"
+      ],
+      "sequence_sha256": "11dc0560d882edbe810f38e573ca5f2f099b7b976701de1eb8131b53b0912d25",
+      "seconds": 19.607112132012844
+    },
+    {
+      "hardware": "low_field",
+      "control": "wrong_receiver_phase",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "selection_leakage_ratio": 0.07169722242206814,
+        "diagnostic_signal_fraction": 0.31997748424861167,
+        "ideal_image_nrmse": 0.3967936687876675,
+        "ideal_complex_image_nrmse": 0.854098722278233,
+        "ideal_outside_object_energy_fraction": 0.015869301504203154,
+        "ideal_signal_fraction": 0.914182941727736,
+        "ideal_absolute_rms_signal": 0.019231818911151687,
+        "ideal_fat_mean_signal": 0.010053691714437136,
+        "ideal_myocardium_mean_signal": 0.02721120631408733,
+        "ideal_blood_mean_signal": 0.04865575324450689,
+        "case_image_nrmse": 0.10741645177605841,
+        "case_complex_image_nrmse": 0.5957295714233258,
+        "case_outside_object_energy_fraction": 0.00026694483162359445,
+        "case_signal_fraction": 0.9706880721542287,
+        "case_absolute_rms_signal": 0.020420938618196653,
+        "case_fat_mean_signal": 0.001885863008757769,
+        "case_myocardium_mean_signal": 0.027164099424983337,
+        "case_blood_mean_signal": 0.05333299385702624,
+        "ideal_normalized_squared_error": 0.7294846273973102,
+        "case_normalized_squared_error": 0.35489372226821947,
+        "case_normalized_squared_magnitude_error": 0.011493695012023075,
+        "case_magnitude_image_nrmse": 0.10720865175918907,
+        "case_normalized_squared_phase_error": 0.3668978102178633,
+        "case_phase_error_rad": 0.6057209012555728,
+        "case_min_tissue_signal_fraction": 0.9737968758320754,
+        "case_contrast_retention": 0.8249910578080364,
+        "temporal_nrmse": 0.007878449817927754,
+        "temporal_raw_nrmse": 0.007878449817927754,
+        "temporal_image_nrmse": 0.007645841655761016,
+        "case_vs_ideal_image_nrmse": 0.4025147285598626,
+        "case_signal_retention": 1.0618308498295734
+      },
+      "failed_checks": [
+        "case_complex_image_nrmse",
+        "case_phase_error_rad",
+        "ideal_complex_image_nrmse"
+      ],
+      "sequence_sha256": "ee47de11eee7ce6ffa22b5d02feafde680ec898c5b6e6346ef7c9dc35122d98f",
+      "seconds": 45.53174373321235
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "positive",
+      "expected_outcome": true,
+      "status": "passed",
+      "metrics": {
+        "selection_leakage_ratio": 0.07961793429344927,
+        "diagnostic_signal_fraction": 0.322179084813186,
+        "ideal_image_nrmse": 0.37595856770879066,
+        "ideal_complex_image_nrmse": 1.320527908765963,
+        "ideal_outside_object_energy_fraction": 0.005497681539389911,
+        "ideal_signal_fraction": 0.8066018073382776,
+        "ideal_absolute_rms_signal": 0.016577197458493485,
+        "ideal_fat_mean_signal": 0.0028966285590917126,
+        "ideal_myocardium_mean_signal": 0.019313295910574325,
+        "ideal_blood_mean_signal": 0.03652745224539882,
+        "case_image_nrmse": 0.1197203044908503,
+        "case_complex_image_nrmse": 0.13612315704141792,
+        "case_outside_object_energy_fraction": 0.00034979560621506623,
+        "case_signal_fraction": 1.001447641594485,
+        "case_absolute_rms_signal": 0.020581231962791244,
+        "case_fat_mean_signal": 0.0021632137400856865,
+        "case_myocardium_mean_signal": 0.0211981832296438,
+        "case_blood_mean_signal": 0.05604547520932832,
+        "ideal_normalized_squared_error": 1.7437939578298074,
+        "case_normalized_squared_error": 0.018529513882922524,
+        "case_normalized_squared_magnitude_error": 0.01429504302655736,
+        "case_magnitude_image_nrmse": 0.1195618794873908,
+        "case_normalized_squared_phase_error": 0.003778448808901675,
+        "case_phase_error_rad": 0.06146908823873732,
+        "case_min_tissue_signal_fraction": 1.0223562153937475,
+        "case_contrast_retention": 0.9453263232530453,
+        "temporal_nrmse": 0.00600002396590465,
+        "temporal_raw_nrmse": 0.005991706277744218,
+        "temporal_image_nrmse": 0.00600002396590465,
+        "case_vs_ideal_image_nrmse": 0.4585165443716076,
+        "case_signal_retention": 1.2415386867607257
+      },
+      "failed_checks": [
+        "ideal_complex_image_nrmse"
+      ],
+      "sequence_sha256": "b8642e8ae31c617470b95eaf6ec9449098737b154e84206b28e0ecdae7d365ee",
+      "seconds": 46.41919653117657
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "no_selection",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "two_dimensional_rf_encoding"
+      ],
+      "sequence_sha256": "892c1142e7b369ee784452f7318ba528cf3493c6d38c04b37c372b3468137d96",
+      "seconds": 1.6149237528443336
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "one_dimensional_rf",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "two_dimensional_rf_encoding"
+      ],
+      "sequence_sha256": "0191a7e59761a5c3a47f6858e8172bd4759b789d54deb0c5cd74ba77d3c98382",
+      "seconds": 31.989121057093143
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "wrong_polarity",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "single_shot_epi"
+      ],
+      "sequence_sha256": "0590cebc1e8e1fdedf3f29306a1e61f13cf5dab39ab707261fd17d90e707e428",
+      "seconds": 11.585111556574702
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "full_fov",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "sampling_pattern",
+        "single_shot_epi"
+      ],
+      "sequence_sha256": "8f6caf9ab62aac49388127ab7237667ec6daaac1a3d7c4d2aa592b54e94d9646",
+      "seconds": 11.642786843702197
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "missing_line",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "sampling_pattern",
+        "single_shot_epi"
+      ],
+      "sequence_sha256": "79129890757a3fcb6d9534900baa649ad759e84c93c57aeb281a11fc98f814a8",
+      "seconds": 11.72443937510252
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "shift_selection",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "selection_leakage_ratio": 1.531471165625178,
+        "diagnostic_signal_fraction": 0.24438758962653856
+      },
+      "failed_checks": [
+        "rfov_inside_signal",
+        "spatial_selection"
+      ],
+      "sequence_sha256": "4a72c850da6f0825d0355aec2ca4b37ee64fed4405466837a9eefef9277124da",
+      "seconds": 20.415909375995398
+    },
+    {
+      "hardware": "standard_1_5t",
+      "control": "wrong_receiver_phase",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "selection_leakage_ratio": 0.07961793429344925,
+        "diagnostic_signal_fraction": 0.3221790848131861,
+        "ideal_image_nrmse": 0.37594179000849565,
+        "ideal_complex_image_nrmse": 1.2757340539903756,
+        "ideal_outside_object_energy_fraction": 0.005498970305985811,
+        "ideal_signal_fraction": 0.806553778039816,
+        "ideal_absolute_rms_signal": 0.01657616256904855,
+        "ideal_fat_mean_signal": 0.002905694076116973,
+        "ideal_myocardium_mean_signal": 0.019340240171472605,
+        "ideal_blood_mean_signal": 0.03651794758379076,
+        "case_image_nrmse": 0.11976786658909133,
+        "case_complex_image_nrmse": 0.5981913430895779,
+        "case_outside_object_energy_fraction": 0.00034775140040533225,
+        "case_signal_fraction": 1.00147683332902,
+        "case_absolute_rms_signal": 0.02058182913596104,
+        "case_fat_mean_signal": 0.002149916239874639,
+        "case_myocardium_mean_signal": 0.02126376870321967,
+        "case_blood_mean_signal": 0.05603717324864774,
+        "ideal_normalized_squared_error": 1.6274973765107188,
+        "case_normalized_squared_error": 0.357832882947313,
+        "case_normalized_squared_magnitude_error": 0.014305546996893043,
+        "case_magnitude_image_nrmse": 0.11960579834143929,
+        "case_normalized_squared_phase_error": 0.3577329221919219,
+        "case_phase_error_rad": 0.5981077847611765,
+        "case_min_tissue_signal_fraction": 1.022205651333179,
+        "case_contrast_retention": 0.9426224457832992,
+        "temporal_nrmse": 0.006000023902494613,
+        "temporal_raw_nrmse": 0.005991706277744223,
+        "temporal_image_nrmse": 0.006000023902494613,
+        "case_vs_ideal_image_nrmse": 0.4586170121156322,
+        "case_signal_retention": 1.241652225008457
+      },
+      "failed_checks": [
+        "case_complex_image_nrmse",
+        "case_phase_error_rad",
+        "ideal_complex_image_nrmse"
+      ],
+      "sequence_sha256": "fa79e8da389b6d79da1d20c64a38d897cefbb3c97111728f7faf2272d6a1a99b",
+      "seconds": 46.41598814725876
+    },
+    {
+      "hardware": "high_performance",
+      "control": "positive",
+      "expected_outcome": true,
+      "status": "passed",
+      "metrics": {
+        "selection_leakage_ratio": 0.04663753898971945,
+        "diagnostic_signal_fraction": 0.32930373391460366,
+        "ideal_image_nrmse": 0.42414362455084653,
+        "ideal_complex_image_nrmse": 1.3803042917855775,
+        "ideal_outside_object_energy_fraction": 0.013145363668037566,
+        "ideal_signal_fraction": 0.8333780857122332,
+        "ideal_absolute_rms_signal": 0.01661435298116522,
+        "ideal_fat_mean_signal": 0.0028515636869757273,
+        "ideal_myocardium_mean_signal": 0.011095980488847017,
+        "ideal_blood_mean_signal": 0.046219858523575616,
+        "case_image_nrmse": 0.189631020815766,
+        "case_complex_image_nrmse": 0.21590933573396928,
+        "case_outside_object_energy_fraction": 0.0007794329220453814,
+        "case_signal_fraction": 1.0158928838769379,
+        "case_absolute_rms_signal": 0.02025284379645927,
+        "case_fat_mean_signal": 0.0040551958777172315,
+        "case_myocardium_mean_signal": 0.023330442257564404,
+        "case_blood_mean_signal": 0.055302047940175465,
+        "ideal_normalized_squared_error": 1.9052399379216844,
+        "case_normalized_squared_error": 0.04661684125708387,
+        "case_normalized_squared_magnitude_error": 0.03592043888141139,
+        "case_magnitude_image_nrmse": 0.18952688168545218,
+        "case_normalized_squared_phase_error": 0.011560294041524949,
+        "case_phase_error_rad": 0.10751880785018475,
+        "case_min_tissue_signal_fraction": 1.0554183838757911,
+        "case_contrast_retention": 0.9578299924269436,
+        "temporal_nrmse": 0.00647768622207475,
+        "temporal_raw_nrmse": 0.006376754280975323,
+        "temporal_image_nrmse": 0.00647768622207475,
+        "case_vs_ideal_image_nrmse": 0.5214186872254379,
+        "case_signal_retention": 1.2189968408290592
+      },
+      "failed_checks": [
+        "ideal_complex_image_nrmse"
+      ],
+      "sequence_sha256": "6a6a9f8bdfabf1e86698f92cd062e8e6a84180570a3e880f7042f33a0c450ba9",
+      "seconds": 47.211667036637664
+    },
+    {
+      "hardware": "high_performance",
+      "control": "no_selection",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "two_dimensional_rf_encoding"
+      ],
+      "sequence_sha256": "502fac5ac58508285f45d42d0935ccd8de289d7af9d6c93b521a85e0757457ef",
+      "seconds": 1.4225810915231705
+    },
+    {
+      "hardware": "high_performance",
+      "control": "one_dimensional_rf",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "two_dimensional_rf_encoding"
+      ],
+      "sequence_sha256": "9c841675693ea8595c1cb53b9a0b3cae657de2c29d36ee83d89070b58287fc5c",
+      "seconds": 31.2058785893023
+    },
+    {
+      "hardware": "high_performance",
+      "control": "wrong_polarity",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "single_shot_epi"
+      ],
+      "sequence_sha256": "a2245ef7a0bd6a09814b3decd5814be59cbac288f60691e090348e3c04183dd1",
+      "seconds": 11.774950161576271
+    },
+    {
+      "hardware": "high_performance",
+      "control": "full_fov",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "sampling_pattern",
+        "single_shot_epi"
+      ],
+      "sequence_sha256": "cccbf386ccc00d62b89cc1d1272bed33c5bbff48d592491c36e3bd152a814e54",
+      "seconds": 12.09954016469419
+    },
+    {
+      "hardware": "high_performance",
+      "control": "missing_line",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {},
+      "failed_checks": [
+        "sampling_pattern",
+        "single_shot_epi"
+      ],
+      "sequence_sha256": "37bffb8a0346722d2d3a13cc754fb47a0ff12e77d8a2128adda3cb67846628ee",
+      "seconds": 11.705563711002469
+    },
+    {
+      "hardware": "high_performance",
+      "control": "shift_selection",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "selection_leakage_ratio": 1.5526383015080074,
+        "diagnostic_signal_fraction": 0.25059209315832714
+      },
+      "failed_checks": [
+        "rfov_inside_signal",
+        "spatial_selection"
+      ],
+      "sequence_sha256": "d8c4af3b27a30c23b737d71c55a854944a0d2f261d15240676905014d322314f",
+      "seconds": 20.001923082396388
+    },
+    {
+      "hardware": "high_performance",
+      "control": "wrong_receiver_phase",
+      "expected_outcome": true,
+      "status": "failed",
+      "metrics": {
+        "selection_leakage_ratio": 0.046637538989719445,
+        "diagnostic_signal_fraction": 0.32930373391460366,
+        "ideal_image_nrmse": 0.42386047849267255,
+        "ideal_complex_image_nrmse": 1.3572120245197634,
+        "ideal_outside_object_energy_fraction": 0.013148026496702672,
+        "ideal_signal_fraction": 0.833428642539377,
+        "ideal_absolute_rms_signal": 0.01661534421452541,
+        "ideal_fat_mean_signal": 0.002853085479687671,
+        "ideal_myocardium_mean_signal": 0.011142561089273867,
+        "ideal_blood_mean_signal": 0.04622178426465074,
+        "case_image_nrmse": 0.18947572109796407,
+        "case_complex_image_nrmse": 0.6243347277571719,
+        "case_outside_object_energy_fraction": 0.0007759796130725224,
+        "case_signal_fraction": 1.015888686279208,
+        "case_absolute_rms_signal": 0.020252769017925394,
+        "case_fat_mean_signal": 0.00404323832799656,
+        "case_myocardium_mean_signal": 0.023368951844987346,
+        "case_blood_mean_signal": 0.055283896437140136,
+        "ideal_normalized_squared_error": 1.8420244795010348,
+        "case_normalized_squared_error": 0.389793852283622,
+        "case_normalized_squared_magnitude_error": 0.03586330590184117,
+        "case_magnitude_image_nrmse": 0.18937609643733067,
+        "case_normalized_squared_phase_error": 0.36754580890697275,
+        "case_phase_error_rad": 0.6062555640214552,
+        "case_min_tissue_signal_fraction": 1.0550711602954115,
+        "case_contrast_retention": 0.9558913266657498,
+        "temporal_nrmse": 0.006477686234369731,
+        "temporal_raw_nrmse": 0.006376754280975332,
+        "temporal_image_nrmse": 0.006477686234369731,
+        "case_vs_ideal_image_nrmse": 0.5210482559389419,
+        "case_signal_retention": 1.218919617700131
+      },
+      "failed_checks": [
+        "case_complex_image_nrmse",
+        "case_phase_error_rad",
+        "ideal_complex_image_nrmse"
+      ],
+      "sequence_sha256": "eb01dddd312d8bf7db2e4e08ee51d24fb768c352423c4e5f39fcea3803ddd322",
+      "seconds": 47.03903088904917
+    }
+  ]
+}

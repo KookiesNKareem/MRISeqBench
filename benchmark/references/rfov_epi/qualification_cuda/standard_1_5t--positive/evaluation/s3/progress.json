@@ -1,0 +1,106 @@
+{
+  "spatial_refinement": [
+    {
+      "samples": 32768,
+      "replicates": 8,
+      "spins": [
+        24576,
+        24576,
+        24576,
+        24576,
+        24576,
+        24576,
+        24576,
+        24576
+      ],
+      "ideal_intervals": {
+        "complex_image_nrmse": [
+          1.3196681179514749,
+          1.321387140137979
+        ],
+        "normalized_squared_error": [
+          1.7415239415375876,
+          1.7460639741220272
+        ],
+        "signal_fraction": [
+          0.8059466154149233,
+          0.80725646748972
+        ],
+        "outside_object_energy_fraction": [
+          0.005437161601325051,
+          0.0055582014774547715
+        ]
+      },
+      "case_intervals": {
+        "complex_image_nrmse": [
+          0.13438501575475198,
+          0.13783938227676482
+        ],
+        "normalized_squared_error": [
+          0.01805933245940494,
+          0.01899969530644011
+        ],
+        "signal_fraction": [
+          1.001087868787548,
+          1.0018072851984645
+        ],
+        "outside_object_energy_fraction": [
+          0.0003320970662554248,
+          0.00036749414617470765
+        ],
+        "normalized_squared_magnitude_error": [
+          0.013791657908143318,
+          0.014798428144971404
+        ],
+        "magnitude_image_nrmse": [
+          0.11743788957633443,
+          0.12164879015005206
+        ],
+        "normalized_squared_phase_error": [
+          0.0036144018822148417,
+          0.003942495735588508
+        ],
+        "phase_error_rad": [
+          0.06011989589324687,
+          0.06278929634570297
+        ],
+        "min_tissue_signal_fraction": [
+          1.0209373798578567,
+          1.0237750509296384
+        ],
+        "contrast_retention": [
+          0.9362082756266668,
+          0.9544443708794239
+        ]
+      },
+      "ideal_precision_errors": {
+        "normalized_squared_error": 0.0022700162922197897,
+        "signal_fraction": 0.0006551919233542813,
+        "outside_object_energy_fraction": 6.051993806486036e-05
+      },
+      "case_precision_errors": {
+        "normalized_squared_error": 0.00047018142351758566,
+        "signal_fraction": 0.00035977280693710867,
+        "outside_object_energy_fraction": 1.7698539959641417e-05,
+        "normalized_squared_magnitude_error": 0.0005033851184140428,
+        "normalized_squared_phase_error": 0.00016404692668683333,
+        "min_tissue_signal_fraction": 0.0014188355358908389,
+        "contrast_retention": 0.009118047626378578
+      },
+      "decision_basis": {
+        "ideal": "interval_certified",
+        "case": "precision_target"
+      }
+    }
+  ],
+  "temporal_refinement": [
+    {
+      "step_s": 0.001,
+      "rf_step_s": 2e-05,
+      "nrmse": 0.00600002396590465,
+      "raw_nrmse": 0.005991706277744218,
+      "image_nrmse": 0.00600002396590465
+    }
+  ],
+  "cache_hits": 0
+}

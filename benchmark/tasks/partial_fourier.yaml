@@ -11,4 +11,4 @@ sequence:
   duration_s: 6
   sampling:
     partial_fourier_fraction: 0.75
-evaluation: s3@2
+evaluation: s3@3

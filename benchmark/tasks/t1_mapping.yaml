@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: t1_mapping
-objective: Acquire three ECG-triggered cardiac inversion-prepared Cartesian bSSFP
+objective: >-
+  Acquire three ECG-triggered cardiac inversion-prepared Cartesian bSSFP
   images with TI 100, 400 and 1200 ms measured from the inversion-pulse center to
   each image's central-k-space echo. Acquire all source images at the same cardiac
   phase and retain their preparation metadata; an inversion may occur in a preceding
@@ -11,8 +12,15 @@ objective: Acquire three ECG-triggered cardiac inversion-prepared Cartesian bSSF
   before the imaging window. Balance net gradient area on all three axes in every
   readout TR; alternate excitation RF phase by 180 degrees between readout TRs and
   keep receiver phases coherent with that RF phase cycle.
+  Use symmetric echo timing in every acquired readout TR: TE is measured from the
+  excitation RF center to the readout k-space-center echo, and abs(TE - TR/2)
+  must be no more than max(0.01 ms, 0.05 times TR).
+  Each prepared frame must have exactly one inversion RF event before the bSSFP
+  readout train, with a waveform-derived nominal flip of at least 170 degrees.
+  Inversion timing is measured between RF center and central-k-space echo; the
+  timing tolerance is twice the larger of the RF and block-duration rasters.
 object: cardiac_2d@1
-evaluation: s4@1
+evaluation: s4@2
 sequence:
   level: S4
   capabilities:

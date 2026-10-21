@@ -1,6 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: adiabatic_inversion
-objective: Create an ECG-triggered cardiac adiabatic inversion-prepared Cartesian
+objective: >-
+  Create an ECG-triggered cardiac adiabatic inversion-prepared Cartesian
   bSSFP acquisition. Use a 10 ms hyperbolic-secant inversion pulse and TI 600 ms from
   inversion-pulse center to the central-k-space echo. Every acquired ADC sample must
   lie between 600 and 800 ms after its ECG R-wave trigger, using nominal RR 1000 ms
@@ -9,8 +10,15 @@ objective: Create an ECG-triggered cardiac adiabatic inversion-prepared Cartesia
   area on all three axes in every readout TR; alternate excitation RF phase by 180
   degrees between readout TRs and keep receiver phases coherent with that RF phase
   cycle.
+  Use symmetric echo timing in every acquired readout TR: TE is measured from the
+  excitation RF center to the readout k-space-center echo, and abs(TE - TR/2)
+  must be no more than max(0.01 ms, 0.05 times TR).
+  Each prepared frame must have exactly one inversion RF event before the bSSFP
+  readout train, with a waveform-derived nominal flip of at least 170 degrees.
+  Inversion timing is measured between RF center and central-k-space echo; the
+  timing tolerance is twice the larger of the RF and block-duration rasters.
 object: cardiac_2d@1
-evaluation: s4@1
+evaluation: s4@2
 sequence:
   level: S4
   capabilities:

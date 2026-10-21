@@ -1,6 +1,6 @@
 # S1 evaluation
 
-Contract: [`s1@3`](../benchmark/evaluators/s1.yaml). Qualified on all three scanner profiles.
+Contract: [`s1@4`](../benchmark/evaluators/s1.yaml). Requalification on GPU pending after the SAR (quadrature) and receiver-phase/role changes.
 
 S1 covers Cartesian GRE, spin echo and bSSFP. Waveform-derived
 checks verify sequence identity, physical FOV/matrix coverage, echo formation,
@@ -12,6 +12,13 @@ with scanner-specific T1/T2, intrinsic fat shift and declared off-resonance.
 Independent full-grid targets hold the finite-RF tissue response at the central
 echo, including intrinsic fat. The RF-only phase oracle adds declared B0;
 submitted receiver errors, readout-induced fat displacement and blur remain errors.
+
+Receiver phase convention (S1–S3, shared): targets use the excitation's FID
+convention for every echo. After excitation with RF phase p the matching ADC
+phase is p. A refocusing pulse with RF phase q maps the echo to ADC phase
+2q - (previous phase) + pi. So 90x-180y (CPMG) echoes use ADC phase 0, and
+90x-180x echoes use pi. A wrong receiver phase (e.g. pi off) fails complex
+NRMSE and phase RMS even when the magnitude image is correct.
 
 Declared-physics image limits:
 
@@ -30,8 +37,8 @@ B0-aware reconstruction is permitted.
 
 Spatial quadrature and temporal integration refine until the numerical verdict
 resolves. Unresolved numerical results remain explicit. Passing sequences return
-`passed`; structural and hardware failures still fail. SAR is evaluated on final
-submissions.
+`passed`; structural and hardware failures still fail. SAR (quadrature/CP body coil;
+formula in [S2](S2_EVALUATION.md#sar-and-validation-tools)) is evaluated on final submissions.
 
 Artifacts contain submitted-byte hashes, waveform checks, image arrays,
 metrics and numerical provenance. Image limits are defined in the versioned YAML.

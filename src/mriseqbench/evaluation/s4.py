@@ -155,11 +155,12 @@ def _inversion_response(pulse, field):
     """
     offsets = np.linspace(-520, 70, 17) * field / 3
     magnetization = np.tile([0.0, 0.0, 1.0], (len(offsets), 1))
-    mids = (pulse.edges[:-1] + pulse.edges[1:]) / 2
-    for signal, dt, mid in zip(pulse.signal, np.diff(pulse.edges), mids, strict=True):
-        rf = signal * np.exp(
-            1j * (pulse.phase + 2 * np.pi * pulse.frequency * (mid - pulse.start))
-        )
+    # Match KomaMRICore: RF frequency offsets act in the RF frame (Bz - df/gamma),
+    # so an offset RF pulse is resonant with spins at +df. Folding +df into the
+    # envelope phase under this left-handed rotation would mirror the band.
+    detuning = offsets - pulse.frequency
+    for signal, dt in zip(pulse.signal, np.diff(pulse.edges), strict=True):
+        rf = signal * np.exp(1j * pulse.phase)
         axes = (
             2
             * np.pi
@@ -168,7 +169,7 @@ def _inversion_response(pulse, field):
                 (
                     np.full(len(offsets), rf.real),
                     np.full(len(offsets), rf.imag),
-                    offsets,
+                    detuning,
                 )
             )
         )
@@ -423,6 +424,32 @@ def _mapping_refinement(
     acceptance shortcut. Each stage has separate frame artifacts; checkpointed
     progress records the unresolved interval before starting further simulation.
     """
+    # A numerically certified failed frame already falsifies the conjunction
+    # of image and mapping requirements. Further mapping refinement cannot
+    # change that verdict; retain the measured frame checks and metrics.
+    failed_frames = [
+        {
+            "frame": i,
+            "failed_checks": [
+                c["name"] for c in result["image_checks"] if c.get("passed") is False
+            ],
+        }
+        for i, result in enumerate(results)
+        if any(c.get("passed") is False for c in result["image_checks"])
+    ]
+    if failed_frames and all(result.get("numerically_converged") for result in results):
+        return (
+            acquisitions,
+            results,
+            [],
+            {},
+            {
+                "stop_reason": "certified_image_failure",
+                "mapping_not_evaluated": True,
+                "certified_failed_frames": failed_frames,
+                "acceptance_unchanged": "All image and mapping requirements must pass; a certified image failure suffices to fail",
+            },
+        )
     cache, history = {}, []
     initial = case["evaluation"].get("spatial_samples") or 32768
     budget = case["evaluation"].get("spatial_max_samples") or min(4 * initial, 1048576)
@@ -467,9 +494,29 @@ def _mapping_refinement(
             return acquisitions, results, checks, metrics, numerical
 
 
-def evaluate_s4(submission, case, root, workspace, *, deadline=None):
+def evaluate_s4(
+    submission, case, root, workspace, *, deadline=None, physio_resolution=None
+):
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
+    if physio_resolution is None:
+        from .s4_physio import InvalidPhysioSequence, resolve_sequence
+
+        try:
+            submission, physio_resolution = resolve_sequence(
+                submission, case, workspace / "physio"
+            )
+        except InvalidPhysioSequence as exc:
+            return {
+                "status": "failed",
+                "checks": [check("physio_trigger_resolution", False, str(exc))],
+                "metrics": {},
+                "sequence_valid": False,
+                "image_verdict": "not_evaluated",
+                "application_checks": [],
+                "evaluation_contract": f"s4@{case['evaluation']['version']}",
+                "reconstruction": "bart_cartesian_fft@1",
+            }
     try:
         acq = inspect_sequence(submission, case)
     except MissingExcitation as exc:
@@ -483,7 +530,7 @@ def evaluate_s4(submission, case, root, workspace, *, deadline=None):
             "ideal_imaging_success": None,
             "imaging_success_under_case_physics": None,
             "image_acceptance_basis": "case_physics",
-            "evaluation_contract": "s4@1",
+            "evaluation_contract": f"s4@{case['evaluation']['version']}",
             "reconstruction": "bart_cartesian_fft@1",
         }
     report = {
@@ -495,10 +542,14 @@ def evaluate_s4(submission, case, root, workspace, *, deadline=None):
         "ideal_imaging_success": None,
         "imaging_success_under_case_physics": None,
         "image_acceptance_basis": "case_physics",
-        "evaluation_contract": "s4@1",
+        "evaluation_contract": f"s4@{case['evaluation']['version']}",
         "reconstruction": "bart_cartesian_fft@1",
         "application_checks": [],
+        "physio": physio_resolution,
     }
+    report["checks"].insert(
+        0, check("physio_trigger_resolution", True, physio_resolution)
+    )
     write_json(workspace / "sequence.json", acq.measurements)
     if not report["sequence_valid"]:
         return report
@@ -649,7 +700,6 @@ def phase_reference(
     lines = [next(j for j, ids in enumerate(acq.lines) if i in ids) for i in idx]
     line = lines[0]
     a = copy(acq)
-    phase_windows = None
     a.pulses = [p for p in acq.pulses if p.start < acq.adc[idx[-1]]]
     a.adc = acq.adc[idx]
     a.adc_phase = expected_receiver_phase(acq)[idx]
@@ -693,7 +743,6 @@ def phase_reference(
                 individual=True,
                 step_s=0.001 / temporal_scale / refinement,
                 rf_step_s=20e-6 / temporal_scale / refinement,
-                phase_windows=phase_windows,
             ).mean(axis=0)
             image = np.zeros(matrix, complex)
             np.add.at(image, tuple(loc.T), values)
@@ -744,7 +793,7 @@ def phase_reference(
             "echo_time_s": float(a.adc[0]),
             "line": line,
             "sample_indices": idx.tolist(),
-            "echo_contexts": len(phase_windows) if phase_windows is not None else 1,
+            "echo_contexts": 1,
             "temporal_phase_chord_rms": temporal,
             "reference_energy_coverage": coverage,
             "spatial_model": (

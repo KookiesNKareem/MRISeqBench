@@ -5,13 +5,13 @@ from dataclasses import dataclass
 import numpy as np
 from pypulseq import Opts, Sequence
 
+from .rf_waveform import rf_samples
+
 FAMILIES = {
     "gre_t1w",
     "gre_t2star",
     "spin_echo_t2w",
     "bssfp",
-    "rich_geometry_gre",
-    "volume_gre",
 }
 
 
@@ -20,24 +20,11 @@ class MissingExcitation(ValueError):
 
 
 def family(case):
-    return case["task"]["id"].removesuffix("_research")
+    return case["task"]["id"]
 
 
 def check(name, passed, detail):
     return {"name": name, "passed": bool(passed), "detail": detail}
-
-
-def rf_samples(rf, raster):
-    """Exact sample-hold convention already enforced by the SAR integrator."""
-    t = np.asarray(rf.t)
-    y = np.asarray(rf.signal, dtype=complex)
-    if np.all(y == y[0]):
-        return np.array([0.0, float(rf.shape_dur)]), y[:1]
-    expected = (np.arange(len(y)) + 0.5) * raster
-    if not np.allclose(t, expected, rtol=0, atol=1e-12):
-        raise ValueError("S1 requires regular-raster or constant RF")
-    change = np.r_[0, np.flatnonzero(np.diff(y) != 0) + 1, len(y)]
-    return change * raster, y[change[:-1]]
 
 
 def rotate(m, axis):
@@ -127,13 +114,14 @@ def inspect_sequence(path, case):
                 np.sum(mids * np.abs(values) * widths)
                 / max(np.sum(np.abs(values) * widths), 1e-30)
             )
-            start = clock + float(rf.delay)
+            origin = clock + float(rf.delay)
+            start = origin + edges[0]
             pulses.append(
                 Pulse(
                     start,
-                    start + edges[-1],
-                    start + center,
-                    edges + start,
+                    origin + edges[-1],
+                    origin + center,
+                    edges + origin,
                     values,
                     freq,
                     phase,
@@ -221,9 +209,14 @@ def inspect_sequence(path, case):
             else 1e6
         )
     excitation, te = np.asarray(excitation), np.asarray(te)
-    # The final acquired TR ends at the actual sequence end, not at a copied
-    # preceding spacing. Otherwise a truncated final balanced/TR segment passes.
-    tr_all = np.r_[np.diff(exct), clock - exc[-1].block_start]
+    # The final acquired TR ends at the actual sequence end, so a truncated final
+    # segment fails. Time after one full spacing (e.g. the last readout's
+    # rewinder, which belongs to the next TR's timeline) is not a longer TR.
+    remaining = clock - exc[-1].block_start
+    tr_all = np.r_[
+        np.diff(exct),
+        min(remaining, exct[-1] - exct[-2]) if len(exct) > 1 else remaining,
+    ]
     tr = tr_all[np.maximum(excitation, 0)]
     flips = np.array([p.flip for p in exc])[np.maximum(excitation, 0)]
     acquired = excitation >= 0
@@ -295,7 +288,24 @@ def inspect_sequence(path, case):
         check(
             "fov_mm",
             cartesian and all(steps) and in_bounds and coverage == 1.0,
-            {"fov_mm": spec["fov_mm"], "spacing_cycles_per_m": (1 / fov).tolist()},
+            {
+                "fov_mm": spec["fov_mm"],
+                "spacing_cycles_per_m": (1 / fov).tolist(),
+                "interpretation": "requested FOV; acceptance also requires the complete physical Cartesian grid",
+                "max_lattice_error_samples": residual,
+                "lattice_error_limit_samples": 0.01,
+                "observed_k_min_cycles_per_m": k.min(axis=0).tolist(),
+                "observed_k_max_cycles_per_m": k.max(axis=0).tolist(),
+                "unique_samples": unique,
+                "required_samples": int(np.prod(matrix)),
+                "coverage": coverage,
+                "conditions": {
+                    "cartesian_lattice_and_plane": bool(cartesian),
+                    "one_readout_axis_and_unit_steps": all(steps),
+                    "indices_in_bounds": in_bounds,
+                    "complete_grid": coverage == 1.0,
+                },
+            },
         ),
         check(
             "single_line_per_excitation",
@@ -343,17 +353,11 @@ def inspect_sequence(path, case):
         and np.max(np.abs(areas) * np.r_[fov, np.ones(3 - dims) * min(fov)]) <= 0.01
     )
     if fam == "spin_echo_t2w":
-        detailed = case["task"].get("prompt_mode") != "research"
         valid = (
             all(n == 1 for n in ref_counts)
             and all(n == 1 for n in ref_counts_tr)
-            and (
-                not detailed
-                or (
-                    np.all(np.abs(flips - 90) <= 2)
-                    and all(abs(p.flip - 180) <= 2 for p in pulses if p.refocusing)
-                )
-            )
+            and np.all(np.abs(flips - 90) <= 2)
+            and all(abs(p.flip - 180) <= 2 for p in pulses if p.refocusing)
             and np.max(ref_errors) <= max(seq.rf_raster_time, 1e-6)
         )
         checks.append(
@@ -384,8 +388,7 @@ def inspect_sequence(path, case):
             len(dphase) > 0
             and np.max(np.abs(np.angle(np.exp(1j * (dphase - dphase[0]))))) < 0.01
         )
-        if case["task"].get("prompt_mode") != "research":
-            phase_ok &= bool(np.all(np.abs(np.abs(dphase) - np.pi) < 0.01))
+        phase_ok &= bool(np.all(np.abs(np.abs(dphase) - np.pi) < 0.01))
         checks.append(
             check(
                 "bssfp",

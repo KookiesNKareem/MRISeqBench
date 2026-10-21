@@ -5,6 +5,8 @@ import copy
 import numpy as np
 import pypulseq as pp
 
+from tests.fixtures.gradients import trapezoid
+
 
 def make_sequence(
     case,
@@ -32,6 +34,7 @@ def make_sequence(
     water_selective_refocusing_order=0,
     grase_spin_echo_spacing=None,
     centric_tse=False,
+    spiral_adc_oversampling=1,
 ):
     spec, h = case["task"]["sequence"], case["hardware"]
     fam = case["task"]["id"]
@@ -143,7 +146,7 @@ def make_sequence(
     def shift(target, duration=0.0006):
         area = np.asarray(target) - moment - coherence
         events = [
-            pp.make_trapezoid(axis, area=value, duration=duration, system=system)
+            trapezoid(axis, area=value, duration=duration, system=system)
             for axis, value in zip("xyz", area, strict=True)
             if abs(value) > 1e-10
         ]
@@ -165,7 +168,7 @@ def make_sequence(
         direction = np.array([np.cos(angle), np.sin(angle), 0.0]) * polarity
         normal = np.array([-np.sin(angle), np.cos(angle), 0.0])
         grads = [
-            pp.make_trapezoid(
+            trapezoid(
                 axis,
                 flat_area=component * n / fov[0],
                 flat_time=flat,
@@ -211,7 +214,7 @@ def make_sequence(
         # The phase blip fits in the fall ramp, after the acquired flat top.
         if overlap_blips and next_ky is not None:
             grads.append(
-                pp.make_trapezoid(
+                trapezoid(
                     "y",
                     area=(next_ky - ky) / fov[1],
                     duration=rise,
@@ -225,9 +228,7 @@ def make_sequence(
         # Spoil within the registered object dimensions; a z spoiler cannot
         # destroy coherence on the benchmark's zero-thickness 2D plane.
         axis = "z" if len(fov) == 3 else "x"
-        add(
-            pp.make_trapezoid(axis, area=4 * n / fov[0], duration=0.0012, system=system)
-        )
+        add(trapezoid(axis, area=4 * n / fov[0], duration=0.0012, system=system))
         wait(shot_start + tr)
 
     if fam in {"epi_single_shot", "epi_multishot", "tse_t2w", "grase", "propeller_tse"}:
@@ -368,13 +369,18 @@ def make_sequence(
             if fam == "ute_radial":
                 # Dedicated centre-out flat readout with first sample at TE .5 ms.
                 direction = np.array([np.cos(angle), np.sin(angle)])
+                amplitude = (n / 2 - 0.25) / fov[0] / 0.00064
+                rise = max(
+                    0.0001,
+                    np.ceil(amplitude / system.max_slew / 1e-5 - 1e-9) * 1e-5,
+                )
                 grads = [
-                    pp.make_trapezoid(
+                    trapezoid(
                         axis,
-                        amplitude=component * (n / 2 - 0.25) / fov[0] / 0.00064,
+                        amplitude=component * amplitude,
                         flat_time=0.00064,
-                        rise_time=0.0001,
-                        fall_time=0.0001,
+                        rise_time=rise,
+                        fall_time=rise,
                         system=system,
                     )
                     for axis, component in zip("xy", direction, strict=True)
@@ -383,13 +389,13 @@ def make_sequence(
                 # Precompensate half the rise area, then centre-out sampling.
                 target = np.zeros(3)
                 for g in grads:
-                    target["xyz".index(g.channel)] = -g.amplitude * 0.0001 / 2
+                    target["xyz".index(g.channel)] = -g.amplitude * rise / 2
                 shift(target, duration=ute_pre_duration)
-                wait(exc_time + 0.0005 - 0.0001 - 0.00064 / n / 2)
+                wait(exc_time + 0.0005 - rise - 0.00064 / n / 2)
                 adc = pp.make_adc(
                     n,
                     duration=0.00064,
-                    delay=0.0001,
+                    delay=rise,
                     phase_offset=phase,
                     system=system,
                 )
@@ -449,8 +455,13 @@ def make_sequence(
                 else curved_te
             )
             wait(exc_time + te - ramp * dt - dt / 2)
+            # Oversampling keeps ADC sample spacing fine along long trajectories.
             adc = pp.make_adc(
-                len(t), dwell=dt, delay=ramp * dt, phase_offset=phase, system=system
+                len(t) * spiral_adc_oversampling,
+                dwell=dt / spiral_adc_oversampling,
+                delay=ramp * dt,
+                phase_offset=phase,
+                system=system,
             )
             if receiver_frequency:
                 anchor = te
@@ -464,7 +475,7 @@ def make_sequence(
             if mutation == "receiver_phase":
                 adc.phase_offset += np.pi / 2
             add(*grads, adc)
-            finish(0.05)
+            finish((spec.get("tr_ms") or {}).get("target", 50) / 1000)
     if mutation == "wrong_fov":
         # Scale physical gradients; metadata cannot repair the acquisition.
         for key, value in seq.grad_library.data.items():
@@ -484,6 +495,12 @@ def physics_control_options(case):
     These settings are benchmark-owned controls, never participant rewrites.
     """
     fam = case["task"]["id"]
+    if case["task"]["sequence"]["matrix"][0] >= 256:
+        # 2.5 us dwell (0.64 ms flat) keeps 256-sample ADCs on the raster.
+        return {
+            "epi_single_shot": {"epi_flat": 0.00064, "epi_spacing": 0.00124},
+            "epi_multishot": {"epi_flat": 0.00064, "epi_spacing": 0.00124},
+        }.get(fam, {})
     options = {
         "epi_single_shot": {"epi_flat": 0.00032, "epi_spacing": 0.00074},
         "epi_multishot": {"epi_flat": 0.00032, "epi_spacing": 0.00084},

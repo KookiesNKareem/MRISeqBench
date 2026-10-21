@@ -182,18 +182,11 @@
         "bart_cartesian_fft@1",
         "bart_readout@1",
         "bart_sampling_sense@1",
-        "cartesian_fft@1",
-        "noncartesian_direct@1",
-        "sampling_sense@1",
+        "direct_magnetization@1",
         "none"
       ],
       "title": "Reconstruction",
       "type": "string"
-    },
-    "intrinsic_tissue_response": {
-      "default": false,
-      "title": "Intrinsic Tissue Response",
-      "type": "boolean"
     },
     "metrics": {
       "items": {
@@ -292,11 +285,7 @@
             "$ref": "#/$defs/CaseImageCriteria"
           },
           "propertyNames": {
-            "enum": [
-              "static",
-              "P2",
-              "P3"
-            ]
+            "const": "static"
           },
           "type": "object"
         },

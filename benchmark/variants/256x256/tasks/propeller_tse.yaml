@@ -1,0 +1,31 @@
+id: propeller_tse
+objective: Acquire 51 equally rotated Cartesian PROPELLER blades, each containing eight adjacent full-length k-space lines acquired with a refocused echo train.
+object: cardiac_2d@1
+sequence:
+  level: S2
+  capabilities:
+  - spin_echo
+  - tse
+  - propeller
+  matrix:
+  - 256
+  - 256
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 60
+  te_ms:
+    target: 40
+    tolerance: 4.0
+  tr_ms:
+    target: 1000
+    tolerance: 50.0
+  readout:
+    shots: 51
+    echo_train_length: 8
+    blade_width_lines: 8
+    echo_spacing_ms: 10
+evaluation: s2@4
+schema_version: 1
+version: 2
+hardware: high_performance@1

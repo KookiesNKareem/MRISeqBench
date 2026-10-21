@@ -6,3 +6,4 @@ __pycache__/
 runs/
 /sequence.seq
 .DS_Store
+/paper/

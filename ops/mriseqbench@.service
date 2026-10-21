@@ -1,0 +1,18 @@
+[Unit]
+Description=MRISeqBench campaign %i (rerunning resumes; see ops/README.md)
+Requires=mriseqbench-dockerd.service
+After=mriseqbench-dockerd.service
+
+[Service]
+WorkingDirectory=%h/mriseqbench/src
+# EXPERIMENT, OPENROUTER_API_KEY, CUDA_VISIBLE_DEVICES, MRISEQBENCH_SIMULATOR_GPU, optional RUN_ARGS.
+EnvironmentFile=%h/mriseqbench/campaigns/%i.env
+Environment=DOCKER_HOST=unix://%t/mriseqbench-docker.sock
+ExecStart=%h/mriseqbench/src/.venv/bin/mriseqbench run --experiment ${EXPERIMENT} --out %h/mriseqbench/runs/%i $RUN_ARGS
+# Exit 1 = resumable trials remain: retry after a pause. 2 = config error, 3 = spend cap.
+Restart=on-failure
+RestartSec=600
+RestartPreventExitStatus=2 3
+# SIGTERM to the runner only; it stops agents and records interruptions.
+KillMode=mixed
+TimeoutStopSec=180

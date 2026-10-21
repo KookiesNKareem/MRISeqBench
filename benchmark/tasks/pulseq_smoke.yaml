@@ -9,4 +9,4 @@ sequence:
   fov_mm: [200, 200]
   duration_s: 1
 object: cardiac_2d@1
-evaluation: pulseq_preflight@1
+evaluation: pulseq_preflight@2

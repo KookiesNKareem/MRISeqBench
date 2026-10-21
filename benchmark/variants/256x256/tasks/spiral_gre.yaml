@@ -1,0 +1,29 @@
+id: spiral_gre
+objective: Acquire a 256 x 256 image with 32 uniformly rotated center-out Archimedean spiral interleaves, eight turns per interleaf, TE 5 ms and TR 30 ms.
+object: cardiac_2d@1
+sequence:
+  level: S2
+  capabilities:
+  - spoiled_gre
+  - spiral
+  matrix:
+  - 256
+  - 256
+  fov_mm:
+  - 200
+  - 200
+  duration_s: 6
+  te_ms:
+    target: 5
+    tolerance: 0.5
+  readout:
+    interleaves: 32
+    turns: 8
+    center_out: true
+  tr_ms:
+    target: 30
+    tolerance: 1.5
+evaluation: s2@4
+schema_version: 1
+version: 2
+hardware: high_performance@1

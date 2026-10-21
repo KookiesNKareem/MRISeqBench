@@ -6,10 +6,11 @@ retains its complete RF history. It is a finite-RF KomaMRI response, not a fitte
 phase map. Geometry, magnitude, contrast and dropout retain nominal-object targets.
 """
 
-from copy import copy
+from copy import copy, deepcopy
 from itertools import combinations
 
 import numpy as np
+from pypulseq import Sequence, make_delay
 
 from .s1_image import expected_receiver_phase
 from .s1_koma import simulate
@@ -67,27 +68,7 @@ def phase_reference(
     lines = [next(j for j, ids in enumerate(acq.lines) if i in ids) for i in idx]
     line = lines[0]
     a = copy(acq)
-    phase_windows = None
-    intrinsic_response = case["evaluation"].get("intrinsic_tissue_response", False)
-    if family(case) != "bssfp" and not intrinsic_response:
-        excitations = [p for p in acq.pulses if not p.refocusing]
-        contexts = {}
-        for i, current_line in zip(idx, lines, strict=True):
-            excitation = excitations[acq.excitation[current_line]]
-            contexts[excitation.start] = max(
-                contexts.get(excitation.start, 0), acq.adc[i]
-            )
-        a.pulses = [
-            p
-            for p in acq.pulses
-            if any(start <= p.start < end for start, end in contexts.items())
-        ]
-        if sample_indices is not None:
-            phase_windows = [
-                [float(start), float(end)] for start, end in sorted(contexts.items())
-            ]
-    else:
-        a.pulses = [p for p in acq.pulses if p.start < acq.adc[idx[-1]]]
+    a.pulses = [p for p in acq.pulses if p.start < acq.adc[idx[-1]]]
     a.adc = acq.adc[idx]
     a.adc_phase = expected_receiver_phase(acq)[idx]
     a.k = np.zeros((len(idx), 3))
@@ -119,26 +100,50 @@ def phase_reference(
     def replay(refinement=1):
         images = []
         for physical, effects in enumerate(((), case["physics"]["effects"])):
-            # Intrinsic chemical shift is nominal material contrast in current
-            # cardiac contracts. Legacy contracts retain their original baseline.
+            # Intrinsic chemical shift is nominal material contrast.
             replay_spins = copy(spins)
-            if (
-                not physical
-                and spins.properties.shape[1] > 3
-                and not case["evaluation"].get("intrinsic_tissue_response", False)
-            ):
-                replay_spins.properties = spins.properties.copy()
-                replay_spins.properties[:, 3] = 0
+            replay_acq = a
+            spatial_excitation = physical and family(case) == "rfov_epi"
+            if spatial_excitation:
+                # The fixed rFOV target requires actual 2D excitation. Its
+                # independent phase oracle retains selection gradients while
+                # discarding every subsequent image-encoding gradient.
+                from .s3_sequence import rf_block_endpoints
+
+                endpoint = max(
+                    end
+                    for start, end in rf_block_endpoints(a.seq).items()
+                    if start < a.adc[-1]
+                )
+                selection = Sequence(a.seq.system)
+                clock = 0.0
+                for number in a.seq.block_events:
+                    block = a.seq.get_block(number)
+                    duration = a.seq.block_durations[number]
+                    events = [make_delay(duration)]
+                    for name in ("rf", "adc"):
+                        event = getattr(block, name)
+                        if event is not None:
+                            events.append(deepcopy(event))
+                    if clock < endpoint - 1e-12:
+                        events.extend(
+                            deepcopy(g)
+                            for g in (block.gx, block.gy, block.gz)
+                            if g is not None
+                        )
+                    selection.add_block(*events)
+                    clock += duration
+                replay_acq = copy(a)
+                replay_acq.seq, replay_acq.source_path = selection, None
             values = simulate(
-                a,
+                replay_acq,
                 replay_spins,
                 effects,
-                zero_gradients=True,
+                zero_gradients=not spatial_excitation,
                 individual=True,
                 step_s=0.001 / temporal_scale / refinement,
                 rf_step_s=20e-6 / temporal_scale / refinement,
-                phase_windows=phase_windows,
-                ideal_spoiling=intrinsic_response and family(case) != "bssfp",
+                ideal_spoiling=family(case) not in {"bssfp", "rfov_epi"},
             ).mean(axis=0)
             image = np.zeros(matrix, complex)
             np.add.at(image, tuple(loc.T), values)
@@ -187,18 +192,14 @@ def phase_reference(
                 if sample_indices is not None
                 else "koma_rf_voxel_phase"
             )
-            + ("@2" if intrinsic_response else "@1"),
+            + "@2",
             "engine": "KomaMRICore",
             "echo_time_s": float(a.adc[0]),
             "line": line,
             "sample_indices": idx.tolist(),
-            "echo_contexts": len(phase_windows) if phase_windows is not None else 1,
-            "intrinsic_tissue_response": intrinsic_response,
-            "rf_history": "complete; ideal transverse spoiling before excitation"
-            if intrinsic_response and family(case) != "bssfp"
-            else "complete coherent history"
+            "rf_history": "complete coherent history"
             if family(case) == "bssfp"
-            else "independent equilibrium echo contexts",
+            else "complete; ideal transverse spoiling before excitation",
             "temporal_phase_chord_rms": temporal,
             "reference_energy_coverage": coverage,
             "spatial_model": (

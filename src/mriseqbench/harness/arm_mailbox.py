@@ -87,10 +87,11 @@ class Mailbox:
                 if len(body) > 16777216:
                     raise ValueError("mailbox body exceeds 16 MiB")
                 target, route = request.get("target"), request.get("path")
-                if (
-                    target == "feedback"
-                    and route in {"/lint", "/check", "/submit"}
+                if target == "feedback" and (
+                    route in {"/lint", "/check", "/submit"}
                     and request.get("method") == "POST"
+                    or route in {"/status", "/receipt"}
+                    and request.get("method") == "GET"
                 ):
                     status, value = self.feedback.handle(
                         route[1:], request.get("token", ""), body
@@ -132,11 +133,24 @@ class Mailbox:
                                 },
                             )
                             return
+                    session_headers = request.get("headers", {})
+                    if not isinstance(session_headers, dict):
+                        raise ValueError("mailbox headers must be an object")
                     req = urllib.request.Request(
                         self.proxy.base_url + route,
                         data=body if request["method"] == "POST" else None,
                         method=request["method"],
                         headers={
+                            **{
+                                k: v
+                                for k, v in session_headers.items()
+                                if isinstance(k, str)
+                                and k.lower() == "x-session-id"
+                                and isinstance(v, str)
+                                and len(v) <= 256
+                                and "\r" not in v
+                                and "\n" not in v
+                            },
                             "Authorization": "Bearer " + self.proxy.token,
                             "Content-Type": "application/json",
                         },
@@ -154,6 +168,12 @@ class Mailbox:
                                 "content_type": upstream.headers.get(
                                     "Content-Type", "application/json"
                                 ),
+                                "headers": {
+                                    k: v
+                                    for k, v in upstream.headers.items()
+                                    if k.lower()
+                                    in {"x-openrouter-cache-status", "x-generation-id"}
+                                },
                             }
                         )
                         while True:
