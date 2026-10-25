@@ -9,15 +9,16 @@ import numpy as np
 
 from .s1 import evaluate_s1
 from .s1_case import phase_reference as shared_phase_reference
-from .s1_case import uses_case_image
 from .s1_image import canonical_response, expected_receiver_phase, nrmse
 from .s1_koma import reconstruct as cartesian_reconstruct
 from .s1_koma import simulate
 from .s1_phantom import Spins
-from .s1_probes import radical_inverse
+from .s1_probes import radical_inverse, reference_index
 from .s1_sampling import analytic_reference
-from .s1_sequence import MissingExcitation, check, family
-from .s2_sequence import CARTESIAN, REFOCUSED, inspect_sequence
+from .s1_sequence import check, family
+from .s2_sequence import CARTESIAN, FAMILIES, REFOCUSED, inspect_sequence
+
+NONCARTESIAN = FAMILIES - CARTESIAN
 
 
 def reference_signal(acq, spins, spec, response):
@@ -62,45 +63,64 @@ def reference_image(acq, case, root, response, reference_raw):
     grid = SimpleNamespace(
         adc=np.arange(len(indices)), k=k, indices=indices, offset=np.zeros(len(matrix))
     )
-    chosen = reference_index(acq, spec)
-    constant_response = np.broadcast_to(
-        response[:, chosen, None], (len(response), len(indices))
-    )
+    target = reference_response(acq, spec, response)
+    constant_response = np.broadcast_to(target[:, None], (len(response), len(indices)))
     raw = analytic_reference(grid, case, root, constant_response)
     return cartesian_reconstruct(raw, grid, tuple(map(int, matrix)))
 
 
-def reference_index(acq, spec):
-    """Earliest centre sample, with a fixed reciprocal-FOV tie tolerance.
+CENTRE_RADIUS = 0.75
 
-    Ring samples and repeated radial centres must not select an arbitrary RF
-    transient or readout time because of floating-point trajectory noise.
+
+def _temporal_centre(acq, candidates):
+    """Tied candidate nearest the readout's temporal centroid (timestamps only)."""
+    times = acq.adc[candidates]
+    distance = abs(times - times.mean())
+    return int(candidates[np.flatnonzero(distance <= distance.min() + 1e-12)[0]])
+
+
+def contrast_indices(acq, spec):
+    """Echo contexts that set both the image target and the B0 phase oracle.
+
+    One sample per contributing readout; ties within a readout use the sample
+    nearest their temporal centroid. Receiver data never enter the selection.
+
+    Cartesian (S1 and S2 EPI/TSE/GRASE): the single earliest sample within
+    1e-3 samples of the global minimum k radius (the documented central echo;
+    for a centred grid the ky=0 echo), so a half-sample lattice cannot mix
+    echoes acquired at different times.
+    Non-Cartesian S2 families: every readout whose nearest in-plane (kx, ky)
+    sample lies within 0.75 samples of the origin, at that sample (within 1e-3
+    of the readout's own minimum): every radial, UTE, spiral and
+    stack-of-stars readout in every partition, and the central line of each
+    PROPELLER blade. Their image is the mix of these readouts, so the target
+    uses their mean response rather than the first readout's transient.
     """
-    q = acq.k[:, : len(spec["matrix"])] * (np.asarray(spec["fov_mm"]) / 1000)
-    radius = np.linalg.norm(q, axis=1)
-    return int(np.flatnonzero(radius <= radius.min() + 1e-3)[0])
+    fam = acq.measurements.get("family")
+    if fam in NONCARTESIAN:
+        q = acq.k[:, :2] * (np.asarray(spec["fov_mm"])[:2] / 1000)
+        radius = np.linalg.norm(q, axis=1)
+        chosen = []
+        for line in acq.lines:
+            line = np.asarray(line)
+            nearest = radius[line].min()
+            if nearest <= CENTRE_RADIUS:
+                chosen.append(
+                    _temporal_centre(acq, line[radius[line] <= nearest + 1e-3])
+                )
+        if chosen:
+            return np.asarray(chosen, dtype=int)
+    # Cartesian: the single earliest sample nearest the k-space origin.
+    return np.array([reference_index(acq, spec)])
 
 
-def reference_indices(acq, spec):
-    """Representative low-k echo in each acquired centre-bearing readout.
+# The phase oracle and the target share one context selection.
+reference_indices = contrast_indices
 
-    Repeated centres use the sample nearest their temporal centroid; the choice
-    uses only trajectory/timestamps. Each readout contributes one RF-only echo
-    context, so later B0 drift is represented and a long ring/rosette readout is
-    not assigned its first ADC's phase. Receiver data never enter the selection.
-    """
-    q = acq.k[:, : len(spec["matrix"])] * (np.asarray(spec["fov_mm"]) / 1000)
-    radius = np.linalg.norm(q, axis=1)
-    centre = radius <= radius.min() + 1e-3
-    chosen = []
-    for line in acq.lines:
-        candidates = np.asarray(line)[centre[line]]
-        if len(candidates):
-            times = acq.adc[candidates]
-            distance = abs(times - times.mean())
-            tied = np.flatnonzero(distance <= distance.min() + 1e-12)
-            chosen.append(int(candidates[tied[0]]))
-    return np.asarray(chosen, dtype=int)
+
+def reference_response(acq, spec, response):
+    """Per-material complex target response: mean over contrast_indices."""
+    return np.mean(response[:, contrast_indices(acq, spec)], axis=1)
 
 
 def phase_reference(acq, case, root, reference, *, temporal_scale=1):
@@ -118,7 +138,7 @@ def mechanism_probes(acq, case, materials, properties):
     fam = family(case)
     response = canonical_response(acq, properties, fam, finite_rf=True)
     props = np.array([[1.0, 0.8, 0.08]])
-    ideal = canonical_response(acq, props, fam)[0]
+    ideal = canonical_response(acq, props, fam, finite_rf=True)[0]
     centres = np.asarray(acq.measurements["centre_sample_indices"])
     signal = float(np.mean(np.abs(ideal[centres])))
     metrics = {"diagnostic_signal_fraction": signal}
@@ -126,14 +146,11 @@ def mechanism_probes(acq, case, materials, properties):
         check("usable_echo_signal", signal >= 0.01, {"signal": signal, "min": 0.01})
     ]
     if fam not in REFOCUSED:
-        width = (
-            np.ones(3)
-            * np.asarray(case["task"]["sequence"]["fov_mm"])[0]
-            / case["task"]["sequence"]["matrix"][0]
-            / 1000
-        )
-        if len(case["task"]["sequence"]["matrix"]) == 2:
-            width[2] = 0.0
+        # Per-axis voxel widths (FOV/matrix); a 2D plane has zero z extent.
+        spec = case["task"]["sequence"]
+        dims = len(spec["matrix"])
+        width = np.zeros(3)
+        width[:dims] = np.asarray(spec["fov_mm"]) / 1000 / np.asarray(spec["matrix"])
         errors = []
         for count in (1021, 2053):
             points = (
@@ -168,7 +185,7 @@ def mechanism_probes(acq, case, materials, properties):
             check(
                 "spoiled_gre",
                 max(errors) <= 0.2,
-                {"relative_errors": errors, "max": 0.2},
+                {"relative_errors": errors, "max": 0.2, "voxel_m": width.tolist()},
             )
         )
     else:
@@ -180,15 +197,24 @@ def mechanism_probes(acq, case, materials, properties):
             exc = [p for p in acq.pulses if not p.refocusing][g]
             last_adc = acq.adc[acq.lines[np.flatnonzero(acq.excitation == g)[-1]][-1]]
             delta = -exc.center
+            echoes = []
             for p in refs:
                 if exc.center < p.center < last_adc:
                     delta = -2 * p.center - delta
-                    targets.append((exc, -delta))
+                    echoes.append(-delta)
+            if echoes:
+                targets.append((exc, np.asarray(echoes)))
         retentions = []
-        for exc, echo in targets:
+        for exc, echoes in targets:
             a = copy(acq)
-            a.pulses = [p for p in acq.pulses if exc.start <= p.start < echo]
-            a.adc, a.adc_phase, a.k = np.array([echo]), np.zeros(1), np.zeros((1, 3))
+            # Later RF cannot affect an earlier echo: sample every causal prefix
+            # in one native timeline, preserving each shot's serialized RF phase.
+            a.pulses = [p for p in acq.pulses if exc.start <= p.start < echoes[-1]]
+            a.adc, a.adc_phase, a.k = (
+                echoes,
+                np.zeros(len(echoes)),
+                np.zeros((len(echoes), 3)),
+            )
             spins = Spins(
                 np.zeros((65, 3)),
                 np.zeros(65, dtype=int),
@@ -205,7 +231,9 @@ def mechanism_probes(acq, case, materials, properties):
                 zero_gradients=True,
                 frequency_offsets=np.linspace(-50, 50, 65),
             )
-            retentions.append(float(abs(actual[0]) / max(abs(baseline[0]), 1e-15)))
+            retentions.extend(
+                (np.abs(actual) / np.maximum(np.abs(baseline), 1e-15)).tolist()
+            )
         metrics["min_refocusing_retention"] = min(retentions, default=0.0)
         checks.append(
             check(
@@ -222,7 +250,7 @@ def mechanism_probes(acq, case, materials, properties):
             for axis in (1, 2):
                 varied = props.copy()
                 varied[:, axis] *= 1.1
-                altered = canonical_response(acq, varied, fam)[0]
+                altered = canonical_response(acq, varied, fam, finite_rf=True)[0]
                 sensitivity.append(
                     float(
                         np.mean(
@@ -244,34 +272,34 @@ def mechanism_probes(acq, case, materials, properties):
 
 
 def evaluate_s2(submission, case, root, workspace, *, deadline=None):
-    try:
-        result = evaluate_s1(
-            submission,
-            case,
-            root,
-            workspace,
-            deadline=deadline,
-            inspector=inspect_sequence,
-            probes=mechanism_probes,
-            reconstructor=reconstruct,
-            sampler=reference_signal,
-            reference_builder=reference_image,
-            phase_builder=phase_reference,
-            # S2 thresholds and encoded replay retain the native Bloch integrator.
-            encoded_integrator="bloch",
+    # The default temporal gate projects timestep error through `reconstruct`.
+    encoding = {"reconstructor": reconstruct, "sampler": reference_signal}
+    if (
+        family(case) == "epi_single_shot"
+        and ((case["task"]["sequence"].get("sampling") or {}).get("acceleration") or 1)
+        > 1
+    ):
+        from . import s3
+
+        encoding.update(
+            reconstructor=s3.reconstruct,
+            sampler=s3.reference_channels,
+            analytic_sampler=s3.analytic_channels,
+            simulator=s3.simulate_channels,
+            replay_shape=s3.signal_shape,
+            temporal_norm=s3.temporal_image_error,
         )
-    except MissingExcitation as exc:
-        return {
-            "status": "failed",
-            "checks": [check("excitation_before_adc", False, str(exc))],
-            "metrics": {},
-            "sequence_valid": False,
-            "ideal_imaging_success": None,
-            "imaging_success_under_case_physics": None,
-            "image_verdict": "not_evaluated",
-            "image_acceptance_basis": "case_physics"
-            if uses_case_image(case)
-            else "ideal_control",
-            "evaluation_contract": f"s2@{case['evaluation']['version']}",
-        }
-    return result
+    return evaluate_s1(
+        submission,
+        case,
+        root,
+        workspace,
+        deadline=deadline,
+        inspector=inspect_sequence,
+        probes=mechanism_probes,
+        **encoding,
+        reference_builder=reference_image,
+        phase_builder=phase_reference,
+        # S2 thresholds and encoded replay retain the native Bloch integrator.
+        encoded_integrator="bloch",
+    )

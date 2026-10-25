@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../../schemas/arms.schema.json
+schema_version: 1
+id: j5_pulseq_julia_unitful_koma
+version: 1
+language: julia
+authoring: pulseq_julia
+pulse_designer: true
+unitful: true
+simulator: koma

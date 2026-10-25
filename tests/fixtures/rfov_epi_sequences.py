@@ -8,6 +8,8 @@ import pypulseq as pp
 from scipy.linalg import solve
 from scipy.special import erf
 
+from tests.fixtures.gradients import trapezoid
+
 
 def system_for(case):
     hw = case["hardware"]
@@ -38,7 +40,7 @@ def sampled_block(system, duration, *gradients):
 
 
 @lru_cache(maxsize=6)
-def excitation_design(field, fat_offset, fat_t2, shifted=False):
+def excitation_design(field, fat_offset, fat_t2, shifted=False, amplitude=0.4):
     system = pp.Opts(max_grad=26, grad_unit="mT/m", max_slew=45, slew_unit="T/m/s")
     read = pp.make_trapezoid(
         "x", flat_area=80, flat_time=1000e-6, rise_time=60e-6, system=system
@@ -88,7 +90,7 @@ def excitation_design(field, fat_offset, fat_t2, shifted=False):
     )
     positions = np.vstack((positions, additional))
     target = (
-        0.4
+        amplitude
         * (
             (
                 erf((positions[:, 0] + 0.08) / 0.002)
@@ -134,14 +136,26 @@ def excitation_design(field, fat_offset, fat_t2, shifted=False):
     return gradient, rf, dt
 
 
-def make_sequence(case, mutation=None):
+def make_sequence(
+    case,
+    mutation=None,
+    *,
+    excitation_fraction=0.4,
+    readout_dwell=None,
+    ky_reverse=False,
+):
+    """Single-shot 2D-RF EPI. ``readout_dwell`` fixes the readout bandwidth
+    (default: shortest hardware-valid); ``ky_reverse`` traverses ky downward."""
     system = system_for(case)
+    nx, ny = case["task"]["sequence"]["matrix"]
+    fov = np.asarray(case["task"]["sequence"]["fov_mm"]) / 1000
     tissue = case["object"]["tissue_properties"]["fat"]
     gradient, signal, dt = excitation_design(
         system.B0,
         tissue["chemical_shift_hz"],
         tissue["T2_s"],
         mutation == "shift_selection",
+        excitation_fraction,
     )
     gradient, signal = gradient.copy(), signal.copy()
     if mutation == "no_selection":
@@ -167,39 +181,74 @@ def make_sequence(case, mutation=None):
     ]
     seq = pp.Sequence(system)
     seq.add_block(rf, *gradients, pp.make_delay(100e-6 + len(signal) * dt + 30e-6))
-    read = pp.make_trapezoid(
-        "x", flat_area=160, flat_time=320e-6, rise_time=300e-6, system=system
-    )
+    if nx >= 128:
+        # Joint gradient/ADC raster quantum: 128 samples require flat tops in
+        # 320-us multiples. Pick the shortest hardware-valid bipolar readout.
+        candidates = []
+        dwells = [readout_dwell] if readout_dwell else np.arange(1, 9) * 2.5e-6
+        for dwell in dwells:
+            try:
+                candidates.append(
+                    pp.make_trapezoid(
+                        "x", flat_area=nx / fov[0], flat_time=nx * dwell, system=system
+                    )
+                )
+            except (AssertionError, ValueError):
+                continue
+        read = min(candidates, key=pp.calc_duration)
+    else:
+        read = pp.make_trapezoid(
+            "x",
+            flat_area=nx / fov[0],
+            flat_time=nx * 10e-6,
+            rise_time=300e-6,
+            system=system,
+        )
+    flat = read.flat_time
     full = mutation == "full_fov"
-    ys = list(range(-16, 16, 1 if full else 2))
+    ys = list(range(-ny // 2, ny // 2, 1 if full else 2))
+    if ky_reverse:
+        ys.reverse()
     if mutation == "missing_line":
         ys.pop()
     pre = [
-        pp.make_trapezoid(axis, area=area, duration=800e-6, system=system)
-        for axis, area in zip("xy", (-read.area / 2, ys[0] / 0.2), strict=True)
+        trapezoid(axis, area=area, duration=800e-6, system=system)
+        for axis, area in zip("xy", (-read.area / 2, ys[0] / fov[1]), strict=True)
     ]
     seq.add_block(*pre)
     for line, ky in enumerate(ys):
         gx = copy.deepcopy(read)
         gx.amplitude *= (-1) ** line if mutation != "wrong_polarity" else 1
         adc = pp.make_adc(
-            32,
-            duration=320e-6,
+            nx,
+            duration=flat,
             delay=gx.rise_time,
             phase_offset=0.6 if mutation == "wrong_receiver_phase" else 0,
             system=system,
         )
-        seq.add_block(gx, adc)
-        if line < len(ys) - 1:
+        overlap = nx >= 128 and mutation != "wrong_polarity"
+        if overlap and line < len(ys) - 1:
             gy = pp.make_trapezoid(
-                "y", area=(ys[line + 1] - ky) / 0.2, duration=200e-6, system=system
+                "y",
+                area=(ys[line + 1] - ky) / fov[1],
+                duration=gx.fall_time,
+                delay=gx.rise_time + flat,
+                system=system,
+            )
+            seq.add_block(gx, adc, gy)
+        else:
+            seq.add_block(gx, adc)
+        if line < len(ys) - 1 and not overlap:
+            gy = pp.make_trapezoid(
+                "y", area=(ys[line + 1] - ky) / fov[1], duration=200e-6, system=system
             )
             if mutation == "wrong_polarity":
-                rewind = pp.make_trapezoid(
-                    "x", area=-read.area, duration=900e-6, system=system
-                )
+                rewind = trapezoid("x", area=-read.area, duration=900e-6, system=system)
                 gy = pp.make_trapezoid(
-                    "y", area=(ys[line + 1] - ky) / 0.2, duration=800e-6, system=system
+                    "y",
+                    area=(ys[line + 1] - ky) / fov[1],
+                    duration=800e-6,
+                    system=system,
                 )
                 seq.add_block(gy, rewind)
             else:

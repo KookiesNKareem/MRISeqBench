@@ -15,7 +15,8 @@ def mask_for(fam, matrix, sampling):
     width = sampling.get("calibration_lines", 8)
     centre = list(range(ny // 2 - width // 2, ny // 2 + (width + 1) // 2))
     if fam in {"sense_sampling", "grappa_sampling"}:
-        mask[:, sorted(set(range(0, ny, 2)) | set(centre))] = True
+        step = int(sampling.get("acceleration", 2))
+        mask[:, sorted(set(range(0, ny, step)) | set(centre))] = True
     elif fam == "caipirinha":
         for j, z in enumerate(range(0, nz[0], 2)):
             for y in range(j % 2, ny, 2):
@@ -65,18 +66,47 @@ def make_sequence(
     echo_time=None,
     repetition_time=None,
     selective_rf_duration=0.012,
+    reduced_rf_dwell=None,
     reduced_refocusing="hard",
     reduced_refocusing_duration=0.0016,
+    reduced_crusher_area=400,
     reduced_flip_deg=None,
     reduced_fat_saturation=False,
     reduced_fat_saturation_pulses=1,
     reduced_fat_saturation_duration=0.004,
+    reduced_nonclosing_spoilers=False,
+    spoiler_factors=None,
+    rewind_phase=False,
+    reduced_design="excitation",
+    reduced_excitation_tbw=32,
+    reduced_refocusing_tbw=16,
+    reduced_refocusing_thickness=None,
+    receiver_phase_offset=None,
+    calibration_lines=None,
+    rf_spoil_deg=117,
+    spoiler_scale=1.0,
+    gre_excitation="block",
+    spoiler_axis="x",
 ):
+    """Author an S3 control.
+
+    ``reduced_design='inner_volume'`` is the textbook orthogonal design: a
+    z-selective excitation and a y-selective sinc refocuser bracketed by x
+    crushers, so unrefocused exterior signal is removed by intravoxel crusher
+    dephasing rather than by y-selective excitation. ``calibration_lines``
+    overrides the authored ACS width (a mask control). Valid alternatives
+    for the positive ensemble: ``ordering`` (forward/reverse/centric),
+    ``readout_flat`` (bandwidth), ``rf_spoil_deg`` and ``spoiler_scale``
+    (spoiling), ``gre_excitation='sinc'`` (slice-selective sinc in 2D,
+    nonselective sinc in 3D).
+    """
     spec, h = case["task"]["sequence"], case["hardware"]
     fam = case["task"]["id"]
     nx, ny, *nz = spec["matrix"]
     fov = np.asarray(spec["fov_mm"]) / 1000
     sampling = {k: v for k, v in (spec.get("sampling") or {}).items() if v is not None}
+    if calibration_lines is not None:
+        sampling["calibration_lines"] = calibration_lines
     mask = mask_for(fam, tuple(spec["matrix"]), sampling)
     if mutation == "full_sampling":
         mask[:] = True
@@ -133,21 +163,44 @@ def make_sequence(
         rf, selective, rephase = pp.make_sinc_pulse(
             np.deg2rad(flip),
             duration=selective_rf_duration,
+            dwell=reduced_rf_dwell or 0,
             slice_thickness=fov[1] / 2,
-            time_bw_product=32,
+            time_bw_product=reduced_excitation_tbw,
             apodization=0.5,
             return_gz=True,
             delay=system.rf_dead_time,
             system=system,
             use="excitation",
         )
-        # A truthful 20-us sample-hold envelope on the required 1-us raster:
-        # preserve flip area while avoiding redundant waveform knots. The long
-        # time-bandwidth pulse sharpens the 100-mm slab edge at nominal resolution.
-        rf.signal = np.repeat(rf.signal.reshape(-1, 20).mean(axis=1), 20)
-        selective.channel = rephase.channel = "y"
+        if reduced_rf_dwell is None:
+            # Preserve historical sample-hold pulses on the 1-us RF raster.
+            rf.signal = np.repeat(rf.signal.reshape(-1, 20).mean(axis=1), 20)
+        selective.channel = rephase.channel = (
+            "z" if reduced_design == "inner_volume" else "y"
+        )
+        if mutation == "wrong_position" and reduced_design != "inner_volume":
+            rf.freq_offset = selective.amplitude * fov[1] / 2
         preparations = min(preparations, 20)
     else:
+        rf = None
+    gre_gradient = gre_rephase = None
+    if not reduced and gre_excitation == "sinc":
+        rf, gre_gradient, gre_rephase = pp.make_sinc_pulse(
+            np.deg2rad(flip),
+            duration=0.0012,
+            slice_thickness=0.005,
+            time_bw_product=4,
+            apodization=0.5,
+            return_gz=True,
+            delay=system.rf_dead_time,
+            system=system,
+            use="excitation",
+        )
+        if nz:
+            gre_gradient = gre_rephase = None
+    elif not reduced and gre_excitation != "block":
+        raise ValueError(f"Unsupported GRE excitation: {gre_excitation}")
+    if not reduced and rf is None:
         rf = pp.make_block_pulse(
             np.deg2rad(flip),
             duration=0.005 if mutation == "all_refocusing" else 0.0004,
@@ -163,6 +216,7 @@ def make_sequence(
         system=system,
         use="refocusing",
     )
+    ref_gradient = None
     if reduced and reduced_refocusing == "composite":
         # Standard 90x-180y-90x composite refocusing, represented as one RF
         # event so its full coherent envelope determines the nominal rotation.
@@ -185,12 +239,48 @@ def make_sequence(
             use="refocusing",
             center=reduced_refocusing_duration,
         )
+    elif reduced and reduced_refocusing == "sinc":
+        ref, ref_gradient, _ = pp.make_sinc_pulse(
+            np.pi,
+            duration=reduced_refocusing_duration,
+            slice_thickness=reduced_refocusing_thickness or fov[1] / 2,
+            time_bw_product=reduced_refocusing_tbw,
+            apodization=0.5,
+            phase_offset=np.pi / 2,
+            return_gz=True,
+            delay=system.rf_dead_time,
+            system=system,
+            use="refocusing",
+        )
+        ref_gradient.channel = "y"
+        if mutation == "no_selection":
+            ref_gradient = None
+        if mutation == "wrong_position":
+            ref.freq_offset = ref_gradient.amplitude * fov[1] / 2
     elif reduced_refocusing != "hard":
         raise ValueError(f"Unsupported reduced-FOV refocusing: {reduced_refocusing}")
     read = trapezoid("x", flat_area=nx / fov[0], flat_time=readout_flat, system=system)
     pre_x = trapezoid("x", area=-read.area / 2, duration=0.0008, system=system)
+    spoil_area = max(nx, 32) * 2 / fov[0] * spoiler_scale
+    if spoiler_axis == "z":
+        # Two cycles across the (thick) 3D partition voxel along z.
+        spoil_area = 2 * nz[0] / fov[2] * spoiler_scale
+    spoil_duration = 0.0012
+    if spoiler_factors:
+        spoil_duration = max(
+            spoil_duration,
+            np.ceil(
+                pp.calc_duration(
+                    trapezoid(
+                        "x", area=spoil_area * max(spoiler_factors), system=system
+                    )
+                )
+                / system.grad_raster_time
+            )
+            * system.grad_raster_time,
+        )
     spoil = trapezoid(
-        "x", area=max(nx, 32) * 2 / fov[0], duration=0.0012, system=system
+        spoiler_axis, area=spoil_area, duration=spoil_duration, system=system
     )
     if reduced:
         saturation = pp.make_block_pulse(
@@ -217,24 +307,35 @@ def make_sequence(
         fat_saturation = pp.make_gauss_pulse(
             np.pi / 2,
             duration=duration,
+            dwell=reduced_rf_dwell or 0,
             time_bw_product=2,
             freq_offset=case["object"]["tissue_properties"]["fat"]["chemical_shift_hz"],
             delay=system.rf_dead_time,
             system=system,
             use="saturation",
         )
-        fat_saturation.signal = np.repeat(
-            fat_saturation.signal.reshape(-1, 20).mean(axis=1), 20
-        )
+        if reduced_rf_dwell is None:
+            fat_saturation.signal = np.repeat(
+                fat_saturation.signal.reshape(-1, 20).mean(axis=1), 20
+            )
     pairs = [tuple(p) for p in np.argwhere(mask.any(axis=0))]
     if ordering == "reverse":
         pairs.reverse()
+    elif ordering == "centric":
+        centre = (ny // 2, nz[0] // 2) if nz else (ny // 2,)
+        pairs.sort(key=lambda p: (sum((a - c) ** 2 for a, c in zip(p, centre)), p))
     elif ordering != "forward":
         raise ValueError(f"Unsupported control ordering: {ordering}")
     if mutation == "repeated_lines":
         pairs = [pairs[0]] * len(pairs)
     for shot, pair in enumerate([None] * preparations + pairs):
-        phase = np.deg2rad(117) * shot * (shot + 1) / 2
+        phase = (
+            0.0
+            if mutation == "no_spoiling"
+            # Wrapped: .seq phases are written to finite precision, and an
+            # unwrapped quadratic phase would decorrelate RF and ADC rounding.
+            else np.mod(np.deg2rad(rf_spoil_deg) * shot * (shot + 1) / 2, 2 * np.pi)
+        )
         r = copy.copy(rf)
         r.phase_offset = phase
         rfc = r.delay + r.shape_dur / 2
@@ -242,12 +343,19 @@ def make_sequence(
         if fat_saturation is not None:
             if reduced_fat_saturation_pulses not in (1, 2, 3):
                 raise ValueError("Use one to three CHESS preparation pulses")
+            if reduced_nonclosing_spoilers and reduced_fat_saturation_pulses != 2:
+                raise ValueError("Nonclosing CHESS spoilers require two pulses")
             for fat_index in range(reduced_fat_saturation_pulses):
                 fat = copy.copy(fat_saturation)
                 fat.phase_offset = phase
                 seq.add_block(fat)
                 elapsed += pp.calc_duration(fat)
                 areas = {"x": 400 + 200 * fat_index, "y": 300 + 100 * fat_index}
+                if reduced_nonclosing_spoilers:
+                    areas = [
+                        {"x": 2 * nx / fov[0], "y": ny / fov[1]},
+                        {"x": 4 * nx / fov[0], "y": 3 * ny / fov[1]},
+                    ][fat_index]
                 duration = max(
                     0.0012,
                     *(
@@ -262,24 +370,44 @@ def make_sequence(
                 seq.add_block(*gradients)
                 elapsed += pp.calc_duration(*gradients)
             rfc += elapsed
-        if reduced and mutation != "no_selection":
+        if reduced and mutation == "no_selection" and reduced_design == "inner_volume":
+            # Keep the slice-selective excitation; the refocuser loses selection.
             seq.add_block(r, selective)
             elapsed += pp.calc_duration(r, selective)
             seq.add_block(rephase)
             elapsed += pp.calc_duration(rephase)
+        elif reduced and mutation != "no_selection":
+            seq.add_block(r, selective)
+            elapsed += pp.calc_duration(r, selective)
+            seq.add_block(rephase)
+            elapsed += pp.calc_duration(rephase)
+        elif gre_gradient is not None:
+            seq.add_block(r, gre_gradient)
+            elapsed += pp.calc_duration(r, gre_gradient)
+            seq.add_block(gre_rephase)
+            elapsed += pp.calc_duration(gre_rephase)
         else:
             seq.add_block(r)
             elapsed += pp.calc_duration(r)
         if reduced:
-            crusher = trapezoid("x", area=400, duration=0.0012, system=system)
+            crusher_duration = max(
+                0.0012,
+                pp.calc_duration(
+                    trapezoid("x", area=reduced_crusher_area, system=system)
+                ),
+            )
+            crusher = trapezoid(
+                "x", area=reduced_crusher_area, duration=crusher_duration, system=system
+            )
             seq.add_block(crusher)
             elapsed += pp.calc_duration(crusher)
             rr = copy.copy(ref)
             rr.phase_offset = phase + np.pi / 2
             delay = te / 2 + rfc - rr.delay - rr.shape_dur / 2 - elapsed
             seq.add_block(pp.make_delay(delay))
-            seq.add_block(rr)
-            elapsed += delay + pp.calc_duration(rr)
+            refocusing = [rr] + ([ref_gradient] if ref_gradient is not None else [])
+            seq.add_block(*refocusing)
+            elapsed += delay + pp.calc_duration(*refocusing)
             seq.add_block(crusher)
             elapsed += pp.calc_duration(crusher)
         y, z = (
@@ -311,7 +439,11 @@ def make_sequence(
                 system=system,
             )
             if mutation == "receiver_phase":
-                adc.phase_offset += np.pi / 2
+                adc.phase_offset += (
+                    np.pi / 2
+                    if receiver_phase_offset is None
+                    else receiver_phase_offset
+                )
             events.append(adc)
         seq.add_block(*events)
         elapsed += pp.calc_duration(*events)
@@ -335,8 +467,41 @@ def make_sequence(
             seq.add_block(*post)
             elapsed += pp.calc_duration(*post)
         else:
-            seq.add_block(spoil)
-            elapsed += pp.calc_duration(spoil)
+            post = [
+                trapezoid(
+                    "x",
+                    area=spoil_area * spoiler_factors[shot % len(spoiler_factors)],
+                    duration=spoil_duration,
+                    system=system,
+                )
+                if spoiler_factors
+                else spoil
+            ]
+            if mutation == "no_spoiling":
+                # Unspoiled control: constant RF phase and fully rewound
+                # gradients (a coherent steady state).
+                post = [
+                    trapezoid(
+                        "x", area=-read.area / 2, duration=spoil_duration, system=system
+                    )
+                ]
+            if rewind_phase or mutation == "no_spoiling":
+                post.append(
+                    trapezoid(
+                        "y", area=-y / fov[1], duration=spoil_duration, system=system
+                    )
+                )
+                if nz:
+                    post.append(
+                        trapezoid(
+                            "z",
+                            area=-z / fov[2],
+                            duration=spoil_duration,
+                            system=system,
+                        )
+                    )
+            seq.add_block(*post)
+            elapsed += pp.calc_duration(*post)
         seq.add_block(pp.make_delay(tr - elapsed))
     if mutation == "wrong_fov":
         for key, value in seq.grad_library.data.items():

@@ -7,3 +7,5 @@ runs/
 /sequence.seq
 .DS_Store
 /paper/
+/output/
+/tmp/

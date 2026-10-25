@@ -1,4 +1,6 @@
 using KomaMRIBase, KomaMRIFiles, KomaMRICore, CUDA, JSON, HDF5
+using SimWarm
+SimWarm.WARM || error("Simulator image was not prewarmed on a GPU")
 CUDA.functional() || error("A functional CUDA GPU is required for simulation; no CPU fallback")
 CUDA.allowscalar(false)
 backend = KomaMRICore.get_backend(true)

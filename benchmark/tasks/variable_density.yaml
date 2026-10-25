@@ -1,14 +1,18 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: variable_density
-objective: Acquire a variable-density Cartesian mask with nominal acceleration three, sampling probability
-  decreasing linearly with distance from k-space center, eight central calibration lines and
-  mask seed 42. The version-1 mask retains zero-based ky grid indices [11, 12, 13, 14, 15, 16,
-  17, 18, 19, 24, 26]. The eleven-line nominal budget includes calibration.
+version: 2
+objective: Acquire the prescribed variable-density Cartesian mask at nominal acceleration three,
+  including eight fully sampled central lines and mask seed 42. Retain zero-based ky indices [14,
+  19, 25, 29, 31, 34, 38, 44, 47, 48, 50, 54, 55, 56, 57, 58, 60, 61, 62, 63, 64, 65, 66, 67, 71,
+  75, 76, 79, 81, 83, 85, 86, 87, 88, 89, 93, 95, 97, 103, 106, 114, 115, 116]. The 43-line budget
+  includes calibration. Reconstruction uses eight fixed Gaussian receive profiles along y,
+  centred at (j + 0.5) FOVy/8 - FOVy/2 for j=0..7, with sigma=FOVy/16 and unit summed squared
+  sensitivity, and the standard fixed L2 SENSE policy.
 object: cardiac_2d@1
 sequence:
   level: S3
   capabilities: [spoiled_gre, cartesian, undersampling, variable_density]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 6
   sampling:
@@ -16,4 +20,4 @@ sequence:
     calibration_lines: 8
     mask_seed: 42
     pattern: variable_density
-evaluation: s3@3
+evaluation: s3@4

@@ -11,6 +11,7 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from ..process import expand
+from .relay import HostRelay
 
 SYSTEM_READ_MAC = (
     "/System",
@@ -74,13 +75,7 @@ def grants(config, command, root, workspace):
     return sorted(set(paths), key=str)
 
 
-def seatbelt_profile(
-    workspace,
-    read_paths=(),
-    deny_paths=(),
-    ports=(),
-    protected_paths=(),
-):
+def seatbelt_profile(workspace, read_paths, deny_paths, ports, protected_paths):
     workspace = real(workspace)
     quote = lambda p: json.dumps(str(p), ensure_ascii=False)
     lines = [
@@ -202,8 +197,6 @@ def launch(config, command, root, workspace, control_dir, ports=()):
     ):
         raise ValueError("bubblewrap is unavailable; isolation was not bypassed")
     with ExitStack() as stack:
-        from .relay import HostRelay
-
         args = [
             shutil.which("bwrap"),
             "--unshare-all",

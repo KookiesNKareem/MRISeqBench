@@ -19,6 +19,18 @@ def radical_inverse(n, base):
     return value
 
 
+def reference_index(acq, spec):
+    """Earliest centre sample, with a fixed reciprocal-FOV tie tolerance.
+
+    Ring samples and repeated radial centres must not select an arbitrary RF
+    transient or readout time because of floating-point trajectory noise.
+    For a Cartesian grid this is the echo that encodes the k-space origin.
+    """
+    q = acq.k[:, : len(spec["matrix"])] * (np.asarray(spec["fov_mm"]) / 1000)
+    radius = np.linalg.norm(q, axis=1)
+    return int(np.flatnonzero(radius <= radius.min() + 1e-3)[0])
+
+
 def echo_formation_probe(acq, case, probe_props):
     """Locate the actual gradient-rephased echo with KomaMRI, not an RF label."""
     ids = acq.lines[0]
@@ -88,24 +100,25 @@ def mechanism_probes(acq, case, materials, properties):
         finite_rf=True,
     )
     metrics, checks = {}, []
-    if "wm" in materials and "gm" in materials:
-        weighting_response = diagnostic
-        wm, gm = materials.index("wm"), materials.index("gm")
-    else:
-        # Weighting is a disclosed common diagnostic independent of anatomy.
-        weighting_response = canonical_response(
-            acq, np.array([[0.7, 0.8, 0.08], [0.8, 1.3, 0.1]]), fam
-        )
-        wm, gm = 0, 1
+    # Weighting is a disclosed common diagnostic independent of anatomy.
+    weighting_response = canonical_response(
+        acq, np.array([[0.7, 0.8, 0.08], [0.8, 1.3, 0.1]]), fam, finite_rf=True
+    )
     # One disclosed common diagnostic material, not a hidden task timing target.
     probe_props = np.array([[1.0, 0.8, 0.08]])
     echo_check, echo_metrics = echo_formation_probe(acq, case, probe_props)
     checks.append(echo_check)
     metrics.update(echo_metrics)
-    ideal = canonical_response(acq, probe_props, fam)[0]
+    # Finite-RF responses keep frequency selectivity (e.g. fat saturation
+    # leaves water Mz), matching the S2 probes.
+    ideal = canonical_response(acq, probe_props, fam, finite_rf=True)[0]
+    # Contrast weighting is judged where the image takes its contrast: the
+    # echo encoding the k-space origin (ky=0), not an average over every
+    # line's echo, so early approach-to-steady-state lines do not dominate.
+    contrast_id = reference_index(acq, case["task"]["sequence"])
     metrics["diagnostic_wm_gm_ratio"] = float(
-        np.mean(np.abs(weighting_response[wm, center_ids]))
-        / max(np.mean(np.abs(weighting_response[gm, center_ids])), 1e-15)
+        np.abs(weighting_response[0, contrast_id])
+        / max(np.abs(weighting_response[1, contrast_id]), 1e-15)
     )
     mean_signal = float(np.mean(np.abs(ideal[center_ids])))
     metrics["diagnostic_signal_fraction"] = mean_signal
@@ -119,20 +132,19 @@ def mechanism_probes(acq, case, materials, properties):
     for axis, name in ((1, "t1"), (2, "t2")):
         varied = probe_props.copy()
         varied[:, axis] *= 1.1
-        altered = canonical_response(acq, varied, fam)[0]
+        altered = canonical_response(acq, varied, fam, finite_rf=True)[0]
         metrics[f"diagnostic_{name}_sensitivity"] = float(
-            np.mean(np.abs(np.abs(altered[center_ids]) - np.abs(ideal[center_ids])))
-            / max(0.1 * mean_signal, 1e-15)
+            abs(abs(altered[contrast_id]) - abs(ideal[contrast_id]))
+            / max(0.1 * abs(ideal[contrast_id]), 1e-15)
         )
     if fam not in {"bssfp", "spin_echo_t2w"}:
+        # Per-axis voxel widths; like the image replay, a 2D plane has no z extent.
         width = np.r_[
             np.asarray(case["task"]["sequence"]["fov_mm"])
             / np.asarray(case["task"]["sequence"]["matrix"])
             / 1000,
             0.0,
-        ]
-        width = width[:3]
-        width[width == 0] = width[0]
+        ][:3]
         errors = []
         for count in (1021, 2053):
             points = (
@@ -171,7 +183,7 @@ def mechanism_probes(acq, case, materials, properties):
                 {
                     "relative_errors": errors,
                     "max": 0.2,
-                    "ensemble": "1021/2053 Halton isochromats across one voxel, including z; encoding phase removed",
+                    "ensemble": "1021/2053 Halton isochromats across one voxel, no z extent in 2D; encoding phase removed",
                 },
             )
         )

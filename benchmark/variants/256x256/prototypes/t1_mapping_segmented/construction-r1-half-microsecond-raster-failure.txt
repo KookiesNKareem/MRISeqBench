@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/kareemfareed/dev/MRISeqBench/benchmark/variants/256x256/prototypes/t1_mapping_segmented/build.py", line 208, in <module>
-    main()
-  File "/Users/kareemfareed/dev/MRISeqBench/benchmark/variants/256x256/prototypes/t1_mapping_segmented/build.py", line 78, in main
-    assert abs(inversion_start / .00001 - round(inversion_start / .00001)) < 1e-7
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AssertionError

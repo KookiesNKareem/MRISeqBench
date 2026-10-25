@@ -24,8 +24,10 @@ system = Opts(
 )
 seq = Sequence(system)
 rf = make_block_pulse(np.pi / 6, duration=1e-3, system=system, use="excitation")
-gx = make_trapezoid("x", flat_area=32 / 0.2, flat_time=3.2e-3, system=system)
-adc = make_adc(32, duration=gx.flat_time, delay=gx.rise_time, system=system)
+samples = case["task"]["sequence"]["matrix"][0]
+fov = case["task"]["sequence"]["fov_mm"][0] / 1000
+gx = make_trapezoid("x", flat_area=samples / fov, flat_time=3.2e-3, system=system)
+adc = make_adc(samples, duration=gx.flat_time, delay=gx.rise_time, system=system)
 seq.add_block(rf)
 seq.add_block(gx, adc)
 ok, errors = seq.check_timing()

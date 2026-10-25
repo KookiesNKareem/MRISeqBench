@@ -150,10 +150,11 @@ def strata_per_cell(samples, cells, dims):
 def sampled_anatomy(case, root, samples, replicate, *, directory=None):
     """Jittered-grid quadrature: each labeled cell splits into equal strata.
 
-    Every stratum receives one uniform point, independently per replicate, with
-    its exact volume as weight. The estimate is unbiased, and within-pixel
-    structure (e.g. spoiler-induced isochromat dependence) is integrated far
-    more evenly than with unstratified points.
+    Dense quadrature stratifies every cell; smaller budgets stratify each
+    material's cell CDF. Every point is uniform within its selected cell with
+    its exact represented volume as weight, independently per replicate. The
+    estimate is unbiased, and within-pixel structure (e.g. spoiler-induced
+    isochromat dependence) is integrated far more evenly than unstratified.
     """
     from .s1_phantom import Spins
 
@@ -169,9 +170,6 @@ def sampled_anatomy(case, root, samples, replicate, *, directory=None):
     active = np.flatnonzero(flat > 0)
     if not len(active):
         raise ValueError("Registered anatomy has no labeled integration cells")
-    strata = np.asarray(strata_per_cell(samples, len(active), dims))
-    per_cell = int(np.prod(strata))
-    total = len(active) * per_cell
 
     def allocate(shape, dtype):
         if directory is None:
@@ -182,24 +180,59 @@ def sampled_anatomy(case, root, samples, replicate, *, directory=None):
         with tempfile.TemporaryFile(dir=directory) as handle:
             return np.memmap(handle, dtype=dtype, mode="w+", shape=shape)
 
-    positions = allocate((total, 3), np.float64)
-    labels = allocate((total,), np.int64)
-    weights = allocate((total,), np.float64)
-    offsets = np.indices(strata).reshape(dims, -1).T  # (per_cell, dims)
+    def nodes(count):
+        return (
+            allocate((count, 3), np.float64),
+            allocate((count,), np.int64),
+            allocate((count,), np.float64),
+        )
+
     rng = np.random.default_rng([seed, replicate])
-    chunk = max(1, 1048576 // per_cell)
-    for start in range(0, len(active), chunk):
-        cells_ids = active[start : start + chunk]
-        cells = np.column_stack(np.unravel_index(cells_ids, shape))
-        jitter = rng.random((len(cells_ids), per_cell, dims))
-        unit = (offsets[None] + jitter) / strata  # position within the cell
-        target = slice(start * per_cell, (start + len(cells_ids)) * per_cell)
-        positions[target] = 0
-        positions[target, :dims] = (
-            lower + (cells[:, None, :] + unit) * anatomy.voxel_size_m
-        ).reshape(-1, dims)
-        labels[target] = np.repeat(flat[cells_ids] - 1, per_cell)
-        weights[target] = cell_volume / per_cell / image_voxel
+    if samples < len(active):
+        # Sparse randomized quadrature over the complete native anatomy. Each
+        # material's flattened cell CDF is stratified, then sampled uniformly
+        # within the selected cell. Exact tissue volumes keep the estimator
+        # unbiased without requiring one simulated spin per native cell.
+        counts = np.bincount(flat[active], minlength=len(anatomy.materials) + 1)[1:]
+        present = np.flatnonzero(counts)
+        budget = max(int(samples), len(present))
+        shares = (budget - len(present)) * counts[present] / len(active)
+        allocation = np.floor(shares).astype(int) + 1
+        remainder = budget - allocation.sum()
+        allocation[np.argsort(-(shares - np.floor(shares)))[:remainder]] += 1
+        positions, labels, weights = nodes(budget)
+        start = 0
+        for label, count in zip(present, allocation, strict=True):
+            cells_ids = active[flat[active] == label + 1]
+            quantiles = (np.arange(count) + rng.random(count)) * len(cells_ids) / count
+            chosen = cells_ids[np.minimum(quantiles.astype(int), len(cells_ids) - 1)]
+            cells = np.column_stack(np.unravel_index(chosen, shape))
+            target = slice(start, start + count)
+            positions[target] = 0
+            positions[target, :dims] = (
+                lower + (cells + rng.random((count, dims))) * anatomy.voxel_size_m
+            )
+            labels[target] = label
+            weights[target] = cell_volume * len(cells_ids) / count / image_voxel
+            start += count
+    else:
+        strata = np.asarray(strata_per_cell(samples, len(active), dims))
+        per_cell = int(np.prod(strata))
+        positions, labels, weights = nodes(len(active) * per_cell)
+        offsets = np.indices(strata).reshape(dims, -1).T  # (per_cell, dims)
+        chunk = max(1, 1048576 // per_cell)
+        for start in range(0, len(active), chunk):
+            cells_ids = active[start : start + chunk]
+            cells = np.column_stack(np.unravel_index(cells_ids, shape))
+            jitter = rng.random((len(cells_ids), per_cell, dims))
+            unit = (offsets[None] + jitter) / strata  # position within the cell
+            target = slice(start * per_cell, (start + len(cells_ids)) * per_cell)
+            positions[target] = 0
+            positions[target, :dims] = (
+                lower + (cells[:, None, :] + unit) * anatomy.voxel_size_m
+            ).reshape(-1, dims)
+            labels[target] = np.repeat(flat[cells_ids] - 1, per_cell)
+            weights[target] = cell_volume / per_cell / image_voxel
     return Spins(
         positions,
         labels,

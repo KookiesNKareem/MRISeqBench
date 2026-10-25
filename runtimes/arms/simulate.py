@@ -48,7 +48,8 @@ def simulate(source, output):
 
         device = str(
             jl.seval("""begin
-            using CUDA, KomaMRICore
+            using CUDA, KomaMRICore, SimWarm
+            SimWarm.WARM || error("Simulator image was not prewarmed on a GPU")
             CUDA.functional() || error("CUDA is required; no CPU fallback")
             CUDA.allowscalar(false)
             KomaMRICore.get_backend(true) isa KomaMRICore.KA.GPU ||
@@ -97,7 +98,7 @@ def simulate(source, output):
             # MRzero's imported sequence and coil tensors use float32/complex64.
             # Native Koma phantom files store float64; mixing these breaks the
             # signal matrix product inside execute_graph.
-            obj = mr0.CustomVoxelPhantom(
+            phantom = mr0.CustomVoxelPhantom(
                 pos=positions,
                 PD=c["ρ"][()].astype(np.float32),
                 T1=c["T1"][()].astype(np.float32),
@@ -108,10 +109,19 @@ def simulate(source, output):
                 B1=1,
                 voxel_size=1e-9,
                 voxel_shape="box",
-            ).build()
+            )
+            obj = phantom.build()
         seq = mr0.Sequence.import_file(str(source / "sequence.seq"))
         graph = mr0.compute_graph(seq, obj, 200, 1e-5)
-        result = mr0.execute_graph(graph, seq.cuda(), obj.cuda())
+        cuda_obj = obj.cuda()
+        # MRzeroCore 1.1.1's SimData.cuda() retains the CPU dephasing closure.
+        # Rebuild the same box-voxel function with its size on the CUDA device.
+        from MRzeroCore.phantom.custom_voxel_phantom import build_dephasing_func
+
+        cuda_obj.dephasing_func = build_dephasing_func(
+            phantom.voxel_shape, phantom.voxel_size.to(cuda_obj.PD.device)
+        )
+        result = mr0.execute_graph(graph, seq.cuda(), cuda_obj)
         if result.device.type != "cuda":
             raise RuntimeError("MRzero simulation returned a CPU signal")
         signal = result.detach().cpu().numpy()
@@ -197,11 +207,6 @@ def probe():
                         f"CUDA RF self-test disagrees with closed form: {relative_error}"
                     )
         execution = json.loads((output / "simulation.json").read_text())
-        if (
-            execution.get("backend") != "cuda"
-            or execution.get("cpu_fallback") is not False
-        ):
-            raise ValueError("Simulator did not verify CUDA execution")
     print(
         json.dumps(
             {

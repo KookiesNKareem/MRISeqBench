@@ -28,13 +28,14 @@ def execute(
     command, cwd, timeout_s, log_prefix, env=None, stop_when=None, timeout_credit=None
 ):
     prefix = Path(log_prefix)
+    timeout_credit = timeout_credit or (lambda: 0.0)
     started = time.monotonic()
     started_at = datetime.now(UTC).isoformat()
-    credit_start = timeout_credit() if timeout_credit else 0.0
+    credit_start = timeout_credit()
 
     def finish(result):
         elapsed = time.monotonic() - started
-        credit = max(0.0, (timeout_credit() if timeout_credit else 0.0) - credit_start)
+        credit = max(0.0, timeout_credit() - credit_start)
         result.update(
             started_at=started_at,
             finished_at=datetime.now(UTC).isoformat(),
@@ -72,11 +73,7 @@ def execute(
                     submitted, code = True, None
                     break
                 remaining = (
-                    (
-                        deadline
-                        + (timeout_credit() if timeout_credit else 0.0)
-                        - time.monotonic()
-                    )
+                    deadline + timeout_credit() - time.monotonic()
                     if deadline is not None
                     else 0.1
                 )
@@ -96,15 +93,13 @@ def execute(
             except ProcessLookupError:
                 pass
             proc.wait()
-    return finish(
-        {
-            "status": "submitted"
-            if submitted
-            else "timeout"
-            if timed_out
-            else "completed"
-            if code == 0
-            else "error",
-            "returncode": code,
-        }
+    status = (
+        "submitted"
+        if submitted
+        else "timeout"
+        if timed_out
+        else "completed"
+        if code == 0
+        else "error"
     )
+    return finish({"status": status, "returncode": code})

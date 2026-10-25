@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,7 +11,13 @@ import numpy as np
 
 class ReplayCache:
     def __init__(
-        self, directory, identity, simulator, chunk_size=32768, signal_shape=None
+        self,
+        directory,
+        identity,
+        simulator,
+        chunk_size=32768,
+        signal_shape=None,
+        deadline=None,
     ):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -18,8 +25,8 @@ class ReplayCache:
         self.simulator = simulator
         self.chunk_size = chunk_size
         self.hits = 0
-        self.density_scaled_hits = 0
         self.signal_shape = signal_shape
+        self.deadline = deadline
 
     def _path(self, part, effects, steps, weights):
         digest = hashlib.sha256(self.identity)
@@ -32,16 +39,24 @@ class ReplayCache:
             digest.update(np.ascontiguousarray(values).tobytes())
         return self.directory / (digest.hexdigest() + ".npy")
 
+    def _valid(self, values, acq):
+        return (
+            values.shape == (self.signal_shape or acq.adc.shape)
+            and np.isfinite(values).all()
+        )
+
     def __call__(self, acq, spins, effects=(), **steps):
         """Bloch sums are linear in spin density, including signed inclusions."""
         weights = np.broadcast_to(spins.weight, (len(spins.positions),))
         signal = None
         # Smaller batches at fine time steps bound work lost on interruption.
-        # Native CPU spin workspaces remain bounded by the batch size.
+        # GPU spin workspaces remain bounded by the batch size.
         chunk_size = max(
             64, int(self.chunk_size * min(1, steps.get("rf_step_s", 20e-6) / 20e-6))
         )
         for start in range(0, len(weights), chunk_size):
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                raise TimeoutError("Image replay exceeded its grading budget")
             stop = start + chunk_size
             part = replace(
                 spins,
@@ -53,10 +68,7 @@ class ReplayCache:
             if path.exists():
                 try:
                     values = np.load(path, allow_pickle=False)
-                    if (
-                        values.shape != (self.signal_shape or acq.adc.shape)
-                        or not np.isfinite(values).all()
-                    ):
+                    if not self._valid(values, acq):
                         raise ValueError("invalid cached replay")
                     self.hits += 1
                 except (OSError, ValueError, EOFError):
@@ -74,21 +86,14 @@ class ReplayCache:
                 if previous.exists():
                     try:
                         cached = np.load(previous, allow_pickle=False)
-                        if (
-                            cached.shape == (self.signal_shape or acq.adc.shape)
-                            and np.isfinite(cached).all()
-                        ):
+                        if self._valid(cached, acq):
                             values = cached / 2
                             self.hits += 1
-                            self.density_scaled_hits += 1
                     except (OSError, ValueError, EOFError):
                         pass
                 if values is None:
                     values = self.simulator(acq, part, effects, **steps)
-                if (
-                    values.shape != (self.signal_shape or acq.adc.shape)
-                    or not np.isfinite(values).all()
-                ):
+                if not self._valid(values, acq):
                     raise RuntimeError("KomaMRI returned a nonfinite or invalid signal")
                 temporary = path.with_suffix(".tmp")
                 with temporary.open("wb") as stream:

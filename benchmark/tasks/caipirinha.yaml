@@ -1,20 +1,19 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: caipirinha
-objective: Acquire a 3D Cartesian CAIPIRINHA pattern with acceleration two along each phase-encode axis.
-  Shift retained ky lines by one grid index on successive retained kz partitions and acquire
-  an 8 x 8 central calibration region. With zero-based indices retain even kz indices; in retained
-  partition j=kz/2 keep ky indices congruent to j modulo 2. Add all ky/kz pairs in indices 12
-  through 19.
+version: 2
+objective: Acquire 128 x 128 x 32 CAIPIRINHA at Ry=Rz=2. Retain even zero-based kz indices iz; in retained
+  partition j=iz/2 retain zero-based ky indices iy congruent to j modulo 2. Also include every calibration
+  pair with iy 60..67 and iz 12..19, including odd iz.
 sequence:
   level: S3
   capabilities: [spoiled_gre, cartesian, undersampling, caipirinha]
-  matrix: [32, 32, 32]
+  matrix: [128, 128, 32]
   fov_mm: [200, 200, 200]
-  duration_s: 8
+  duration_s: 64
   sampling:
     acceleration: 4
     calibration_lines: 8
     caipi_shift: 1
     pattern: uniform
 object: cardiac_3d@1
-evaluation: s3@3
+evaluation: s3@4

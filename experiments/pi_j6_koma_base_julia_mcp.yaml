@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../schemas/experiments.schema.json
+schema_version: 1
+id: pi_j6_koma_base_julia_mcp
+version: 1
+suite: full@1
+arm: j6_koma_base_julia_mcp@1
+arm_runtime:
+  author_image: mriseqbench/author-koma_base-mcp:local
+repeats: 1
+submission_mode: submit
+max_submissions: 3
+agent:
+  adapter: pi
+  pi_version: 0.87.0
+  auto_compaction: false
+  model: REPLACE_WITH_OPENROUTER_MODEL_ID
+  command:
+  - pi
+  - --provider
+  - openrouter
+  - --model
+  - '{model}'
+  - --thinking
+  - '{thinking_level}'
+  - --session-dir
+  - '{workspace}/transcript'
+  - --mode
+  - json
+  - -p
+  - '{prompt_text}'
+  timeout_s: 14400
+  sandbox:
+    backend: docker
+api_proxy:
+  provider_endpoint: REPLACE_WITH_PROVIDER_ENDPOINT
+  upstream_url: https://openrouter.ai/api/v1
+  key_env: OPENROUTER_API_KEY
+feedback:
+  timeout_s: 300

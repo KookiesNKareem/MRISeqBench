@@ -32,20 +32,22 @@ def audit(arm, julia_heap_size_hint_mb=None):
         "jemris",
         "juliacall",
         "pyjulia",
+        "pulseq_matlab",
+        "+mr",
     }
-    for executable in ("jemris", "pjemris"):
+    for executable in ("jemris", "pjemris", "matlab", "octave", "octave-cli"):
         if shutil.which(executable):
             errors.append(f"forbidden executable: {executable}")
     if not python_author:
         forbidden |= {"pypulseq"}
-    forbidden |= {"pulseq_matlab", "+mr"}
-    for executable in ("matlab", "octave", "octave-cli"):
-        if shutil.which(executable):
-            errors.append(f"forbidden executable: {executable}")
     if arm["language"] != "julia":
         forbidden |= {"komamribase", "komamrifiles", "unitful"}
         if shutil.which("julia"):
             errors.append("Julia executable is available in a non-Julia arm")
+    if arm.get("tool_interface") == "julia_mcp":
+        for path in ("/opt/mcp-venv/bin/python", "/opt/julia-mcp/server.py"):
+            if not os.path.exists(path):
+                errors.append(f"Julia MCP arm image lacks {path}")
     if not arm["pulse_designer"]:
         forbidden |= {"pulsedesigner"}
     if not arm["unitful"]:
@@ -104,15 +106,11 @@ def audit(arm, julia_heap_size_hint_mb=None):
         )
         if result.returncode:
             errors.append("Julia authoring probe failed: " + result.stderr[-2000:])
-        elif getattr(result, "stdout", "").strip():
+        elif result.stdout.strip():
             native_versions = json.loads(result.stdout.splitlines()[-1])
     return {
         "ok": not errors,
         "errors": errors,
-        "language": arm["language"],
-        "authoring": arm["authoring"],
-        "pulse_designer": arm["pulse_designer"],
-        "unitful": arm["unitful"],
         "python_packages": versions,
         "native_packages": native_versions,
     }

@@ -1,51 +1,23 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: t2_prepared
-objective: >-
-  Create an ECG-triggered cardiac T2-prepared Cartesian bSSFP acquisition.
-  Use a 40 ms T2 preparation with a 90-degree tip-down, two 180-degree refocusing
-  pulses and a 90-degree tip-up, ending before imaging. Every acquired ADC sample
-  must lie between 600 and 800 ms after its ECG R-wave trigger, using nominal RR 1000
-  ms on physio1; preparations may precede that window. Use ordinary Cartesian reconstruction.
-  Complete magnetization preparation before the imaging window. Balance net gradient
-  area on all three axes in every readout TR; alternate excitation RF phase by 180
-  degrees between readout TRs and keep receiver phases coherent with that RF phase
-  cycle.
-  Use symmetric echo timing in every acquired readout TR: TE is measured from the
-  excitation RF center to the readout k-space-center echo, and abs(TE - TR/2)
-  must be no more than max(0.01 ms, 0.05 times TR).
-  For every nonzero T2 preparation, use exactly four separate RF events:
-  a 90-degree tip-down, two 180-degree refocusers and a 90-degree tip-up. Measure
-  preparation duration from tip-down RF center to tip-up RF center. Place the
-  refocusing RF centers at one-quarter and three-quarters of that duration.
-  Relative RF phases must be phi, phi + 90 degrees, phi + 90 degrees and
-  phi + 180 degrees, respectively. Tip pulses must be within 2 degrees of 90;
-  refocusers must reach at least 178 degrees of waveform-derived nominal flip.
-  RF phase tolerances are 0.01 rad. Preparation duration and refocuser-center
-  timing tolerances are twice the larger of the RF and block-duration rasters.
+version: 2
+objective: Acquire an ECG-triggered bSSFP image after a 40 ms T2 preparation (90-180-180-90, phases
+  0-90-90-180 degrees). Use four 32-line segments in the declared cardiac window, repeating the preparation
+  for each segment.
 object: cardiac_2d@1
-evaluation: s4@2
+evaluation: s4@3
 sequence:
   level: S4
-  capabilities:
-  - bssfp
-  - cartesian
-  - t2_preparation
-  - triggering
-  - gating
-  matrix:
-  - 32
-  - 32
-  fov_mm:
-  - 200
-  - 200
-  duration_s: 6
+  capabilities: [bssfp, cartesian, t2_preparation, triggering, gating]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  duration_s: 20
   application:
     preparation_duration_ms: 40
   temporal:
     frames: 1
-    frame_duration_ms: 1000
-    ordering: sequential
     trigger_source: ecg
     rr_interval_ms: 1000
     trigger_delay_ms: 600
     acquisition_window_ms: 200
+    segments_per_frame: 4

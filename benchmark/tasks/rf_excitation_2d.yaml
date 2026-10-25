@@ -1,23 +1,15 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: rf_excitation_2d
-objective: >-
-  Design a 2D spatially selective RF excitation that draws the upright letters AI
-  in the supplied uniform water disc (radius 60 mm, z=0). Start from equilibrium
-  and target transverse magnetization magnitude 0.5 of equilibrium PD within
-  the letters and zero outside, with a 1.25 mm Gaussian edge smoothing.
-  The canonical target is target.npz (x_mm, y_mm, target_mxy_magnitude;
-  arrays use x as the first axis and positive y points upward).
-  Use RF and in-plane gradients; the trajectory and pulse design method are free.
-  Submit an excitation-only sequence without ADC events. The judge samples
-  magnetization 1 microsecond after the end of your complete authored sequence,
-  preserving all RF, gradients, relaxation and declared B0. Phase is unconstrained.
-  No fitted gain, spatial registration or normalization is applied to your response.
-  The full sequence, including any rewinding or recovery, must fit in 40 ms.
+version: 2
+objective: Excite the upright letters AI in the supplied uniform water disc, matching target.npz
+  (magnitude 0.5 inside, zero outside, 1.25 mm edge smoothing). Use in-plane RF encoding and no ADC;
+  the response is measured 1 microsecond after sequence end, with relaxation and declared B0. Finish
+  within 40 ms.
 object: uniform_disc@1
-evaluation: rf_excitation@2
+evaluation: rf_excitation@3
 sequence:
   level: S4
   capabilities: [rf_excitation_2d]
-  matrix: [64, 64]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 0.04

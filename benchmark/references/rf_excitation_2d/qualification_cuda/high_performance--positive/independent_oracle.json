@@ -1,6 +1,0 @@
-{
-  "native_max_absolute_error": 0.0004628978872038421,
-  "oracle_refinement_error": 4.649604020853492e-06,
-  "absolute_error_limit": 0.001,
-  "passed": true
-}

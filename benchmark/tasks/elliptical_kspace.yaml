@@ -1,18 +1,18 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: elliptical_kspace
-objective: Acquire a 3D Cartesian volume retaining only phase-encode pairs satisfying (ky/ky_max)^2
-  + (kz/kz_max)^2 <= 1. Here ky = iy - 16 and kz = iz - 16 for zero-based grid indices
-  iy, iz in 0..31, and ky_max = kz_max = 16; boundary pairs with equality are retained.
+version: 2
+objective: Acquire a 128 x 128 x 32 Cartesian volume retaining pairs with ((iy-64)/64)^2 + ((iz-16)/16)^2
+  <= 1, including the boundary.
 sequence:
   level: S3
   capabilities: [spoiled_gre, cartesian, elliptical_kspace]
-  matrix: [32, 32, 32]
+  matrix: [128, 128, 32]
   fov_mm: [200, 200, 200]
-  duration_s: 12
-  te_ms: {target: 3, tolerance: 0.30000000000000004}
+  duration_s: 128
+  te_ms: {target: 3, tolerance: 0.3}
   tr_ms: {target: 10, tolerance: 0.5}
   flip_angle_deg: 20
   sampling:
     pattern: elliptical
 object: cardiac_3d@1
-evaluation: s3@3
+evaluation: s3@4

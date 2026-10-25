@@ -3,6 +3,7 @@
 import numpy as np
 
 from ..models import SARModel
+from .preflight import MALFORMED_SEQUENCE
 from .rf_waveform import rf_waveform
 
 
@@ -16,7 +17,7 @@ def evaluate_sar(submission, hardware):
         # Preflight validates the file rasters first; the judge owns integration.
         seq.rf_raster_time = hardware["rf_raster_us"] * 1e-6
         return sar_checks(seq, hardware)
-    except Exception as exc:  # noqa: BLE001 -- unsupported RF must fail closed
+    except MALFORMED_SEQUENCE as exc:  # Unsupported RF fails closed.
         return [
             {
                 "name": "sar_model",

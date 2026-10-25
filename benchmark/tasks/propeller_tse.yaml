@@ -1,19 +1,20 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: propeller_tse
-objective: Acquire 16 equally rotated Cartesian PROPELLER blades, each containing eight adjacent
+version: 2
+objective: Acquire 64 Cartesian PROPELLER blades uniformly rotated over 180 degrees, each containing eight adjacent
   k-space lines acquired with a refocused echo train.
 object: cardiac_2d@1
 sequence:
   level: S2
   capabilities: [spin_echo, tse, propeller]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
-  duration_s: 20
+  duration_s: 72
   te_ms: {target: 40, tolerance: 4.0}
   tr_ms: {target: 1000, tolerance: 50.0}
   readout:
-    shots: 16
+    shots: 64
     echo_train_length: 8
     blade_width_lines: 8
     echo_spacing_ms: 10
-evaluation: s2@4
+evaluation: s2@5

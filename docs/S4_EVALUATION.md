@@ -1,150 +1,120 @@
-# S4 evaluation
+# Cardiac S4 evaluation
 
-S4 also includes [2D RF excitation of AI](RF_EXCITATION_EVALUATION.md), scored by
-the dedicated `rf_excitation@2` magnetization evaluator. The cardiac application
-contract described below applies to its four ECG-triggered imaging tasks.
+The four cardiac tasks use 128×128 Cartesian bSSFP images, with four ECG segments per frame.
 
-Contract: [`s4@2`](../benchmark/evaluators/s4.yaml). Requalification on GPU pending after the SAR (quadrature) and receiver-phase/role changes.
+Preflight, SAR, outcomes, RF classification, k-space and ADC timing, image-metric
+definitions and numerical acceptance are defined in
+[COMMON_EVALUATION.md](COMMON_EVALUATION.md). S4 also applies these common
+waveform checks to every ADC: excitation assignment (`rf_before_adc`), echo in
+ADC, Cartesian lattice and readout (residual ≤0.01 sample, offset ≤0.51
+sample or +1, unit steps, 2D |kz| ≤ 0.01/min(FOV)), every point of the 128×128 grid
+acquired at least once over the whole sequence (`matrix`, `fov_mm`), and one
+readout line per excitation.
 
-S4 covers ECG-triggered adiabatic inversion, T2 preparation and T1/T2 mapping
-with Cartesian bSSFP. The judge derives physio1 triggers, cardiac ADC windows,
-preparation timing, RF rotations, full-grid coverage, gradient balance and
-RF/receiver coherence from actual Pulseq events and waveforms.
+## Triggers and timeline
 
-Before native S4 grading, KomaMRIBase `resolve_triggers` with
-`CardiacSignal(heart_rate=1000/rr_interval_ms, first_peak=0)` resolves each
-standalone physiological trigger to the next R-wave. The resolved idle waits
-are inserted into a derived execution file while the original RF, gradient,
-ADC, shape and extension libraries remain byte-identical. The submitted file
-is retained unchanged. Trigger arming delay and post-trigger duration follow
-Koma's semantics; phantom motion is an independent input and is not required.
-Hardware/duration checks, SAR, cardiac windows, preparation recovery, targets
-and native replay all use that same resolved timeline. Native replay does not
-resolve it a second time. A `physio/resolution.json` receipt records the original
-and execution hashes, package versions, RR and inserted waits. Offline
-`s4_sequence.inspect_sequence` inspects its supplied timeline; the public
-evaluation entrypoints perform physiological resolution before calling it.
+- Use `physio1` input triggers in standalone blocks (no RF, gradient or ADC in that block).
+  Koma resolves each trigger onto the next R wave (R waves at 0, RR, 2 RR, … using the task's RR)
+  and inserts the wait as idle time. Successive triggers must land on distinct R waves.
+- Trigger rows use integer microsecond delay/duration ≥ 0 (see the common preflight rules); a file the
+  native reader or trigger scheduler rejects fails `physio_trigger_resolution`.
+- Write Pulseq file version 1.4 or 1.5. Other versions (e.g. 1.3.x, whose block table references a
+  delay library) fail `physio_trigger_resolution`, because trigger waits are inserted as duration-tick blocks.
+- The trigger time is the resolved R wave. The trigger event's own `delay` field only delays
+  arming (the R wave found is the first one after it); it does not delay acquisition after the R wave.
+  Implement the trigger delay with ordinary blocks after the trigger block.
+- `/check` runs on the raw file, where trigger waits are zero. At submission the duration limit and
+  hardware checks are applied again to the resolved timeline, including every inserted trigger wait.
+  RF/gradient/ADC waveform bytes are kept unchanged.
+- Timing tolerance is ±2·max(block raster, RF raster) = ±20 µs. It applies to TI, T2-prep duration,
+  refocuser centres, HS pulse duration, cardiac window edges and RR cadence.
 
-The readout is explicitly symmetric: in every acquired TR,
-`abs(TE - TR/2) <= max(0.01 ms, 0.05*TR)`, measuring TE from excitation RF
-center to the readout k-space-center echo. This is a requirement of this task
-contract, in addition to gradient balance and RF/receiver coherence.
+## Segments and readout
 
-RF between the previous frame's last ADC and the readout train is classified by
-role from the waveform, never from labels:
+- Every ADC sample must follow a trigger and lie within the cardiac window measured from the most
+  recent trigger (`trigger_delay_ms` to `trigger_delay_ms + acquisition_window_ms`, currently 600–800 ms).
+  Beats without ADCs (recovery beats) are allowed. The number of beats containing ADCs must equal
+  frames × segments; consecutive groups of four such beats form frames 0, 1, 2, …
+- Each ADC event is one Cartesian line of exactly 128 samples at unit k-space steps: no readout
+  oversampling and no dummy or navigator ADCs. Each frame must acquire every grid point exactly once.
+  Each segment acquires exactly 32 lines (128 ky lines / 4 segments), each complete inside its trigger
+  window; which lines go in which segment and their order within a segment are free (but see TI
+  under inversion tasks).
+- Every ADC event must have a positive sample count; a zero-sample ADC fails the structure check.
+- bSSFP: for every TR (readout RF start to next readout RF start; the last TR ends one TR after the last readout RF start), the net gradient area on all three
+  axes must be ≤0.01 cycles across the FOV (x, y use the task FOV; z uses 0.2 m). RF phases alternate
+  by pi; each ADC phase offset must match its excitation's effective RF phase at the pulse centre
+  (event phase plus envelope phase plus the frequency offset's accrual from pulse start to centre, as
+  in COMMON_EVALUATION.md) within 0.01 rad, and RF/ADC frequency offsets must match within 1e-6 Hz.
+  With a nonzero carrier offset the ADC phase therefore carries 2π·Δf·(centre − start) of the RF.
+- Preparation RF must lie after the previous segment's last ADC and end at least 20 µs before the
+  readout train. RF pulses spaced at the train TR immediately before the first line count as part of the train.
+  Conditioning pulses up to the readout flip +2° are allowed. Additional preparation RF must be followed
+  by an RF-free crusher interval whose net gradient moment wraps the phase by ≥2 full cycles across
+  one image voxel on x or y (|moment| × FOV/128 ≥ 2, i.e. ≥1280 cycles/m at 200 mm FOV); z moments do
+  not count, since a single-slice object is not dephased through-plane. This displaces the crushed
+  coherence by twice the sampled k-space width, so it is modelled as ideally dephased. Other
+  unclassified RF, including RF followed by a weaker moment, fails.
+  RF centres are |B1|-weighted centroids of the waveform.
 
-- **Preparation**: inversion-class RF (nominal flip >= 170 degrees) or, for T2
-  tasks, the first consecutive 90 / >=178 / >=178 / 90-degree block.
-- **Conditioning**: RF no larger than the train's own flips (+2 degrees), e.g.
-  alpha/2-TR/2 catalyzation, ramp-up or alpha/2 flip-back after the previous
-  train. Conditioning never counts as preparation.
-- **Unclassified**: anything else. Unclassified RF fails the frame.
+## Inversion tasks
 
-Every inversion-prepared frame has exactly one inversion-class RF event before
-the readout train. TI runs from the inversion RF center to the k-space-center
-echo time of the frame's central line, interpolated along its readout exactly as
-for TE. Every nonzero T2 preparation is four **separate RF events**: 90-degree
-tip-down, two refocusers of at least 178 degrees, and 90-degree tip-up (tip
-tolerance 2 degrees). Their relative RF phases are `0, pi/2, pi/2, pi`, within
-0.01 rad. Preparation duration runs from tip-down center to tip-up center;
-refocusing centers occur at one-quarter and three-quarters of that interval.
-Preparation duration, inversion TI and refocusing-center timing tolerances are
-twice the larger RF/block-duration raster. The zero-duration T2-mapping
-reference has no preparation-class RF. The preparation Bloch effect removes only
-preparation-class RF; conditioning stays in both replays. Other physically useful preparation designs are outside
-this specific benchmark contract.
+- Each segment has exactly one inversion-class RF event (nominal flip ≥170°).
+  TI runs from its RF centre to the echo of the line containing the segment's sample nearest k-space centre.
+  TI is measured per segment, to that segment's own line nearest k-space centre, so every segment's
+  centre line must sit at the prescribed TI (±20 µs). With linear ky ordering across segments those
+  lines fall at different train positions, so use the same per-segment ordering relative to each
+  segment's centre line (e.g. centre-out/centric per segment) or adjust each segment's inversion delay.
+- `adiabatic_inversion`: the pulse must have a sech amplitude and a tanh frequency sweep, each within
+  5% RMS of the fitted shape, with a positive sweep; the shape scale is fitted (no fixed beta or bandwidth).
+  The 10 ms duration is the RF waveform span. Adiabaticity is tested functionally: the pulse must
+  also invert ≥90% Mz at every B1 scale 0.80, 0.85, …, 1.20 (±20% transmit error) at each B0 offset
+  of the inversion assay below.
+- `t1_mapping`: frame k must use `inversion_times_ms[k]` in the listed order (100, 400, 1200 ms);
+  interleaving TIs across frames fails. Consecutive inversions (every segment) must be at least
+  3·RR apart, centre to centre. When TI increases between frames the inversion moves earlier
+  relative to its trigger, so that gap may need four RR.
 
-Finite-RF KomaMRI replay retains the entire preparation and readout RF history.
-Every image and independent target uses BART Cartesian inverse FFT
-(`bart_cartesian_fft@1`), including the mapping dictionary basis. Each frame has
-a full-grid target holding tissue response at its central echo, including fat. The RF-only
-phase oracle adds declared B0. Readout blur and displacement remain errors.
+## T2-preparation tasks
 
-The central-echo target uses the **submitted sequence's** RF history; it is not
-the image from the qualification reference sequence. Starting from equilibrium,
-finite-RF replay without encoding gradients gives each tissue's complex response
-at the acquired echo nearest k=0. That response is held constant across the full
-requested Cartesian grid. The actual encoded image, in contrast, retains the
-changing tissue response at every ADC sample. Consequently, line-by-line
-transients can produce blur, ringing and displacement that fail image acceptance
-even when the preparation, balanced gradients and RF/receiver phases are valid.
-Including transients in the central-echo calculation does not include their
-readout artifacts in the target. Declared B0 supplies the independent RF-only
-phase reference; its magnitude loss is not added to the target magnitude.
+- Nonzero T2 preparation uses separate 90/≥178/≥178/90° RF events; tip tolerance is 2°.
+  Relative phases are `0, pi/2, pi/2, pi` within 0.01 rad. Duration runs from tip-down centre to
+  tip-up centre; refocuser centres lie at 1/4 and 3/4 of that interval. Zero-duration preparation has no prep RF.
+- `t2_mapping`: frames are 0, 25, 50 ms in that order. Consecutive nonzero preparations must be at least
+  3·RR apart (tip-down centre to tip-down centre); zero-duration segments do not count.
 
-Conditioning pulses, flip-angle ramps, k-space ordering and readout timing are
-design choices for controlling these errors. No particular reference TR, flip
-angle, ordering or conditioning count is required. Any conditioning must be
-authored explicitly and obey the existing preparation timing, cardiac ADC window,
-duration, signal, preparation-effect and SAR constraints. The mapping dictionary
-also uses central-echo responses with fixed anatomical partial volumes rather
-than fitting readout artifacts in the acquired images.
+## Image and mechanism checks
 
-The default submission/feedback summary lists failed sequence, application and
-image checks with their measured details. Numerically unresolved checks are
-listed separately. Full disclosed responses are saved in `feedback/` and can be
-printed with `./bin/submit --full` or retrieved without another grading call using
-`./bin/feedback --full`. Terminal blind receipts do not disclose private verdicts.
+CUDA finite-RF replay retains all prior RF, relaxation, fat and declared B0. BART FFT reconstructs each frame.
+The independent target freezes RF-only tissue responses at that frame's central echo; B0 supplies its phase.
+Additional spoiled preparations use ideal transverse dephasing only at their measured crusher boundaries.
+Native image replay retains the actual crusher gradients; inversion and bSSFP readout coherence are preserved.
+Readout transients, blur, displacement and B0 magnitude loss remain image errors. No gain, phase or registration is fitted.
 
-| Per-frame image metric | Limit |
+| Every frame must meet | Limit |
 |---|---:|
-| Complex / magnitude NRMSE | ≤ 0.45 / 0.35 |
-| Wrapped phase RMS | ≤ 0.35 rad |
-| Minimum tissue signal / contrast retention | ≥ 0.5 / 0.5 |
-| Outside-object energy fraction | ≤ 0.25 |
+| Complex / magnitude NRMSE | ≤0.45 / ≤0.35 |
+| Phase RMS | ≤0.35 rad |
+| Minimum tissue signal | ≥0.5 |
+| Contrast retention (non-mapping tasks) | ≥0.5 |
+| Outside-object energy | ≤0.25 |
 
-Myocardial echo signal must reach 0.01 of equilibrium PD, and preparation must
-change it by at least 0.02 PD. Each inversion/refocusing RF pulse must invert
-at least 90% of longitudinal magnetization over 17 offsets spanning
-−520 to +70 Hz, scaled by scanner field / 3 T. RF labels are not evidence.
+Myocardial echo signal must be ≥0.01 PD. The preparation effect is
+|S_prep − S_no-prep| / PD at the myocardium and the frame's k-space-centre echo, where S is the
+complex noise-free RF-only (canonical oracle) response, and S_no-prep replays the same RF history with
+the frame's designated preparation pulses (inversion, or the 90/180/180/90 T2-prep block of every
+segment) removed. It must be ≥0.02 PD. The requirement (and the per-pulse inversion assay below) does
+not apply to a zero-duration T2-preparation frame, which has no preparation RF.
+Every inversion pulse and T2-prep refocuser must invert ≥90% Mz at each of 17 B0 offsets spanning
+[-520,70] Hz × field/3 T. T1-mapping inversions and T2-prep refocusers are tested at nominal B1
+only; the `adiabatic_inversion` pulse is tested on the full 9 × 17 grid of B1 scales 0.80–1.20
+(step 0.05) × B0 offsets. A B1 scale multiplies the RF amplitude only; the frequency sweep is unchanged.
+This band spans fat and water across the declared B0 map, so T2-preparation
+refocusers must invert fat as well as water.
+Mapping fits only the requested relaxation time, with known PD, other relaxation time and fixed partial volumes.
+The fitted signal is the ROI-mean magnitude of each frame's complex mean over spatial-sampling replicates
+(complex averaging avoids magnitude bias); its numerical interval refits each leave-one-out ensemble.
+Its relative error must be ≤10%, with numerical precision 0.001.
+Mapping tasks assess the requested myocardial relaxation time directly; they do not require fat/myocardium contrast ordering at each preparation time. All global image error, phase, signal and preparation requirements still apply.
 
-Mapping compares standard reconstructed myocardial ROIs against an anatomical
-Bloch dictionary including fixed partial volumes and BART FFT response. Only the
-requested relaxation time varies; PD and the other relaxation time are known.
-No gain, phase, B0 or registration is fitted. Relative error must be ≤10%.
-Numerical relative-error precision is 0.001; unresolved intervals trigger doubled
-independent spatial quadrature, preserving each stage and the unchanged dictionary.
-The method follows [prepared bSSFP dictionary mapping](https://doi.org/10.1002/mrm.29143);
-the numeric bounds are benchmark acceptance limits.
-
-Every frame and application check must pass. Unresolved results cannot pass.
-Final submissions undergo hardware, timing and SAR checks (quadrature/CP body coil;
-formula in [S2](S2_EVALUATION.md#sar-and-validation-tools)). External backends must
-report every frame and application outcome plus BART version, executable hash
-and actual commands. [Independent controls](../tests/fixtures/s4_sequences.py)
-and the [qualification runner](../tests/fixtures/qualify_s4.py) retain submitted-byte,
-image and numerical provenance.
-
-### RF reader corrections and feasibility
-
-The reader accepts finite explicit RF time vertices, including dwell times larger
-than the declared RF raster. Explicit complex RF vertices use linear interpolation
-on their declared support, matching KomaMRIFiles; no endpoint extrapolation is
-added. SAR integrates the resulting quadratic power exactly and checks interior
-sliding-window maxima. Structural/RF assays subdivide each explicit segment to at
-most 0.25 microseconds for midpoint propagation; native replay reads the original
-file. Previously supported constant and default-raster sample holds retain their
-exact behavior. Zero-duration blocks containing only extensions or no events have
-zero RF energy; negative/nonfinite durations and zero-duration physical events
-still fail closed.
-
-S4 failure details report the measured TE, TI, flip angles, RF phase and preparation
-center errors with their existing limits and failed subconditions. These reader
-and diagnostic corrections do not change task contracts or acceptance thresholds.
-
-All four independent full S4 positive controls passed at 3 T/high_performance
-with the physiological-trigger grader. This establishes attainability for those
-frozen simulator cases. Some structural requirements specify this benchmark's
-particular sequence design; alternative useful MRI sequences may fall outside
-that contract. Passing these controls does not imply scanner certification.
-
-For a protocol shorter than a configured SAR window, the average uses the actual
-authored sequence duration, including explicit RF-free recovery delays. It does
-not zero-pad to 360 seconds or insert implicit repetitions. A shorter protocol
-can therefore fail the duty-cycle limit despite using less total RF energy than
-a passing reference. The supplied total-duration and SAR limits still apply.
-
-TI comparisons retain the inclusive two-raster physical tolerance, with only a
-1 picosecond numerical guard for accumulated floating-point arithmetic. The
-diagnostic reports this guard separately from the physical tolerance. Reference
-TR, excitation flip and dummy-pulse counts remain examples, not additional gates.
+All common, sequence, image and application checks must pass.

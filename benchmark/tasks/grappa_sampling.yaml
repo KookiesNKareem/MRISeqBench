@@ -1,17 +1,19 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: grappa_sampling
-objective: 'Acquire every second Cartesian phase-encode line plus eight contiguous central autocalibration
-  lines for GRAPPA reconstruction. Grid indices are zero based: retain even ky indices and add
-  central indices 12 through 19.'
+version: 2
+objective: 'Acquire an auto-calibrating (GRAPPA-style) Cartesian spoiled GRE mask: every third phase-encode
+  line plus 24 contiguous central autocalibration lines. Grid indices are zero based: retain ky indices
+  divisible by 3 and add central indices 52 through 75 (59 lines). Grading estimates the coil sensitivities
+  from your acquired central calibration lines (ESPIRiT) and reconstructs with them; no known coil maps are used.'
 object: cardiac_2d@1
 sequence:
   level: S3
   capabilities: [spoiled_gre, cartesian, undersampling, grappa]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 6
   sampling:
-    acceleration: 2
-    calibration_lines: 8
+    acceleration: 3
+    calibration_lines: 24
     pattern: uniform
-evaluation: s3@3
+evaluation: s3@4

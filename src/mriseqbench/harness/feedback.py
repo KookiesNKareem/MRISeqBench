@@ -4,17 +4,48 @@ import hashlib
 import hmac
 import json
 import secrets
-import sys
 import threading
 import time
+from collections import Counter
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 from ..io import write_json
 from ..process import execute
-from .grading import EvaluationIncomplete, grade_frozen
+from .grading import (
+    AnyEvent,
+    EvaluationIncomplete,
+    grade_frozen,
+    grading_slot,
+    worker_command,
+)
 from .proxy import QuietHTTPServer
+
+
+def disclosed(result):
+    """Like a scanner: say whether SAR was exceeded, never the model or values."""
+
+    def redact(checks):
+        sar = [c for c in checks if str(c.get("name", "")).startswith("sar_")]
+        if not sar:
+            return checks
+        passed = all(c["passed"] for c in sar)
+        return [c for c in checks if c not in sar] + [
+            {
+                "name": "sar",
+                "passed": passed,
+                "detail": "within the scanner SAR limit"
+                if passed
+                else "scanner SAR limit exceeded; the scan was refused",
+            }
+        ]
+
+    value = {**result}
+    for key in ("checks", "image_checks", "application_checks"):
+        if isinstance(value.get(key), list):
+            value[key] = redact(value[key])
+    return value
 
 
 class FeedbackServer:
@@ -27,6 +58,7 @@ class FeedbackServer:
         backend=None,
         max_submissions=3,
         grading_slots=None,
+        abort=None,
     ):
         self.case, self.config, self.root = case, config, Path(root).resolve()
         self.directory = Path(control_dir).resolve()
@@ -39,16 +71,25 @@ class FeedbackServer:
         self.token = secrets.token_hex(32)
         self.submitted = threading.Event()
         self.closed = threading.Event()
+        # Workers stop when the trial closes or the campaign aborts, even
+        # while the runner drains them after the agent has exited.
+        self.stopping = AnyEvent(self.closed, abort)
         self.lock = threading.Lock()
-        self.checks_used, self.lints, self.seconds, self.requests = 0, 0, 0.0, 0
+        self.checks_used, self.lints, self.seconds = 0, 0, 0.0
         self.max_submissions = max_submissions
         self.grading_slots = grading_slots or threading.BoundedSemaphore(1)
         self.attempts = []
         self.submissions_started = 0
-        self.evaluation_failure = None
-        self.grading_seconds = 0.0
-        self.backoff_seconds = 0.0
-        self.grading_started = None
+        self.evaluation_failure = None  # Infrastructure latch; see interrupt().
+        # Grading, simulator-queue and provider back-off waits; overlapping
+        # waits are credited once (in total and per kind) for the time waited.
+        # Keys are kinds, plus None for the union of all kinds.
+        self.active, self.since, self.excluded_seconds = Counter(), {}, 0.0
+        self.excluded_by_kind = {
+            "grading": 0.0,
+            "simulator_queue": 0.0,
+            "provider_backoff": 0.0,
+        }
         self.retry_time_lock = threading.Lock()
         self.submission_path = self.directory / "accepted.seq"
         self.agent_started = None
@@ -63,13 +104,11 @@ class FeedbackServer:
         return self
 
     def __exit__(self, *args):
+        # Handler workers observe closed and their process groups are killed.
         self.closed.set()
         self.httpd.shutdown()
         self.httpd.server_close()
         self.thread.join(2)
-        # Handler workers observe closed and their process groups are killed.
-        with self.lock:
-            write_json(self.directory / "stats.json", self.stats())
 
     def stats(self):
         return {
@@ -79,8 +118,13 @@ class FeedbackServer:
             "submitted": self.submitted.is_set(),
             "submissions_used": self.submissions_started,
             "max_submissions": self.max_submissions,
-            "grading_wall_s": round(self.grading_credit() - self.backoff_seconds, 6),
-            "provider_backoff_wall_s": round(self.backoff_seconds, 6),
+            "grading_wall_s": round(self.excluded_by_kind["grading"], 6),
+            "provider_backoff_wall_s": round(
+                self.excluded_by_kind["provider_backoff"], 6
+            ),
+            "simulator_queue_wall_s": round(
+                self.excluded_by_kind["simulator_queue"], 6
+            ),
         }
 
     def start_agent_clock(self, timeout_s):
@@ -89,8 +133,7 @@ class FeedbackServer:
         self.agent_started = time.monotonic()
 
     def runtime_status(self):
-        # Do not acquire the submission lock: status must remain available while
-        # a submission is being graded or is waiting for a grader slot.
+        # Lock-free: status stays available while a submission is being graded.
         elapsed = (
             time.monotonic() - self.agent_started
             if self.agent_started is not None
@@ -120,50 +163,80 @@ class FeedbackServer:
         }
 
     def grading_credit(self):
-        """Submission grading and provider back-off are excluded from the agent deadline."""
+        """Grading, simulator-queue waits and provider back-off are excluded from the agent deadline."""
         with self.retry_time_lock:
-            started = self.grading_started
-            return (
-                self.grading_seconds
-                + self.backoff_seconds
-                + (time.monotonic() - started if started is not None else 0.0)
+            started = self.since.get(None)
+            return self.excluded_seconds + (
+                time.monotonic() - started if started is not None else 0.0
             )
 
-    def exclude(self, seconds):
+    def backoff(self):
+        """Exclude a provider back-off wait (ended early by cancellation)."""
+        return self.excluded("provider_backoff")
+
+    def interrupt(self, failure):
+        """Latch an infrastructure failure: stop the agent and leave the trial
+        interrupted and resumable (never a benchmark outcome). Shared by
+        trusted grading, lint/check workers and the agent-side simulator."""
+        if not isinstance(failure, EvaluationIncomplete):
+            failure = EvaluationIncomplete(
+                f"Infrastructure failure: {type(failure).__name__}: {failure}"
+            )
         with self.retry_time_lock:
-            self.backoff_seconds += seconds
+            if self.evaluation_failure is None:
+                self.evaluation_failure = failure
+                write_json(
+                    self.directory / "infrastructure-failure.json",
+                    {"error": str(failure), "at_unix_s": time.time()},
+                )
+        self.submitted.set()
+        return failure
 
     @contextmanager
-    def grading(self):
+    def excluded(self, kind):
+        """Live-credit a wait so the running agent deadline extends while it lasts."""
         with self.retry_time_lock:
-            self.grading_started = time.monotonic()
+            now = time.monotonic()
+            for key in (kind, None):
+                if not self.active[key]:
+                    self.since[key] = now
+                self.active[key] += 1
         try:
             yield
         finally:
             with self.retry_time_lock:
-                self.grading_seconds += time.monotonic() - self.grading_started
-                self.grading_started = None
+                now = time.monotonic()
+                for key in (kind, None):
+                    self.active[key] -= 1
+                    if not self.active[key]:
+                        elapsed = now - self.since.pop(key)
+                        if key is None:
+                            self.excluded_seconds += elapsed
+                        else:
+                            self.excluded_by_kind[key] += elapsed
 
     def _submit(self, body):
         """Called under the run lock; grade the frozen bytes before any disclosure."""
         attempt = len(self.attempts) + 1
         self.submissions_started += 1
         directory = self.directory / "submissions" / f"attempt-{attempt:03d}"
-        directory.mkdir(parents=True, exist_ok=False)
-        snapshot = directory / "sequence.seq"
-        snapshot.write_bytes(body)
-        receipt = {
-            "case_id": self.case["case_id"],
-            "attempt": attempt,
-            "blind": attempt == 1,
-            "sha256": hashlib.sha256(body).hexdigest(),
-            "bytes": len(body),
-            "accepted_at_unix_s": time.time(),
-        }
-        write_json(directory / "receipt.json", receipt)
-        started = time.monotonic()
         try:
-            with self.grading(), self.grading_slots:
+            directory.mkdir(parents=True, exist_ok=False)
+            snapshot = directory / "sequence.seq"
+            snapshot.write_bytes(body)
+            receipt = {
+                "case_id": self.case["case_id"],
+                "attempt": attempt,
+                "sha256": hashlib.sha256(body).hexdigest(),
+                "bytes": len(body),
+                "accepted_at_unix_s": time.time(),
+            }
+            write_json(directory / "receipt.json", receipt)
+            started = time.monotonic()
+            with (
+                self.excluded("grading"),
+                grading_slot(self.grading_slots, self.stopping),
+            ):
                 result = grade_frozen(
                     snapshot,
                     self.case,
@@ -172,25 +245,33 @@ class FeedbackServer:
                     self.config.timeout_s,
                     execute,
                     backend_path=self.backend_path,
-                    stop_when=self.closed,
+                    stop_when=self.stopping,
                 )
-        except EvaluationIncomplete as exc:
-            self.evaluation_failure = exc
-            self.submitted.set()
-            raise
-        self.seconds += time.monotonic() - started
-        record = {**receipt, "evaluation": result, "directory": str(directory)}
-        self.attempts.append(record)
-        write_json(self.directory / "submissions.json", self.attempts)
-        self.submission_path.write_bytes(body)
-        write_json(self.directory / "receipt.json", receipt)
-        self._log({"kind": "submit", **record})
+            self.seconds += time.monotonic() - started
+            self.submission_path.write_bytes(body)
+        except Exception as exc:
+            # Any trusted grading or storage failure interrupts the trial: the
+            # accepted bytes stay frozen for recovery and nothing is finalised.
+            failure = self.interrupt(
+                exc
+                if isinstance(exc, EvaluationIncomplete)
+                else EvaluationIncomplete(
+                    f"Trusted grading or storage failed at {directory}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            )
+            if failure is exc:
+                raise
+            raise failure from exc
+        self.attempts.append(
+            {**receipt, "evaluation": result, "directory": str(directory)}
+        )
         if result["status"] == "failed" and attempt < self.max_submissions:
             return 200, {
                 "status": "retry_required",
                 "attempt": attempt,
                 "submissions_remaining": self.max_submissions - attempt,
-                "evaluation": result,
+                "evaluation": disclosed(result),
                 "reason": "Submission failed. Revise sequence.seq and submit again. Lint/check provide only basic file, timing and hardware checks.",
             }
         self.submitted.set()
@@ -200,10 +281,6 @@ class FeedbackServer:
             "submissions_remaining": 0,
             "reason": "Submission recorded. The run is finished; stop now.",
         }
-
-    def _log(self, value):
-        with (self.directory / "feedback.jsonl").open("a") as log:
-            log.write(json.dumps(value, allow_nan=False) + "\n")
 
     def handle(self, kind, token, body):
         if not isinstance(token, str) or not hmac.compare_digest(
@@ -236,7 +313,8 @@ class FeedbackServer:
         # blind final-submission path never gains access to the private verdict.
         with self.lock:
             write_json(self.directory / "last-feedback.json", value)
-            write_json(self.directory / f"last-{kind}-feedback.json", value)
+            if kind == "submit":
+                write_json(self.directory / "last-submit-feedback.json", value)
         return code, value
 
     def _handle(self, kind, body):
@@ -246,47 +324,57 @@ class FeedbackServer:
                 "reason": "empty or oversized sequence",
             }
         with self.lock:
-            if self.closed.is_set() or self.submitted.is_set():
+            if self.stopping.is_set() or self.submitted.is_set():
                 return 403, {"status": "closed", "reason": "run is already finished"}
             if kind == "submit":
                 return self._submit(body)
-            if kind not in ("lint", "check"):
-                return 403, {"status": "feedback_disabled"}
             if kind == "lint":
                 self.lints += 1
             else:
                 self.checks_used += 1
-            self.requests += 1
-            request_dir = self.directory / f"request-{self.requests:04d}"
-            request_dir.mkdir()
+            request_dir = (
+                self.directory / f"request-{self.lints + self.checks_used:04d}"
+            )
             sequence_path = request_dir / "sequence.seq"
-            sequence_path.write_bytes(body)
+            try:
+                request_dir.mkdir()
+                sequence_path.write_bytes(body)
+            except OSError as exc:
+                raise self.interrupt(
+                    EvaluationIncomplete(f"{kind} request storage failed: {exc}")
+                ) from exc
             # Both commands are basic checks; neither invokes SAR or image scoring.
-            mode = "lint" if kind == "lint" else "preflight"
-            command = [
-                sys.executable,
-                "-m",
-                "mriseqbench.evaluation.worker",
-                "--mode",
-                mode,
-                "--case",
-                str(self.directory / "case.json"),
-                "--submission",
-                str(sequence_path),
-                "--root",
-                str(self.root),
-                "--workspace",
-                str(request_dir),
-            ]
+            command = worker_command(
+                "lint" if kind == "lint" else "preflight",
+                self.directory / "case.json",
+                sequence_path,
+                self.root,
+                request_dir,
+            )
             started = time.monotonic()
             execution = execute(
                 command,
                 request_dir,
                 self.config.timeout_s,
                 request_dir / "worker",
-                stop_when=self.closed,
+                stop_when=self.stopping,
             )
             self.seconds += time.monotonic() - started
+            if self.stopping.is_set():
+                return 403, {"status": "closed", "reason": "run is already finished"}
+            if execution["status"] == "timeout":
+                # Only the submitted bytes can make a bounded preflight hang.
+                return 200, {
+                    "status": "failed",
+                    "checks": [
+                        {
+                            "name": "preflight_time_limit",
+                            "passed": False,
+                            "detail": f"{kind} exceeded {self.config.timeout_s:g} s",
+                        }
+                    ],
+                    "metrics": {},
+                }
             try:
                 if execution["status"] != "completed":
                     raise ValueError(f"feedback worker {execution['status']}")
@@ -298,16 +386,12 @@ class FeedbackServer:
                 }:
                     raise ValueError("feedback worker returned no valid result")
             except (OSError, ValueError) as exc:
-                result = {"error": str(exc)}
-            self._log(
-                {
-                    "kind": kind,
-                    "sha256": hashlib.sha256(body).hexdigest(),
-                    "result": result,
-                    **self.stats(),
-                }
-            )
-            return 503 if "error" in result else 200, result
+                # Malformed input is a failed check inside the worker; a worker
+                # that cannot launch, crashes or returns nothing is infrastructure.
+                raise self.interrupt(
+                    EvaluationIncomplete(f"{kind} worker failed: {exc}")
+                ) from exc
+            return 200, result
 
     def _handler(server):
         class Handler(BaseHTTPRequestHandler):

@@ -1,14 +1,16 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: compressed_sensing
-objective: Acquire a Cartesian Poisson-disc mask with nominal acceleration three, eight fully sampled central
-  phase-encode lines and mask seed 42. The version-1 one-dimensional mask retains zero-based
-  ky grid indices [10, 12, 13, 14, 15, 16, 17, 18, 19, 24, 27]. The eleven-line nominal budget
-  includes calibration.
+version: 2
+objective: Acquire the prescribed Poisson-disc Cartesian mask at nominal acceleration three, including
+  eight fully sampled central lines and mask seed 42. Retain zero-based ky indices [8, 14, 20, 22,
+  24, 29, 34, 36, 39, 41, 44, 47, 49, 52, 55, 57, 60, 61, 62, 63, 64, 65, 66, 67, 69, 72, 74, 77,
+  79, 81, 83, 85, 88, 90, 93, 95, 98, 101, 106, 108, 117, 120, 122]. The 43-line budget includes
+  calibration. Grading reconstructs with the fixed four-coil L2 CG-SENSE policy, without a sparsity prior.
 object: cardiac_2d@1
 sequence:
   level: S3
   capabilities: [spoiled_gre, cartesian, compressed_sensing, poisson_disc]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 6
   sampling:
@@ -16,4 +18,4 @@ sequence:
     calibration_lines: 8
     mask_seed: 42
     pattern: poisson_disc
-evaluation: s3@3
+evaluation: s3@4

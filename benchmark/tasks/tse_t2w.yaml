@@ -1,18 +1,19 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: tse_t2w
-objective: Acquire a Cartesian T2-weighted image in four shots with eight refocused echoes
-  per shot, 10 ms echo spacing, and k-space center at TE 40 ms.
+version: 2
+objective: Acquire a Cartesian T2-weighted image in 16 shots with eight refocused echoes per shot,
+  10 ms echo spacing, and k-space center at TE 40 ms.
 object: cardiac_2d@1
 sequence:
   level: S2
   capabilities: [spin_echo, cartesian, tse, rare]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
-  duration_s: 8
+  duration_s: 24
   te_ms: {target: 40, tolerance: 4.0}
   tr_ms: {target: 1200, tolerance: 60.0}
   readout:
-    shots: 4
+    shots: 16
     echo_train_length: 8
     echo_spacing_ms: 10
-evaluation: s2@4
+evaluation: s2@5

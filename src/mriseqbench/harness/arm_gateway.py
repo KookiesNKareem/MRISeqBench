@@ -16,12 +16,6 @@ DIRECTORY = Path("/run/mriseqbench")
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
 
-    def do_GET(self):
-        self.handle_request()
-
-    def do_POST(self):
-        self.handle_request()
-
     def handle_request(self):
         target, _, route = self.path.lstrip("/").partition("/")
         if target not in {"feedback", "api", "simulate"}:
@@ -54,7 +48,7 @@ class Handler(BaseHTTPRequestHandler):
         temporary.rename(request)
         deadline = (
             float("inf")
-            if target == "feedback" and route == "submit"
+            if target == "simulate" or (target == "feedback" and route == "submit")
             else time.monotonic() + 1800
         )
         headers_sent = False
@@ -101,6 +95,8 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             request.unlink(missing_ok=True)
             response.unlink(missing_ok=True)
+
+    do_GET = do_POST = handle_request
 
     def log_message(self, *args):
         pass

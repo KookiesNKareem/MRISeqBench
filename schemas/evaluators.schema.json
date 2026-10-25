@@ -296,6 +296,21 @@
       "default": null,
       "title": "Case Image Criteria"
     },
+    "family_image_criteria": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/CaseImageCriteria"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Family Image Criteria"
+    },
     "preparation_effect_fraction_min": {
       "anyOf": [
         {

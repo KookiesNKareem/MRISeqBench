@@ -15,49 +15,37 @@ from pypulseq import (
     make_adiabatic_pulse,
     make_block_pulse,
     make_delay,
+    make_gauss_pulse,
     make_trapezoid,
     make_trigger,
 )
 
-MUTATIONS = (
-    "missing_trigger",
-    "wrong_trigger_channel",
-    "late_adc",
-    "tiny_flip",
-    "missing_preparation",
-    "wrong_preparation_time",
-    "bad_refocusing",
-    "unbalanced",
-    "no_phase_cycle",
-    "receiver_phase",
-    "constant_contrast",
-    "narrow_preparation",
-    "double_inversion",
-    "missing_t2_refocuser",
-    "wrong_t2_phase",
-)
+from tests.fixtures.gradients import trapezoid
 
 
 def make_sequence(
     case,
     mutation=None,
     *,
-    matrix=None,
-    flip_deg=35,
     dummy_count=None,
-    prep_gap_tr=3,
     ramp_count=None,
     tr_s=None,
+    echo_time_s=None,
     catalyzation=False,
-    flip_back=False,
+    preparation_dwell=None,
+    segment_lines=None,
+    readout_flat=None,
+    gradient_duration=None,
+    fat_saturation_duration=None,
+    fat_saturation_before_inversion=False,
 ):
-    """catalyzation adds an alpha/2 pulse TR/2 before each train; flip_back adds
-    an alpha/2 tip-up TR/2 after each train's last readout. Both are bSSFP
-    conditioning, not preparation."""
+    """catalyzation adds a bSSFP-conditioning alpha/2 pulse TR/2 before each
+    train. Optional fat saturation uses two spoiled pulses; its supplied
+    duration is at 3 T and scales inversely with field."""
     hardware = case["hardware"]
     spec = case["task"]["sequence"]
     family = case["task"]["id"]
-    nx, ny = matrix or spec["matrix"]
+    nx, ny = spec["matrix"]
     fov = np.asarray(spec["fov_mm"]) / 1000
     system = Opts(
         B0=hardware["field_strength_T"],
@@ -82,18 +70,18 @@ def make_sequence(
         tr = 0.0035
     if tr_s is not None:
         tr = tr_s
-    te = tr / 2
-    flat = 0.0004 if field == 3 else 0.00064
-    gradient_duration = 0.0004 if field == 3 else 0.0005
+    te = tr / 2 if echo_time_s is None else echo_time_s
+    flat = readout_flat or (0.0004 if field == 3 else 0.00064)
+    gradient_duration = gradient_duration or (0.0004 if field == 3 else 0.0005)
     rf = make_block_pulse(
-        np.deg2rad(0.0001 if mutation == "tiny_flip" else flip_deg),
+        np.deg2rad(35),
         duration=0.0002,
         delay=system.rf_dead_time,
         system=system,
         use="excitation",
     )
     read = make_trapezoid("x", flat_area=nx / fov[0], flat_time=flat, system=system)
-    pre_x = make_trapezoid(
+    pre_x = trapezoid(
         "x", area=-read.area / 2, duration=gradient_duration, system=system
     )
     post_x = copy.copy(pre_x)
@@ -103,7 +91,8 @@ def make_sequence(
     inversion = make_adiabatic_pulse(
         "hypsec",
         duration=0.01,
-        beta=800.0 if mutation == "narrow_preparation" else 1000.0,
+        dwell=preparation_dwell,
+        beta=1000.0,
         mu=4.9,
         adiabaticity=4,
         delay=system.rf_dead_time,
@@ -113,28 +102,15 @@ def make_sequence(
     refocusing = make_adiabatic_pulse(
         "hypsec",
         duration=0.008,
+        dwell=preparation_dwell,
         beta=1100.0,
         mu=4.9,
         adiabaticity=4,
         delay=system.rf_dead_time,
-        phase_offset=0.0 if mutation == "wrong_t2_phase" else np.pi / 2,
+        phase_offset=np.pi / 2,
         system=system,
         use="refocusing",
     )
-    if mutation == "bad_refocusing":
-        refocusing.signal = refocusing.signal * 0.25
-    if mutation == "narrow_preparation":
-        refocusing = make_adiabatic_pulse(
-            "hypsec",
-            duration=0.0045,
-            beta=1000.0,
-            mu=3.0,
-            adiabaticity=6,
-            delay=system.rf_dead_time,
-            phase_offset=np.pi / 2,
-            system=system,
-            use="refocusing",
-        )
     tipdown = make_block_pulse(
         np.pi / 2,
         duration=0.0003,
@@ -144,8 +120,6 @@ def make_sequence(
     )
     tipup = copy.copy(tipdown)
     tipup.phase_offset = np.pi
-    frames = 3 if family in {"t1_mapping", "t2_mapping"} else 1
-    trigger_times = [1.0, 6.0, 11.0] if frames == 3 else [1.0]
     values = {
         "adiabatic_inversion": [600.0],
         "t1_mapping": [100.0, 400.0, 1200.0],
@@ -174,66 +148,90 @@ def make_sequence(
                 )
             if next_trigger - clock > 1e-9:
                 add(make_delay(next_trigger - clock))
-            event = (
-                make_delay(system.grad_raster_time)
-                if mutation == "missing_trigger"
-                else make_trigger(
-                    "physio2" if mutation == "wrong_trigger_channel" else "physio1",
-                    duration=system.grad_raster_time,
-                    system=system,
-                )
+            add(
+                make_trigger("physio1", duration=system.grad_raster_time, system=system)
             )
-            add(event)
             next_trigger += 1.0
         if target - clock > 1e-9:
             add(make_delay(target - clock))
 
-    def preparation_pulse(center, pulse, *, skip=False):
-        pulse_center = pulse.delay + pulse.shape_dur / 2
-        wait(center - pulse_center)
-        if mutation == "missing_preparation" or skip:
-            add(make_delay(calc_duration(pulse)))
-        else:
-            add(pulse)
+    def preparation_pulse(center, pulse):
+        wait(center - pulse.delay - pulse.shape_dur / 2)
+        add(pulse)
+
+    fat = crushers = None
+    if fat_saturation_duration is not None:
+        duration = round(fat_saturation_duration * 3 / field / 20e-6) * 20e-6
+        fat = make_gauss_pulse(
+            np.pi / 2,
+            duration=duration,
+            dwell=preparation_dwell or 0,
+            time_bw_product=2,
+            freq_offset=case["object"]["tissue_properties"]["fat"]["chemical_shift_hz"],
+            delay=system.rf_dead_time,
+            system=system,
+            use="saturation",
+        )
+        crushers = []
+        for areas in (
+            {"x": 2 * nx / fov[0], "y": ny / fov[1]},
+            {"x": 4 * nx / fov[0], "y": 3 * ny / fov[1]},
+        ):
+            duration = max(
+                0.0012,
+                *(
+                    calc_duration(trapezoid(axis, area=area, system=system))
+                    for axis, area in areas.items()
+                ),
+            )
+            crushers.append(
+                [
+                    trapezoid(axis, area=area, duration=duration, system=system)
+                    for axis, area in areas.items()
+                ]
+            )
+
+    def fat_preparation(end):
+        wait(end - 2 * calc_duration(fat) - sum(calc_duration(*g) for g in crushers))
+        for gradients in crushers:
+            add(copy.copy(fat))
+            add(*gradients)
 
     # Centric ordering keeps the image's effective preparation at its first echo.
     ky = sorted(range(-ny // 2, ny - ny // 2), key=lambda value: (abs(value), value))
-    for frame, (trigger, value) in enumerate(zip(trigger_times, values, strict=True)):
-        frame_dummy_count = (
-            dummy_count[frame]
-            if isinstance(dummy_count, (list, tuple))
-            else dummy_count
-        )
-        frame_ramp_count = (
-            ramp_count[frame] if isinstance(ramp_count, (list, tuple)) else ramp_count
-        )
-        if frame_ramp_count is None:
-            frame_ramp_count = frame_dummy_count
+    segments = int(np.ceil(ny / (segment_lines or ny)))
+    segment_width = int(np.ceil(ny / segments))
+    schedule = [
+        (frame, segment, 1.0 + 5.0 * (frame * segments + segment), value)
+        for frame, value in enumerate(values)
+        for segment in range(segments)
+    ]
+    for frame, segment, trigger, value in schedule:
+        frame_ramp_count = dummy_count if ramp_count is None else ramp_count
         central_echo = trigger + 0.606 + (0.20 if mutation == "late_adc" else 0.0)
         first_center = central_echo - te
-        catalyst_center = first_center - frame_dummy_count * tr
+        catalyst_center = first_center - dummy_count * tr
         actual_value = value
-        if mutation == "constant_contrast" and frames > 1:
-            actual_value = 400.0 if family == "t1_mapping" else 25.0
         if mutation == "wrong_preparation_time":
             actual_value += (
                 25.0 if family in {"adiabatic_inversion", "t1_mapping"} else 30.0
             )
         if family in {"adiabatic_inversion", "t1_mapping"}:
-            if mutation == "double_inversion":
-                preparation_pulse(central_echo - actual_value / 1000 - 0.05, inversion)
+            if fat is not None and fat_saturation_before_inversion:
+                fat_preparation(
+                    central_echo
+                    - actual_value / 1000
+                    - inversion.delay
+                    - inversion.shape_dur / 2
+                )
             preparation_pulse(central_echo - actual_value / 1000, inversion)
         elif actual_value > 0:
             # A symmetric, two-refocusing T2 preparation, then a separate catalyst.
-            end = catalyst_center - prep_gap_tr * tr
+            end = catalyst_center - 3 * tr
             start = end - actual_value / 1000
             preparation_pulse(start, tipdown)
             preparation_pulse(start + actual_value / 4000, refocusing)
-            preparation_pulse(
-                start + 3 * actual_value / 4000,
-                refocusing,
-                skip=mutation == "missing_t2_refocuser",
-            )
+            preparation_pulse(start + 3 * actual_value / 4000, refocusing)
             preparation_pulse(end, tipup)
 
         def half_alpha(center, phase):
@@ -243,13 +241,21 @@ def make_sequence(
             r.phase_offset = phase
             add(r)
 
+        if fat is not None and not fat_saturation_before_inversion:
+            fat_preparation(
+                first_center
+                - dummy_count * tr
+                - rf_center
+                - (tr / 2 if catalyzation else 0)
+            )
         if catalyzation:
             # Opposite phase to the first train pulse, TR/2 earlier.
             half_alpha(
-                first_center - frame_dummy_count * tr - tr / 2,
+                first_center - dummy_count * tr - tr / 2,
                 np.pi * ((shot + 1) % 2),
             )
-        for line in range(-frame_dummy_count, ny):
+        segment_ky = ky[segment * segment_width : (segment + 1) * segment_width]
+        for line in range(-dummy_count, len(segment_ky)):
             center = first_center + line * tr
             wait(center - rf_center)
             r = copy.copy(rf)
@@ -257,22 +263,18 @@ def make_sequence(
             r.phase_offset = phase
             if line < 0:
                 # Smooth alpha ramp reduces preparation-to-bSSFP transients.
-                step = line + frame_dummy_count + 1
+                step = line + dummy_count + 1
                 factor = (
-                    (0.5 if step == 1 else 1.0)
-                    if frame_ramp_count == 0
-                    else min(1.0, step / frame_ramp_count)
+                    1.0 if frame_ramp_count == 0 else min(1.0, step / frame_ramp_count)
                 )
                 r.signal = r.signal * factor
             a = copy.copy(adc)
-            a.phase_offset = phase + (
-                np.pi / 2 if mutation == "receiver_phase" else 0.0
-            )
-            yy = 0 if line < 0 else ky[line]
-            pre_y = make_trapezoid(
+            a.phase_offset = phase
+            yy = 0 if line < 0 else segment_ky[line]
+            pre_y = trapezoid(
                 "y", area=yy / fov[1], duration=gradient_duration, system=system
             )
-            post_y = make_trapezoid(
+            post_y = trapezoid(
                 "y", area=-yy / fov[1], duration=gradient_duration, system=system
             )
             add(r)
@@ -282,19 +284,10 @@ def make_sequence(
             add(*([post_x] if mutation != "unbalanced" else []), post_y)
             end = center - rf_center + tr
             wait(end)
-            if flip_back and line == ny - 1:
-                # Tip-up alpha/2 TR/2 after the last echo, continuing the cycle.
-                r = copy.copy(rf)
-                r.signal = r.signal / 2
-                r.phase_offset = np.pi * ((shot + 1) % 2)
-                add(r)
             shot += 1
     # Finish the final nominal cardiac cycle with actual RF-free recovery.
     # This is part of the physical protocol and its SAR averaging duration.
-    most_dummies = (
-        max(dummy_count) if isinstance(dummy_count, (list, tuple)) else dummy_count
-    )
-    recovery = 1 if family == "t2_prepared" and field == 3 and most_dummies > 16 else 0
+    recovery = 1 if family == "t2_prepared" and field == 3 and dummy_count > 16 else 0
     wait(float(np.ceil(clock)) + recovery)
     seq.set_definition("Name", f"Independent static cardiac {family} control")
     seq.set_definition("FramePreparation_ms", values)

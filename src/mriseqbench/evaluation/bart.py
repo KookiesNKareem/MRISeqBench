@@ -83,12 +83,13 @@ def read_cfl(path):
     return result
 
 
-def run(command, arrays, *, output="out", timeout=300):
+def run(command, arrays):
     """Run BART using named CFL placeholders, e.g. ['fft','-i','3','{data}','{out}'].
 
-    ``arrays`` maps input names to NumPy arrays; ``output`` names the output
-    placeholder. Returned arrays omit trailing singleton dimensions only.
+    ``arrays`` maps input names to NumPy arrays; ``{out}`` is the output.
+    Returned arrays omit trailing singleton dimensions only.
     """
+    output = "out"
     command = [str(token) for token in command]
     if command and command[0] in {"nufft", "pics"} and "-g" not in command:
         command.insert(1, "-g")
@@ -116,7 +117,7 @@ def run(command, arrays, *, output="out", timeout=300):
             capture_output=True,
             text=True,
             check=False,
-            timeout=timeout,
+            timeout=None,  # Reconstruction has no wall-clock cutoff.
             env=environment,
         )
         if completed.returncode:
@@ -312,3 +313,29 @@ def reconstruct_noncartesian(raw, acq, matrix, fov_mm):
     return _inverse_nufft(
         data.reshape(1, -1, 1), _trajectory(nodes, matrix), shape
     ).reshape(matrix)
+
+
+ESPIRIT_CALIBRATION = 24
+ESPIRIT_KERNEL = 6
+
+
+def espirit_maps(kspace):
+    """One-map ESPIRiT sensitivities from the fully sampled k-space centre.
+
+    ``kspace`` is zero-filled BART k-space (x, y, z, coil). BART ``ecalib``
+    extracts the largest fully sampled central block, limited to
+    ESPIRIT_CALIBRATION points per axis, so the estimate depends only on the
+    acquired autocalibration lines. Fixed defaults: threshold, crop and
+    phase normalization to the first principal component.
+    """
+    data = np.asarray(kspace)
+    if data.ndim != 4:
+        raise ValueError("ESPIRiT expects BART k-space with axes x, y, z, coil")
+    size = ":".join(
+        str(min(ESPIRIT_CALIBRATION, n) if n > 1 else 1) for n in data.shape[:3]
+    )
+    ksize = ":".join(str(ESPIRIT_KERNEL if n > 1 else 1) for n in data.shape[:3])
+    return run(
+        ["ecalib", "-m", "1", "-k", ksize, "-r", size, "{data}", "{out}"],
+        {"data": data},
+    ).reshape(data.shape)

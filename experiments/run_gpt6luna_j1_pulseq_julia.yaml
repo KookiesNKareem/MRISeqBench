@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../schemas/experiments.schema.json
+schema_version: 1
+id: run_gpt6luna_j1_pulseq_julia
+version: 1
+suite: full@1
+arm: j1_pulseq_julia@1
+arm_runtime:
+  author_image: sha256:2d98b1be17af9cc104c8710a3d93a31562b391fe495e1c340ea894b10b60211b
+  probe_timeout_s: 600
+  julia_heap_size_hint_mb: 100
+repeats: 3
+submission_mode: submit
+max_submissions: 3
+agent:
+  uses_model: true
+  adapter: pi
+  pi_version: 0.87.0
+  auto_compaction: false
+  model: openai/gpt-6-luna
+  command:
+  - pi
+  - --provider
+  - openrouter
+  - --model
+  - '{model}'
+  - --thinking
+  - '{thinking_level}'
+  - --session-dir
+  - '{workspace}/transcript'
+  - --mode
+  - json
+  - -p
+  - '{prompt_text}'
+  timeout_s: 14400
+  sandbox:
+    backend: docker
+api_proxy:
+  provider_endpoint: openai
+  allowed_routes:
+  - /responses
+  temperature: null
+  top_p: null
+  reasoning_effort: high
+  upstream_url: https://openrouter.ai/api/v1
+  key_env: OPENROUTER_API_KEY
+feedback:
+  timeout_s: 300
+seed: 42
+concurrency:
+  agents: 24
+  graders: 16

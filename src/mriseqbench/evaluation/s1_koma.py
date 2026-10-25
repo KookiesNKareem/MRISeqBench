@@ -14,11 +14,60 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 import h5py
 import numpy as np
 from pypulseq import Sequence, make_adc, make_delay
+
+_DEADLINE = ContextVar("koma_deadline", default=None)
+
+
+@contextmanager
+def simulation_budget(seconds):
+    deadline = None if seconds is None else time.monotonic() + seconds
+    parent = _DEADLINE.get()
+    if parent is not None:
+        deadline = parent if deadline is None else min(parent, deadline)
+    token = _DEADLINE.set(deadline)
+    try:
+        yield
+    finally:
+        _DEADLINE.reset(token)
+
+
+NATIVE_REJECTION = "Native Pulseq reader rejected the file"
+
+
+NATIVE_INCONSISTENCY = "Native consistency:"
+
+
+class NativeRejection(RuntimeError):
+    """KomaMRIFiles could not parse the submitted bytes: a candidate failure."""
+
+    check = "native_pulseq_parse"
+
+
+class NativeInconsistency(NativeRejection):
+    """The native reader and the judge disagree on the file: ambiguous bytes."""
+
+    check = "native_consistency"
+
+
+def worker_error(message):
+    """Tagged native parse failures are candidate rejections; others are host."""
+    from .s4_physio import native_candidate_rejection
+
+    error = RuntimeError("KomaMRI: " + message)
+    if native_candidate_rejection(error):
+        if message.startswith(NATIVE_REJECTION):
+            return NativeRejection(str(error))
+        if message.startswith(NATIVE_INCONSISTENCY):
+            return NativeInconsistency(str(error))
+    return error
 
 
 class KomaWorker:
@@ -32,6 +81,7 @@ class KomaWorker:
         self.path = Path(self.directory.name)
         self.lock = threading.Lock()
         self.sequence_cache = {}
+        self.inversion_cache = {}
         self.execution = None
         self.log = (self.path / "worker.log").open("w+")
         julia = shutil.which("julia")
@@ -68,7 +118,11 @@ class KomaWorker:
         self.directory.cleanup()
 
     def call(self, request, write=None, read=None):
+        global _WORKER
         with self.lock:
+            deadline = _DEADLINE.get()
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("KomaMRI evaluation budget exhausted")
             input_path, output_path = self.path / "input.h5", self.path / "output.h5"
             if write:
                 with h5py.File(input_path, "w") as handle:
@@ -83,7 +137,16 @@ class KomaWorker:
             self.process.stdin.flush()
             with selectors.DefaultSelector() as selector:
                 selector.register(self.process.stdout, selectors.EVENT_READ)
-                selector.select()
+                timeout = (
+                    max(0.0, deadline - time.monotonic())
+                    if deadline is not None
+                    else None
+                )
+                if not selector.select(timeout) and deadline is not None:
+                    self.close()
+                    if _WORKER is self:
+                        _WORKER = None
+                    raise TimeoutError("KomaMRI replay exceeded its evaluation budget")
                 line = self.process.stdout.readline()
             if not line:
                 raise RuntimeError(
@@ -92,7 +155,7 @@ class KomaWorker:
                 )
             response = json.loads(line)
             if not response["ok"]:
-                raise RuntimeError("KomaMRI: " + response["error"])
+                raise worker_error(response["error"])
             self.execution = response.get("execution")
             if read:
                 with h5py.File(output_path) as handle:
@@ -110,11 +173,21 @@ class KomaWorker:
         )
         if key in self.sequence_cache:
             return self.sequence_cache[key]
-        # The submitted file itself is read by KomaMRIFiles for normal replays.
+        # The submitted file itself is read by KomaMRIFiles for normal replays,
+        # but only when its RF blocks and ADC timestamps are exactly the replay
+        # metadata (a frame extraction may drop RF after its final ADC).
         if (
             not zero_gradients
             and getattr(acq, "source_path", None)
-            and len(acq.adc) == acq.seq.adc_times()[0].size
+            and len(times := acq.seq.adc_times()[0]) == len(acq.adc)
+            and np.allclose(times, acq.adc, rtol=0, atol=1e-9)
+            and {p.block_number for p in acq.pulses}
+            == {
+                number
+                for number in acq.seq.block_events
+                if (rf := acq.seq.get_block(number).rf) is not None
+                and np.any(np.asarray(rf.signal) != 0)
+            }
         ):
             path = str(acq.source_path)
         else:
@@ -126,35 +199,37 @@ class KomaWorker:
             replay_end = max(
                 float(acq.adc[-1]), max((p.end for p in acq.pulses), default=0.0)
             )
+            # Retained RF is identified by its source block, never by support
+            # endpoints or rounded durations (explicit shapes may start late).
+            retained = {p.block_number for p in acq.pulses}
             for number in acq.seq.block_events:
                 block = acq.seq.get_block(number)
                 duration = acq.seq.block_durations[number]
                 events = [make_delay(duration)]
-                if block.rf is not None and any(
-                    abs(p.start - clock - block.rf.delay) < 1e-9
-                    or (
-                        abs(p.block_start - clock) < 1e-9
-                        and abs(p.end - clock - block.rf.delay - block.rf.shape_dur)
-                        < 1e-9
-                    )
-                    for p in acq.pulses
-                ):
-                    events.append(copy.deepcopy(block.rf))
+                if block.rf is not None and number in retained:
+                    rf = copy.deepcopy(block.rf)
+                    # Ringdown and dead time are hardware constraints, not
+                    # simulated; inherited from this system they can push the
+                    # diagnostic block past its source duration and off the
+                    # block raster that pypulseq's writer asserts.
+                    rf.ringdown_time = 0.0
+                    rf.dead_time = 0.0
+                    events.append(rf)
                 if not zero_gradients:
                     events.extend(
                         copy.deepcopy(g)
                         for g in (block.gx, block.gy, block.gz)
                         if g is not None
                     )
-                # A sample at a block boundary belongs to the preceding block
-                # for this single-sample diagnostic. Otherwise a negative ADC
-                # delay is clamped and shifts its centre by one microsecond.
-                upper = (
-                    acq.adc <= clock + duration + 1e-12
-                    if single_diagnostic
-                    else acq.adc < clock + duration
-                )
-                times = acq.adc[(acq.adc >= clock) & upper]
+                # A sample centred on a block boundary belongs to the preceding
+                # block: in the next block its ADC delay would be negative,
+                # which pypulseq clamps to zero and so shifts the centre by half
+                # a dwell (one microsecond for the judge's single-sample ADCs).
+                # Externally authored files put sample centres exactly on
+                # boundaries, so this applies to every diagnostic.
+                lower = acq.adc > clock + 1e-9
+                upper = acq.adc <= clock + duration + 1e-9
+                times = acq.adc[lower & upper]
                 if len(times):
                     if len(times) > 1:
                         dwell = float(np.min(np.diff(times)))
@@ -166,6 +241,7 @@ class KomaWorker:
                             0.0 if min(fraction, 1 - fraction) < 1e-6 else fraction
                         )
                         dwell = 2 * fraction * 1e-6 if fraction else 2e-6
+                    adc_delay = float(times[0] - clock - dwell / 2)
                     if single_diagnostic:
                         # Any dwell after this final sample is padding only.
                         # Keep the emitted block on Pulseq's duration raster.
@@ -173,15 +249,20 @@ class KomaWorker:
                         end = float(times[0] - clock + dwell / 2)
                         padded = float(np.ceil(end / raster - 1e-9) * raster)
                         events[0] = make_delay(max(duration, padded))
-                    events.append(
-                        make_adc(
-                            len(times),
-                            dwell=dwell,
-                            delay=float(times[0] - clock - dwell / 2),
-                            system=seq.system,
-                        )
+                    adc = make_adc(
+                        len(times), dwell=dwell, delay=adc_delay, system=seq.system
                     )
+                    adc.dead_time = 0.0  # Constraint only; keep the block on raster.
+                    events.append(adc)
                 seq.add_block(*events)
+                if not single_diagnostic:
+                    # A boundary sample's ADC nominally ends half a dwell past
+                    # the source block. Keep the file's block duration (it is
+                    # on the raster and every later block start depends on it);
+                    # both readers sample at the centre, inside the block.
+                    last = max(seq.block_events)
+                    if seq.block_durations[last] > duration + 1e-12:
+                        seq.block_durations[last] = duration
                 clock += duration
                 if clock > replay_end or (
                     single_diagnostic and clock >= replay_end - 1e-12
@@ -228,6 +309,7 @@ def simulate(
     individual=False,
     integration_method="bloch",
     ideal_spoiling=False,
+    spoil_times_s=(),
     receive_weights=None,
 ):
     if integration_method not in {"bloch", "magnus4"}:
@@ -238,8 +320,10 @@ def simulate(
         raise ValueError(
             "Individual responses and encoding-demodulated sums are separate modes"
         )
-    if ideal_spoiling and not (individual and zero_gradients):
+    if (ideal_spoiling or len(spoil_times_s)) and not (individual and zero_gradients):
         raise ValueError("Ideal spoiling requires individual RF-only replay")
+    if not np.isfinite(spoil_times_s).all():
+        raise ValueError("Spoiling times must be finite")
     if receive_weights is not None:
         receive_weights = np.asarray(receive_weights, dtype=float)
         if individual or demodulate_encoding or integration_method != "bloch":
@@ -303,7 +387,7 @@ def simulate(
             "integration_method": integration_method,
             "spoil_times_s": [float(p.start) for p in acq.pulses if not p.refocusing]
             if ideal_spoiling
-            else None,
+            else [float(t) for t in spoil_times_s] or None,
         },
         write,
         read,
@@ -316,6 +400,35 @@ def simulate(
         if receive_weights is not None
         else receiver
     )
+
+
+def inversion_assay(pulse, offsets_hz):
+    """Exact finite-waveform unitary RF assay, evaluated on the CUDA device."""
+    offsets = np.asarray(offsets_hz, dtype=float) - pulse.frequency
+    signal = np.asarray(pulse.signal) * np.exp(1j * pulse.phase)
+    widths = np.diff(pulse.edges)
+    identity = hashlib.sha256()
+    for array in (offsets, signal, widths):
+        identity.update(np.ascontiguousarray(array).tobytes())
+    engine = worker()
+    key = identity.hexdigest()
+    if key not in engine.inversion_cache:
+
+        def write(handle):
+            handle["offset_hz"] = offsets
+            handle["rf_real_hz"] = signal.real
+            handle["rf_imag_hz"] = signal.imag
+            handle["width_s"] = widths
+
+        values = engine.call(
+            {"operation": "inversion_assay"},
+            write,
+            lambda handle: handle["inverted_mz"][...],
+        )
+        if values.shape != offsets.shape or not np.isfinite(values).all():
+            raise RuntimeError("CUDA inversion assay returned invalid magnetization")
+        engine.inversion_cache[key] = values
+    return engine.inversion_cache[key].copy()
 
 
 def reconstruct(raw, acq, matrix):

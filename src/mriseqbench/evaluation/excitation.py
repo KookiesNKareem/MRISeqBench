@@ -16,8 +16,13 @@ from .excitation_target import (
     target_arrays,
     target_sha256,
 )
-from .s1_koma import simulate, versions, worker
+from .preflight import native_reader_errors
+from .s1_koma import NativeRejection, simulate, versions, worker
 from .s1_phantom import Spins
+
+
+class DiagnosticReplayError(ValueError):
+    """The trusted diagnostic replay could not be built from the submission."""
 
 
 def diagnostic_acquisition(submission, case, workspace):
@@ -36,6 +41,8 @@ def diagnostic_acquisition(submission, case, workspace):
         if rf is not None and np.any(np.abs(rf.signal) > 0):
             pulses.append(
                 SimpleNamespace(
+                    # Appended diagnostic rows keep original block numbers.
+                    block_number=number,
                     start=clock + rf.delay,
                     end=clock + rf.delay + rf.shape_dur,
                     frequency=float(
@@ -50,6 +57,9 @@ def diagnostic_acquisition(submission, case, workspace):
         clock += seq.block_durations[number]
     if not pulses:
         raise ValueError("RF excitation needs a nonzero RF waveform")
+    if not all(np.isfinite([p.frequency, p.phase_correction]).all() for p in pulses):
+        # Finite ppm tokens can overflow once scaled by gamma*B0.
+        raise ValueError("RF frequency/phase derived from ppm fields is not finite")
     duration = float(seq.duration()[0])
     # Append only BLOCKS/ADC rows; keep original RF, gradients, shapes and
     # extensions byte-identical. No waveform read/write round trip is allowed.
@@ -70,10 +80,10 @@ def diagnostic_acquisition(submission, case, workspace):
         match = re.search(rf"(?m)^\[{section}\][ \t]*\n", source)
         if match is None:
             return source.rstrip() + f"\n\n[{section}]\n{row}\n\n"
-        end = re.search(r"(?m)^\[", source[match.end() :])
-        stop = match.end() + end.start() if end else len(source)
-        rows = list(re.finditer(r"(?m)^[ \t]*\d+[^\n]*\n", source[match.end() : stop]))
-        insert = match.end() + rows[-1].end() if rows else match.end()
+        # Only the table's own contiguous rows: stop at its terminating blank
+        # line or any other line (section or extension header, comment).
+        rows = re.match(r"(?:[ \t]*\d[^\n]*\n)*", source[match.end() :])
+        insert = match.end() + rows.end()
         return source[:insert] + row + "\n" + source[insert:]
 
     text = append_row(
@@ -86,13 +96,19 @@ def diagnostic_acquisition(submission, case, workspace):
         f"TotalDuration {duration + seq.block_duration_raster:.12g}",
         text,
     )
+    errors = native_reader_errors(text)
+    if errors:
+        raise DiagnosticReplayError(f"Diagnostic replay file is invalid: {errors[:3]}")
     path = Path(workspace) / "diagnostic.seq"
     path.write_text(text)
     diagnostic = Sequence(seq.system)
     diagnostic.read(str(path))
-    np.testing.assert_allclose(
-        diagnostic.adc_times()[0], [duration + 1e-6], atol=1e-12, rtol=0
-    )
+    times = np.asarray(diagnostic.adc_times()[0], float)
+    if times.shape != (1,) or abs(times[0] - (duration + 1e-6)) > 1e-12:
+        raise DiagnosticReplayError(
+            f"Diagnostic replay ADC times {times[:3].tolist()} differ from "
+            f"the expected single sample at {duration + 1e-6:.9g} s"
+        )
     return SimpleNamespace(
         seq=diagnostic,
         source_path=str(path),
@@ -113,7 +129,7 @@ def target_spins():
         ["water"],
         np.array([[1.0, 1.0, 0.1]]),
         1.0,
-        (64, 64),
+        mask.shape,
         target_sha256(),
     ), arrays["target_mxy_magnitude"][mask]
 
@@ -130,9 +146,12 @@ def evaluate_excitation(submission, case, root, workspace, *, deadline=None):
     try:
         acq = diagnostic_acquisition(submission, case, workspace)
     except ValueError as exc:
-        report["checks"].append(
-            {"name": "excitation_only", "passed": False, "detail": str(exc)}
+        name = (
+            "diagnostic_replay"
+            if isinstance(exc, DiagnosticReplayError)
+            else "excitation_only"
         )
+        report["checks"].append({"name": name, "passed": False, "detail": str(exc)})
         return report
     report["checks"].append(
         {
@@ -150,14 +169,21 @@ def evaluate_excitation(submission, case, root, workspace, *, deadline=None):
     for step in (10e-6, 5e-6, 2.5e-6, 1.25e-6, 0.625e-6):
         if deadline is not None and time.monotonic() >= deadline:
             raise TimeoutError("RF excitation replay exceeded its grading budget")
-        response = simulate(
-            acq,
-            spins,
-            case["physics"]["effects"],
-            step_s=step,
-            rf_step_s=step,
-            individual=True,
-        )[0]
+        try:
+            response = simulate(
+                acq,
+                spins,
+                case["physics"]["effects"],
+                step_s=step,
+                rf_step_s=step,
+                individual=True,
+            )[0]
+        except NativeRejection as exc:
+            # The native reader rejected the submitted bytes: a failed verdict.
+            report["checks"].append(
+                {"name": exc.check, "passed": False, "detail": str(exc)}
+            )
+            return report
         metrics = excitation_metrics(response, target)
         np.savez_compressed(
             workspace / f"replay-{len(stages)}.npz",
@@ -165,28 +191,21 @@ def evaluate_excitation(submission, case, root, workspace, *, deadline=None):
             mxy=response,
             target=target,
         )
-        errors = (
-            {
+        errors = None
+        if previous is not None:
+            errors = {
                 name: max(1e-4, 2 * abs(value - previous[name]))
                 for name, value in metrics.items()
             }
-            if previous is not None
-            else None
-        )
         stages.append({"step_s": step, "metrics": metrics, "estimated_error": errors})
         write_json(workspace / "numerics.json", stages)
         if errors is not None:
             # Require both temporal stability and a verdict clear of every boundary.
             converged = max(errors.values()) <= 0.002 and all(
-                (
-                    m["min"] is None
-                    or abs(metrics[m["name"]] - m["min"]) > errors[m["name"]]
-                )
-                and (
-                    m["max"] is None
-                    or abs(metrics[m["name"]] - m["max"]) > errors[m["name"]]
-                )
+                abs(metrics[m["name"]] - m[key]) > errors[m["name"]]
                 for m in bounds
+                for key in ("min", "max")
+                if m[key] is not None
             )
         if converged:
             break
@@ -222,7 +241,7 @@ def evaluate_excitation(submission, case, root, workspace, *, deadline=None):
     )
     if not converged:
         report.update(
-            status="incomplete",
+            status="numerically_unresolved",
             reason="Excitation metrics did not resolve under temporal refinement",
         )
     write_json(workspace / "result.json", report)

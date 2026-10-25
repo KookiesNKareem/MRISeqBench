@@ -2,8 +2,8 @@
   "uniform_disc@1": {
     "dimensions": 2,
     "grid": [
-      64,
-      64
+      128,
+      128
     ],
     "fov_mm": [
       200,

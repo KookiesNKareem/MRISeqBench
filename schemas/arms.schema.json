@@ -53,6 +53,15 @@
       ],
       "title": "Simulator",
       "type": "string"
+    },
+    "tool_interface": {
+      "default": "cli",
+      "enum": [
+        "cli",
+        "julia_mcp"
+      ],
+      "title": "Tool Interface",
+      "type": "string"
     }
   },
   "required": [

@@ -1,14 +1,15 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: partial_fourier
-objective: Create a Cartesian spoiled GRE acquisition using partial Fourier sampling. Retain the contiguous
-  upper 24 zero-based ky grid indices, 8 through 31, including the center.
+version: 2
+objective: Create Cartesian spoiled GRE using partial Fourier sampling. Retain the contiguous upper
+  96 zero-based ky indices, 32 through 127 (ky = -32/FOV to +63/FOV), including the center.
 object: cardiac_2d@1
 sequence:
   level: S3
   capabilities: [spoiled_gre, cartesian, partial_fourier]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 6
   sampling:
     partial_fourier_fraction: 0.75
-evaluation: s3@3
+evaluation: s3@4

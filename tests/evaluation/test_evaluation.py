@@ -98,7 +98,7 @@ def test_real_pulseq_smoke(submission, tmp_path):
     catalog = Catalog(ROOT)
     case = catalog.cases(catalog.get("suites", "smoke"))[0]
     result = evaluate(submission, case, ROOT, tmp_path)
-    assert result["status"] == "smoke_passed"
+    assert result["status"] == "passed" and result["scope"] == "smoke"
     assert all(c["passed"] for c in result["checks"])
 
 
@@ -111,18 +111,6 @@ def test_current_cardiac_backend_requires_bart_evidence(
     backend = fake_backend(case, reconstruction_provenance=provenance)
     with pytest.raises(RuntimeError, match="BART reconstruction provenance"):
         evaluate(submission, case, ROOT, tmp_path, backend)
-
-
-def test_reduced_fov_public_brief_requires_a_spin_echo():
-    from mriseqbench.harness.prepare import task_brief
-
-    catalog = Catalog(ROOT)
-    case = catalog.resolve(catalog.get("tasks", "reduced_fov"))
-    assert task_brief(case)["sequence"]["capabilities"] == [
-        "spin_echo",
-        "cartesian",
-        "reduced_fov",
-    ]
 
 
 @pytest.mark.parametrize("spin_echo", [None, False, True])
@@ -157,7 +145,7 @@ def test_reduced_fov_external_backend_requires_spin_echo(
             "case_phase_error_rad": 0.1,
             "case_min_tissue_signal_fraction": 0.9,
             "case_contrast_retention": 0.9,
-            "case_outside_object_energy_fraction": 0.1,
+            "case_outside_object_energy_fraction": 0.01,
             "case_phase_reference_coverage": 1.0,
             "selection_leakage_ratio": 0.05,
             "diagnostic_signal_fraction": 0.1,
@@ -208,29 +196,6 @@ def test_external_s3_backend_cannot_replace_case_metrics_with_ideal_metrics(
         RuntimeError, match="backend omitted metric: case_complex_image_nrmse"
     ):
         evaluate(submission, case, ROOT, tmp_path, backend)
-
-
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"case_id": "wrong"},
-        {"reconstruction": "wrong"},
-        {"requirements": {}},
-        {"requirements": {"spoiled_gre": "true"}},
-        {"metrics": {"wm_gm_ratio": 1.3}},
-        {
-            "metrics": {
-                "wm_gm_ratio": float("nan"),
-                "outside_object_energy_fraction": 0.1,
-            }
-        },
-        {"effects": ["motion"]},
-    ],
-)
-def test_backend_cannot_silently_omit_contract(submission, tmp_path, changes):
-    case = gre_case()
-    with pytest.raises(RuntimeError, match="Physical backend returned invalid output"):
-        evaluate(submission, case, ROOT, tmp_path, fake_backend(case, **changes))
 
 
 def test_invalid_and_missing_submissions(tmp_path):

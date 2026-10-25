@@ -1,16 +1,18 @@
 """Independent submission evaluation and physical backend orchestration."""
 
 import json
+import re
 import time
 from pathlib import Path
 
 from pydantic import Field, StrictBool
 
-from ..io import write_json
+from ..io import finite_json, write_json
 from ..models import Finite, Strict
 from ..process import execute, expand
 from ..storage import atomic_json, finalize_evaluation
 from .preflight import preflight
+from .s1_koma import simulation_budget
 from .sar import evaluate_sar
 
 
@@ -26,8 +28,6 @@ class BackendResult(Strict):
 
 def validate_bart_provenance(value):
     """External judges must disclose the BART executable and actual commands."""
-    import re
-
     from .bart import QUALIFIED_SOURCE_COMMIT, QUALIFIED_VERSION
 
     if not isinstance(value, dict) or value.get("engine") != "BART":
@@ -63,7 +63,7 @@ def intrinsic_cardiac_case(case):
 
 def s4_backend_contract(case):
     """Require every cardiac frame and application outcome from external judges."""
-    from .s1_case import case_bounds, case_policy
+    from .s1_case import case_bounds, case_policy, contrast_required
     from .s1_sequence import family
 
     spec, contract = case["task"]["sequence"], case["evaluation"]
@@ -80,31 +80,23 @@ def s4_backend_contract(case):
         requirements.add("preparation_recovery")
     if fam == "adiabatic_inversion":
         requirements.add("adiabatic_hyperbolic_secant")
+    preparation = (
+        "inversion"
+        if fam in {"adiabatic_inversion", "t1_mapping"}
+        else "t2_preparation"
+    )
+    image_bounds = case_bounds(case_policy(case), contrast=contrast_required(case))
     bounds = []
     for frame in range(spec["temporal"]["frames"]):
         requirements |= {
             f"frame_{frame}_full_cartesian_grid",
             f"frame_{frame}_balanced_bssfp",
+            f"frame_{frame}_{preparation}",
         }
-        preparation = (
-            "inversion"
-            if fam in {"adiabatic_inversion", "t1_mapping"}
-            else "t2_preparation"
-        )
-        requirements.add(f"frame_{frame}_{preparation}")
         bounds.extend(
             {**bound, "name": f"frame_{frame}_case_" + bound["name"]}
-            for bound in case_bounds(case_policy(case))
+            for bound in image_bounds
         )
-        if intrinsic_cardiac_case(case):
-            # Match the independent native phase oracle's validity safeguard.
-            bounds.append(
-                {
-                    "name": f"frame_{frame}_case_phase_reference_coverage",
-                    "min": 0.5,
-                    "max": None,
-                }
-            )
         bounds.append(
             {
                 "name": f"frame_{frame}_diagnostic_signal_fraction",
@@ -143,6 +135,35 @@ def s4_backend_contract(case):
     return requirements, bounds
 
 
+ADAPTIVE = {"s1", "s2", "s3", "s4", "rf_excitation"}
+
+
+def normalize_verdict(result, case):
+    """Report only passed or failed: an adaptive verdict that stayed unresolved
+    at the maximum spatial sampling, or at the timestep refinement cap, could
+    not establish a pass, so it fails."""
+    if isinstance(result, dict) and result.get("status") == "smoke_passed":
+        result.update(status="passed", scope="smoke")  # Legacy smoke verdicts.
+    if (
+        case["evaluation"]["id"] in ADAPTIVE
+        and isinstance(result, dict)
+        and result.get("status") == "numerically_unresolved"
+    ):
+        temporal = result.get("failure_kind") == "unresolved_at_timestep_cap"
+        result.update(
+            unresolved_status=result["status"],
+            case_id=case["case_id"],
+            status="failed",
+            failure_kind="unresolved_at_timestep_cap"
+            if temporal
+            else "unresolved_at_sample_cap",
+            reason="The replay did not converge within the timestep refinement cap"
+            if temporal
+            else "The verdict did not resolve at the maximum spatial sampling",
+        )
+    return result
+
+
 def evaluate(
     submission,
     case,
@@ -153,33 +174,25 @@ def evaluate(
     feedback=False,
     time_budget_s=None,
 ):
-    report = _evaluate(
-        submission,
-        case,
-        root,
-        workspace,
-        backend,
-        feedback=feedback,
-        time_budget_s=time_budget_s,
-    )
-    # A valid scientific verdict must survive an interrupted storage operation.
-    # Compressing and repeatedly verifying gigabytes of restart checkpoints is
-    # maintenance, not evaluation work. Keep raw caches for explicit archival.
+    with simulation_budget(time_budget_s):
+        report = _evaluate(
+            submission,
+            case,
+            root,
+            workspace,
+            backend,
+            feedback=feedback,
+            time_budget_s=time_budget_s,
+        )
+    # No evaluator may produce a non-JSON verdict: NaN/inf metrics become null.
+    report = finite_json(report)
+    # Persist the verdict before storage finalization can be interrupted.
     atomic_json(Path(workspace) / "evaluation-result.json", report)
-    finalize_evaluation(report, workspace, archive_replays=False)
+    finalize_evaluation(report, workspace)
     return report
 
 
-def _evaluate(
-    submission,
-    case,
-    root,
-    workspace,
-    backend=None,
-    *,
-    feedback=False,
-    time_budget_s=None,
-):
+def _evaluate(submission, case, root, workspace, backend, *, feedback, time_budget_s):
     """Judge submissions by default; feedback intentionally omits SAR entirely."""
     submission = Path(submission).resolve()
     workspace = Path(workspace).resolve()
@@ -232,7 +245,9 @@ def _evaluate(
             return report
     contract = case["evaluation"]
     if contract["scope"] == "smoke":
-        report["status"] = "smoke_passed"
+        # Outcomes are binary; the scope says this pass is a protocol smoke
+        # check with no physical scoring.
+        report.update(status="passed", scope="smoke")
         return report
     if backend is None and contract["id"] == "rf_excitation":
         from .excitation import evaluate_excitation
@@ -284,10 +299,7 @@ def _evaluate(
                 raise RuntimeError(f"{level} evaluation interrupted: {exc}") from exc
             return report
     if backend is None:
-        report.update(
-            status="incomplete", reason="Physical evaluation backend is not configured"
-        )
-        return report
+        raise RuntimeError("Physical evaluation backend is not configured")
     output = workspace / "backend-result.json"
     if output.exists():
         raise ValueError(f"backend output already exists: {output}")
@@ -332,7 +344,7 @@ def _evaluate(
         if contract["id"] == "rf_excitation":
             required |= {"no_adc", "numerical_convergence", "ai_target"}
         if contract["id"] == "s4":
-            cardiac_requirements, _cardiac_bounds = s4_backend_contract(case)
+            cardiac_requirements, cardiac_bounds = s4_backend_contract(case)
             required |= cardiac_requirements
         if intrinsic_cardiac_case(case):
             from .s1_case import uses_case_image
@@ -365,24 +377,24 @@ def _evaluate(
         metric_bounds = contract["metrics"]
         case_acceptance = False
         if contract["id"] in {"s1", "s2", "s3", "s4"}:
-            from .s1_case import case_bounds, case_policy, uses_case_image
+            from .s1_case import (
+                case_bounds,
+                case_policy,
+                contrast_required,
+                uses_case_image,
+            )
 
             case_acceptance = uses_case_image(case)
             if case_acceptance:
                 metric_bounds = [
                     {**bound, "name": "case_" + bound["name"]}
-                    for bound in case_bounds(case_policy(case))
-                ]
-                if intrinsic_cardiac_case(case):
-                    metric_bounds.append(
-                        {
-                            "name": "case_phase_reference_coverage",
-                            "min": 0.5,
-                            "max": None,
-                        }
+                    for bound in case_bounds(
+                        case_policy(case),
+                        contrast=contrast_required(case),
                     )
+                ]
             if contract["id"] == "s4":
-                _, metric_bounds = s4_backend_contract(case)
+                metric_bounds = cardiac_bounds
         if case["task"]["id"] in {"reduced_fov", "rfov_epi"}:
             # Exact scalar semantics of s3.mechanism_probes: useful selected
             # water signal and worst outside/mean inside signal over 27 spins.

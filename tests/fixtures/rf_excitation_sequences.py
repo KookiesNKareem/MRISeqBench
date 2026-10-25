@@ -1,17 +1,11 @@
 """Independent small-tip spiral reference author; never imported by the judge."""
 
-import argparse
-from pathlib import Path
-
 import numpy as np
 from pypulseq import Opts, Sequence, make_arbitrary_grad, make_arbitrary_rf, make_delay
 from scipy.interpolate import CubicHermiteSpline
 from scipy.linalg import solve
 
-from mriseqbench.catalog import Catalog
-from mriseqbench.evaluation.excitation_target import target_arrays
-
-ROOT = Path(__file__).resolve().parents[2]
+from mriseqbench.evaluation.excitation_target import target_at
 
 
 def spiral():
@@ -52,7 +46,7 @@ def spiral():
     return gradient, dt
 
 
-def make_sequence(case, mutation=None):
+def make_sequence(case):
     hw = case["hardware"]
     system = Opts(
         B0=hw["field_strength_T"],
@@ -66,15 +60,13 @@ def make_sequence(case, mutation=None):
     )
     gradient, dt = spiral()
     count = len(gradient)
-    arrays = target_arrays()
-    x, y = np.meshgrid(arrays["x_mm"], arrays["y_mm"], indexing="ij")
-    mask = arrays["object_mask"]
+    # Fixed physical design grid: increasing the evaluation matrix must not
+    # turn an RF least-squares solve into a quadratic-size phantom fit.
+    axis = ((np.arange(64) + 0.5) / 64 - 0.5) * 200
+    x, y = np.meshgrid(axis, axis, indexing="ij")
+    mask = x * x + y * y <= 60**2
     points = np.column_stack((x[mask], y[mask])) / 1000
-    target = arrays["target_mxy_magnitude"].copy()
-    if mutation == "shift":
-        target = np.roll(target, 7, axis=0)
-    elif mutation == "missing_i":
-        target[arrays["x_mm"] > 0, :] = 0
+    target = target_at(np.stack((x, y), axis=-1))
     target = target[mask]
     # Exact small-tip encoding at interval midpoints, including relaxation/B0.
     remaining = (np.arange(count)[::-1] + 0.5) * dt + 31e-6
@@ -91,14 +83,6 @@ def make_sequence(case, mutation=None):
     gram.flat[:: len(gram) + 1] += 2e-9
     coefficients = solve(gram, desired, assume_a="pos")
     signal = encoding.conj().T @ coefficients
-    if mutation == "wrong_amplitude":
-        signal *= 0.5
-    if mutation == "uniform":
-        signal[:] = 0
-        signal[-100:] = 0.5 / (2 * np.pi * 100 * dt)
-        gradient[:] = 0
-    if mutation == "no_rf":
-        signal[:] = 0
     rf = make_arbitrary_rf(
         signal,
         flip_angle=1,
@@ -117,16 +101,3 @@ def make_sequence(case, mutation=None):
     seq = Sequence(system)
     seq.add_block(rf, gx, gy, make_delay(100e-6 + count * dt + 30e-6))
     return seq
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--hardware", default="high_performance")
-    parser.add_argument("--mutation")
-    args = parser.parse_args()
-    catalog = Catalog(ROOT)
-    case = catalog.resolve(
-        catalog.get("tasks", "rf_excitation_2d"), hardware_ref=args.hardware
-    )
-    make_sequence(case, args.mutation).write(str(args.output))

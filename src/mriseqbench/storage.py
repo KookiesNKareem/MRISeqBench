@@ -11,7 +11,6 @@ import hashlib
 import json
 import os
 import shutil
-import stat
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -119,38 +118,6 @@ class ArtifactStore:
                 os.replace(tmp, path)
         return {"sha256": digest, "bytes": identity[2], "blob": str(blob)}
 
-    def archive_checkpoint(self, path):
-        """Keep the exact NPY bytes in a deterministic, compressed shared blob."""
-        path = Path(path)
-        if path.is_symlink() or not path.is_file():
-            raise ValueError(f"Expected a regular checkpoint: {path}")
-        identity = _identity(path)
-        digest = sha256(path)
-        blob = self.directory / "replays" / digest[:2] / (digest + ".gz")
-        blob.parent.mkdir(parents=True, exist_ok=True)
-        if not blob.exists():
-            with temporary(blob.parent) as tmp:
-                with (
-                    path.open("rb") as source,
-                    tmp.open("wb") as destination,
-                    gzip.GzipFile(
-                        filename="", mode="wb", fileobj=destination, mtime=0
-                    ) as compressed,
-                ):
-                    shutil.copyfileobj(source, compressed)
-                tmp.chmod(0o444)
-                publish(tmp, blob)
-        record = {
-            "sha256": digest,
-            "bytes": identity[2],
-            "blob": str(blob),
-            "mode": stat.S_IMODE(path.stat().st_mode),
-        }
-        verify_checkpoint(record)
-        if _identity(path) != identity or sha256(path) != digest:
-            raise ValueError(f"Checkpoint changed during archival: {path}")
-        return record
-
 
 def verify_checkpoint(record):
     blob = Path(record["blob"])
@@ -169,7 +136,7 @@ def verify_checkpoint(record):
 def completed_evidence(report):
     """Numerically complete uncalibrated evidence is safe to archive, not score."""
     return (
-        report.get("status") in {"passed", "failed", "smoke_passed"}
+        report.get("status") in {"passed", "failed"}
         and report.get("numerically_converged") is not False
     ) or (
         report.get("status") == "uncalibrated"
@@ -188,13 +155,10 @@ def result_artifacts(report):
     return artifacts
 
 
-def finalize_evaluation(report, workspace, store=None, *, archive_replays=True):
-    """Seal complete evidence, deduplicate images, then archive restart caches.
+def finalize_evaluation(report, workspace):
+    """Seal complete evidence and deduplicate images; restart caches stay raw.
 
-    Archive bytes and their receipt are durable before any checkpoint is removed.
     Errors/unresolved jobs retain their original restart files. No report is edited.
-    Graders may defer replay archival and retain ordinary raw checkpoints; explicit
-    storage maintenance keeps the lossless archival behavior by default.
     """
     workspace = Path(workspace).resolve()
     if not completed_evidence(report):
@@ -208,13 +172,7 @@ def finalize_evaluation(report, workspace, store=None, *, archive_replays=True):
     paths = {name: Path(path).resolve() for name, path in artifacts.items()}
     if any(not path.is_relative_to(workspace) for path in paths.values()):
         return None  # Reused attempt results belong to their original workspace.
-    caches = {paths[name].parent / "replays" for name in image_names}
-    if encoded := report.get("encoded_replay_cache", {}).get("directory"):
-        cache = Path(encoded).resolve()
-        if not cache.is_relative_to(workspace) or Path(encoded).is_symlink():
-            raise ValueError("Encoded replay cache escapes evaluation workspace")
-        caches.add(cache)
-    store = ArtifactStore(store or store_directory(workspace))
+    store = ArtifactStore(store_directory(workspace))
     receipt_path = workspace / "storage-finalization.json"
     with store.locked():
         hashes = {name: sha256(path) for name, path in paths.items()}
@@ -224,56 +182,24 @@ def finalize_evaluation(report, workspace, store=None, *, archive_replays=True):
                 raise ValueError(f"Sealed result changed: {receipt_path}")
             if receipt["artifact_sha256"] != hashes:
                 raise ValueError(f"Sealed evidence changed: {receipt_path}")
-            if archive_replays:
-                for record in receipt["checkpoints"]:
-                    verify_checkpoint(record)
         else:
             receipt = {
                 "schema_version": 1,
                 "sealed_result": report,
                 "artifact_sha256": hashes,
-                "checkpoints": [],
             }
-        images = {name: store.deduplicate(paths[name]) for name in image_names}
-        if "images" in images:
-            receipt["images"] = images["images"]
-        if len(images) > 1 or "images" not in images:
-            receipt["image_bundles"] = images
-        known = {row["path"]: row for row in receipt["checkpoints"]}
-        pending = []
-        receipt["replay_storage"] = {
-            "mode": "archived" if archive_replays else "retained_raw",
-            "directories": [str(path) for path in sorted(caches)],
-            "archival_deferred_outside_grading": not archive_replays,
+        receipt["image_bundles"] = {
+            name: store.deduplicate(paths[name]) for name in image_names
         }
-        for cache in sorted(caches) if archive_replays else ():
-            if not cache.is_dir() or cache.is_symlink():
-                continue
-            for path in sorted(cache.glob("*.npy")):
-                if path.is_symlink():
-                    raise ValueError(f"Symlink checkpoint: {path}")
-                record = {"path": str(path), **store.archive_checkpoint(path)}
-                if (
-                    str(path) in known
-                    and known[str(path)]["sha256"] != record["sha256"]
-                ):
-                    raise ValueError(f"Sealed checkpoint changed: {path}")
-                known[str(path)] = record
-                pending.append(record)
-        receipt["checkpoints"] = list(known.values())
         atomic_json(receipt_path, receipt)
-        for record in pending:
-            path = Path(record["path"])
-            if sha256(path) != record["sha256"]:
-                raise ValueError(f"Checkpoint changed before removal: {path}")
-            path.unlink()
         return receipt
 
 
 def restore_checkpoints(receipt_path):
     receipt = json.loads(Path(receipt_path).read_text())
     restored = 0
-    for record in receipt["checkpoints"]:
+    # Older campaigns archived replay checkpoints; restore their exact bytes.
+    for record in receipt.get("checkpoints", []):
         verify_checkpoint(record)
         path = Path(record["path"])
         if path.exists():

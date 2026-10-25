@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/kareemfareed/dev/MRISeqBench/benchmark/variants/256x256/prototypes/t1_mapping_segmented/build.py", line 208, in <module>
-    main()
-  File "/Users/kareemfareed/dev/MRISeqBench/benchmark/variants/256x256/prototypes/t1_mapping_segmented/build.py", line 145, in main
-    assert np.max(np.abs(q - rounded)) < 1e-5
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AssertionError

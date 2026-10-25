@@ -1,0 +1,9 @@
+{
+  "_source": "OpenRouter /api/v1/models/<id>/endpoints, pinned provider endpoint, 2026-10-21; maxOutputTokens is the endpoint's max_completion_tokens (2026-10-22), Pi's maxTokens and the proxy's explicit max_tokens when api_proxy.max_output_tokens is null (an omitted cap gets a provider default: 65536 for anthropic/* on 2026-10-23). Cost in USD per million tokens (Pi's own estimate; the proxy records billed cost).",
+  "anthropic/claude-haiku-5.5": {"name": "Claude Haiku 5.5", "api": "openai-completions", "contextWindow": 1000000, "maxOutputTokens": 128000, "cost": {"input": 0.1, "output": 0.5, "cacheRead": 0.01, "cacheWrite": 0.125}},
+  "anthropic/claude-opus-5.5": {"name": "Claude Opus 5.5", "api": "openai-completions", "contextWindow": 1000000, "maxOutputTokens": 128000, "cost": {"input": 4, "output": 20, "cacheRead": 0.2, "cacheWrite": 5}},
+  "anthropic/claude-sonnet-5.5": {"name": "Claude Sonnet 5.5", "api": "openai-completions", "contextWindow": 1000000, "maxOutputTokens": 128000, "cost": {"input": 2, "output": 10, "cacheRead": 0.1, "cacheWrite": 2.5}},
+  "openai/gpt-6-luna": {"name": "GPT-6 Luna", "api": "openai-responses", "contextWindow": 1050000, "maxOutputTokens": 128000, "cost": {"input": 0.1, "output": 0.5, "cacheRead": 0.01, "cacheWrite": 0.125}},
+  "openai/gpt-6.1-sol": {"name": "GPT-6.1 Sol", "api": "openai-responses", "contextWindow": 1050000, "maxOutputTokens": 128000, "cost": {"input": 2, "output": 10, "cacheRead": 0.1, "cacheWrite": 2.5}},
+  "deepseek/deepseek-v4.1-flash": {"name": "DeepSeek V4.1 Flash", "api": "openai-completions", "contextWindow": 1048576, "maxOutputTokens": 131072, "cost": {"input": 0.14, "output": 0.42, "cacheRead": 0.0042, "cacheWrite": 0}}
+}

@@ -1,15 +1,16 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: sense_sampling
+version: 2
 objective: Create an undersampled Cartesian spoiled GRE acquisition designed for SENSE reconstruction.
-  Retain even zero-based ky grid indices and add the eight central indices 12 through 19.
+  Retain even zero-based ky grid indices and add the eight central indices 60 through 67.
 object: cardiac_2d@1
 sequence:
   level: S3
   capabilities: [spoiled_gre, cartesian, undersampling, sense]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 6
   sampling:
     acceleration: 2
     calibration_lines: 8
-evaluation: s3@3
+evaluation: s3@4

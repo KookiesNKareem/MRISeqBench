@@ -24,7 +24,7 @@ TARGET_PATH = (
     Path(__file__).resolve().parents[3]
     / "benchmark/references/rf_excitation_2d/target.npz"
 )
-TARGET_SHA256 = "8f65c3a74df053678a39eb0a245923811dc8557909500abb7f1e76695b95771f"
+TARGET_SHA256 = "4c58e1554762f8dee59f710ebb42602e7a0c89dda5d7116ef1af1dada2e7aa90"
 
 
 def target_at(positions_mm):
@@ -43,17 +43,6 @@ def target_at(positions_mm):
             wy = (erf((y - hi_y + PITCH_MM) / scale) - erf((y - hi_y) / scale)) / 2
             result += wx * wy
     return AMPLITUDE * np.clip(result, 0, 1)
-
-
-def build_target_arrays():
-    axis = ((np.arange(64) + 0.5) / 64 - 0.5) * 200
-    x, y = np.meshgrid(axis, axis, indexing="ij")
-    return {
-        "x_mm": axis,
-        "y_mm": axis,
-        "target_mxy_magnitude": target_at(np.stack((x, y), axis=-1)),
-        "object_mask": x * x + y * y <= 60**2,
-    }
 
 
 def target_sha256():

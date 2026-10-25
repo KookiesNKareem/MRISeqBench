@@ -7,7 +7,6 @@ import numpy as np
 
 from .s1_koma import simulate
 from .s1_phantom import Spins
-from .s1_sequence import rotate
 
 
 def expected_receiver_phase(acq):
@@ -16,7 +15,9 @@ def expected_receiver_phase(acq):
     current = 0.0
     for p in acq.pulses:
         rf_phase = p.phase + 2 * np.pi * p.frequency * (p.center - p.start)
-        current = 2 * rf_phase - current if p.refocusing else rf_phase
+        current = np.remainder(
+            2 * rf_phase - current if p.refocusing else rf_phase, 2 * np.pi
+        )
         phase[acq.adc >= p.center] = current
     return phase
 
@@ -39,81 +40,82 @@ def refocusing_parity(acq):
     return (-1.0) ** parity
 
 
-def canonical_response(acq, properties, fam, *, finite_rf=False):
-    """Family oracle using measured RF/timing, with perfect spoiling when required.
-
-    This deliberately does not copy encoding gradients or spoiler effectiveness.
-    bSSFP uses finite-RF, zero-gradient Bloch dynamics, preserving transients.
-    Refocused echoes share the excitation phase convention (refocusing_parity).
-    """
-    return _canonical_response(acq, properties, fam, finite_rf) * refocusing_parity(acq)
-
-
-def _canonical_response(acq, properties, fam, finite_rf):
+def rf_only_response(
+    acq, properties, *, ideal_spoiling=False, spoil_times_s=(), compress=True
+):
+    """Finite-RF Bloch; all preparations/transients and intrinsic fat retained."""
+    a = copy(acq)
     receiver = expected_receiver_phase(acq)
+    a.adc_phase = receiver
+    anchors = inverse = None
+    if compress and len(a.adc) > 1 and a.pulses:
+        starts = np.asarray([pulse.start for pulse in a.pulses])
+        ends = np.asarray([pulse.end for pulse in a.pulses])
+        if (
+            np.isfinite(np.r_[starts, ends, a.adc]).all()
+            and np.all(ends >= starts)
+            and np.all(starts[1:] >= ends[:-1])
+            and np.all(np.diff(a.adc) > 0)
+        ):
+            groups = np.searchsorted(ends, a.adc, side="right") - 1
+            if np.all(groups >= 0) and np.all(
+                a.adc < np.r_[starts[1:], np.inf][groups]
+            ):
+                _, anchors, inverse = np.unique(
+                    groups, return_index=True, return_inverse=True
+                )
+                # Forward propagation avoids dividing by a decayed echo. All RF
+                # events remain in the native replay; only ADC outputs shrink.
+                a.adc = a.adc[anchors]
+                a.adc_phase = a.adc_phase[anchors]
+                a.k = a.k[anchors]
     n = len(properties)
-    if finite_rf:
-        reference_acq = copy(acq)
-        reference_acq.pulses = [p for p in acq.pulses if p.start < acq.adc[-1]]
-        reference_acq.adc_phase = receiver
-        spins = Spins(
-            np.zeros((n, 3)),
-            np.arange(n),
-            list(range(n)),
-            properties,
-            1.0,
-            (n,),
-            "intrinsic-material-rf-response",
-        )
-        return simulate(
-            reference_acq,
-            spins,
-            zero_gradients=True,
-            individual=True,
-            ideal_spoiling=fam not in {"bssfp", "rfov_epi"},
-        ).T
-    if fam == "bssfp":
-        out = []
-        for i in range(n):
-            spins = Spins(
-                np.zeros((1, 3)),
-                np.array([i]),
-                list(range(n)),
-                properties[:, :3],
-                1.0,
-                (1,),
-                "diagnostic",
-            )
-            reference_acq = copy(acq)
-            reference_acq.adc_phase = receiver
-            out.append(simulate(reference_acq, spins, zero_gradients=True))
-        return np.asarray(out)
-    response = np.zeros((n, len(acq.adc)), dtype=complex)
-    m = np.zeros((n, 3))
-    m[:, 2] = properties[:, 0]
-    last = 0.0
-    for pulse in acq.pulses:
-        dt = pulse.center - last
-        m[:, :2] *= np.exp(-dt / properties[:, 2, None])
-        m[:, 2] = properties[:, 0] + (m[:, 2] - properties[:, 0]) * np.exp(
-            -dt / properties[:, 1]
-        )
-        if not pulse.refocusing:
-            m[:, :2] = 0.0  # The independent ideal family destroys old coherence.
-        phase = pulse.phase + 2 * np.pi * pulse.frequency * (pulse.center - pulse.start)
-        axis = np.deg2rad(pulse.flip) * np.array([np.cos(phase), np.sin(phase), 0.0])
-        m = np.array([rotate(v, axis) for v in m])
-        last = pulse.center
-        next_pulses = [p.center for p in acq.pulses if p.center > last + 1e-12]
-        end = next_pulses[0] if next_pulses else np.inf
-        ids = np.flatnonzero((acq.adc >= last) & (acq.adc < end))
-        dt_adc = acq.adc[ids] - last
-        response[:, ids] = (
-            (m[:, 0] + 1j * m[:, 1])[:, None]
-            * np.exp(-dt_adc[None, :] / properties[:, 2, None])
-            * np.exp(-1j * receiver[ids])
-        )
-    return response
+    spins = Spins(
+        np.zeros((n, 3)),
+        np.arange(n),
+        [str(i) for i in range(n)],
+        properties,
+        np.ones(n),
+        (n,),
+        "intrinsic-material-rf-response",
+    )
+    response = simulate(
+        a,
+        spins,
+        zero_gradients=True,
+        individual=True,
+        ideal_spoiling=ideal_spoiling,
+        **({"spoil_times_s": spoil_times_s} if len(spoil_times_s) else {}),
+    ).T
+    if anchors is None:
+        return response
+    elapsed = acq.adc - a.adc[inverse]
+    frequency = (
+        properties[:, 3] * acq.seq.system.B0 / 3 if properties.shape[1] > 3 else 0
+    )
+    evolution = np.exp(
+        -elapsed[None, :] / properties[:, 2, None]
+        - 2j * np.pi * np.asarray(frequency)[..., None] * elapsed
+        - 1j * (receiver - a.adc_phase[inverse])
+    )
+    return response[:, inverse] * evolution
+
+
+def canonical_response(acq, properties, fam, *, finite_rf):
+    """Family oracle: finite-RF, zero-gradient Bloch on the measured RF/timing.
+
+    This deliberately does not copy encoding gradients or spoiler effectiveness:
+    spoiled families use ideal spoiling, while bSSFP/rFOV EPI keep their full
+    coherent history. Refocused echoes share the excitation phase convention.
+    Callers state ``finite_rf=True``; no other family oracle exists.
+    """
+    if not finite_rf:
+        raise ValueError("Only the finite-RF family oracle is supported")
+    reference_acq = copy(acq)
+    reference_acq.pulses = [p for p in acq.pulses if p.start < acq.adc[-1]]
+    return rf_only_response(
+        reference_acq, properties, ideal_spoiling=fam not in {"bssfp", "rfov_epi"}
+    ) * refocusing_parity(acq)
 
 
 def reference_signal(acq, spins, spec, response):
@@ -145,9 +147,6 @@ def reference_signal(acq, spins, spec, response):
         )
         raw += fourier[tuple(acq.indices.T)] * response[label]
     return raw
-
-
-from .s1_koma import reconstruct  # noqa: F401 -- shared public reconstruction adapter
 
 
 def nrmse(actual, reference):
@@ -206,8 +205,4 @@ def image_metrics(image, reference, spins, spec):
     for name, mask in masks.items():
         if mask.any():
             metrics[f"{name}_mean_signal"] = float(magnitude[mask].mean())
-    if {"wm_mean_signal", "gm_mean_signal"} <= metrics.keys():
-        metrics["wm_gm_ratio"] = metrics["wm_mean_signal"] / max(
-            metrics["gm_mean_signal"], 1e-15
-        )
     return metrics

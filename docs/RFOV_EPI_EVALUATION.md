@@ -1,77 +1,53 @@
-# S3: 2D RF reduced-FOV EPI
+# Reduced-FOV EPI
 
-[`rfov_epi@1`](../benchmark/tasks/rfov_epi.yaml) combines two-dimensional spatial
-excitation with single-shot reduced-FOV EPI. It belongs to S3 because spatial
-selection enables the reduced phase FOV. The standalone [AI excitation task](RF_EXCITATION_EVALUATION.md)
-belongs to S4 RF design.
+Select the central 160×100 mm (x×y) rectangle using RF that overlaps both
+in-plane encoding gradients: x and y gradients must each be non-zero at some
+time while RF is on. Follow it with one alternating-polarity EPI shot from a single
+excitation: exactly 64 readout lines of 128 x samples, retaining even zero-based
+ky indices of the full 128×128 grid over 200×200 mm. Refocusing pulses (≥135°)
+are excluded. The fixed single-coil BART FFT reconstructs the central half of
+the phase FOV at 1.5625 mm resolution.
 
-The prescribed full grid is 32×32 over 200×200 mm. A 2D RF pulse selects a
-160×100 mm central rectangle. The acquisition retains even zero-based ky indices
-with full 32-sample x readouts, giving a 32×16 image of the central 100 mm phase
-FOV at unchanged 6.25 mm resolution. One shot must acquire all 16 lines with
-alternating readout polarity and no refocusing pulse. The fixed BART FFT and
-central-half crop include the known sampling-density factor. TE is capped at
-80 ms; complete authored duration, including recovery, is capped at 250 ms.
+Imaging k starts at the end of the Pulseq block containing the excitation RF.
+Gradients inside that block, including any rewinder placed in it, never count
+toward imaging k; gradients in later blocks (e.g. a separate rewinder or
+prephaser) do. Each line must bracket kx=0. Effective TE runs from the
+magnitude-weighted RF centre to the central-ky echo and must be within
+`te_ms.max`.
 
-The scanner-specific static cardiac phantom, relaxation, fat, B0 and synthetic
-SAR model are unchanged. The anatomy lies inside the selected x extent; y
-selection restricts its visible phase extent.
+## Selection probes
 
-## Physical checks
+CUDA Bloch probes use water (PD=1, T1=0.8 s, T2=0.08 s) and declared B0 at the
+readout-centre samples of the first, central and last EPI lines. Magnitudes are
+multiplied by exp((t − t_RFend)/T2), where t_RFend is the end of the excitation
+RF that produced the EPI shot (later RF is ignored); this exactly normalizes
+them to that RF end.
+Every interior magnitude must be ≥0.20, their mean ≥0.01, and at each of those
+echoes maximum exterior / mean interior magnitude must be ≤0.10. All probes
+have z=0:
 
-The judge verifies the Cartesian lattice, exact reduced-FOV mask, one EPI shot,
-alternating polarity and RF overlap with gradients in both dimensions. Metadata
-and RF use labels do not establish selection. Encoding gradients are integrated
-from the end of the final RF-containing block, including authored selection
-rewinding. A hard-pulse RF-centre k reset is inappropriate for a shaped 2D pulse.
+| Probe set | x (mm) | y (mm) |
+|---|---|---|
+| Interior | −56, 0, 56 | nine points −35..35 |
+| y stopband | −56, 0, 56 | nine points per side, ±65..±96 |
+| x stopband | −96, −92, 92, 96 | −25, 0, 25 |
 
-Native finite-RF Bloch probes (water PD=1, T1=0.8 s, T2=0.08 s, z=0) sample
-the first, central and last EPI line centres on a grid of interior points and both x-only
-and y-only stopbands under declared B0. Worst exterior magnitude divided by mean
-interior magnitude must be ≤0.10; every sampled interior response must remain
-≥0.20 PD. Thus a one-dimensional slab pulse cannot pass merely because the
-compact anatomy contains no spins outside the selected x extent.
+Each probe is one image voxel (1.5625 × 1.5625 mm in x, y). Its complex signal
+is averaged over a uniform isochromat grid after removing the nominal encoding
+phase of that sample and scored by magnitude; the same coprime grid pairs and
+convergence rule as `reduced_fov` apply (24/31, refined to 48/61 and 96/127;
+the worse value is scored). With no refocusing, exterior suppression must come
+from the RF selectivity itself.
 
-Full cardiac replay and image acceptance use the existing `s3@3` criteria:
-complex NRMSE ≤0.45, magnitude NRMSE ≤0.35, wrapped phase RMS ≤0.35 rad,
-minimum tissue signal fraction ≥0.5, contrast retention ≥0.5, and outside-object
-energy fraction ≤0.25. Numerical quadrature and temporal convergence remain
-mandatory. Timing, hardware and final-submission SAR also apply.
+## Image
 
-The independent full-grid target uses fixed anatomy clipped to the prescribed
-phase FOV, holding finite-RF tissue response at the central echo. The phase
-oracle retains the actual excitation's RF and selection gradients, relaxation
-and B0, while removing subsequent imaging gradients. It never uses the acquired
-image or submitted ADC receiver phase. This includes the physical phase of a
-shaped spatial excitation without excusing readout distortion or receiver errors.
-No gain, phase, B0 correction or registration is fitted. Segmented RF history
-remains coherent across subpulses.
-
-## Reference and qualification
-
-[`rfov_epi_sequences.py`](../tests/fixtures/rfov_epi_sequences.py) independently
-authors a spatial RF trajectory and solves for RF controls before appending EPI.
-Its raster excitation trajectory, fat suppression, RF duration and recovery delay
-are reference design choices rather than participant requirements.
-
-[`qualify_rfov_epi.py`](../tests/fixtures/qualify_rfov_epi.py) freezes source,
-waveforms, prompts, cases, numerical stages, BART images and verdicts. Controls
-include missing spatial selection, one-dimensional encoding, wrong EPI polarity,
-full-FOV or missing-line sampling, shifted selection and wrong receiver phase.
-The one-dimensional control also undergoes an explicit independent x-stopband
-assay even when waveform checks already reject it.
-
-CUDA qualification passed all 24 controls on an NVIDIA TITAN RTX, covering all
-three scanner profiles. Positive complex NRMSE was 0.1171–0.2159 and phase RMS
-was 0.0413–0.1075 rad. Selection leakage was 0.0466–0.0796. Complete verdicts,
-frozen sources and image bundles are in the [reference package](../benchmark/references/README.md)
-and its [qualification receipt](../benchmark/references/rfov_epi/qualification_cuda/summary.json).
-
-```bash
-uv run mriseqbench describe rfov_epi --hardware high_performance
-uv run python -m tests.fixtures.qualify_rfov_epi --output tmp/rfov-qualification
-```
-
-Both new tasks are available in `rf_excitation@1` and the full suite. The target
-geometry, task and scoring requirements are public; reference sequence bytes and
-private grading code are not provided to participants.
+The cardiac image is scored under declared B0, relaxation and fat against an
+independent target. Its phase oracle retains RF selection gradients and removes
+later imaging gradients; submitted ADC phase never defines the target.
+Limits: complex/magnitude NRMSE ≤0.37/0.35, phase RMS ≤0.27 rad, tissue signal
+≥0.63, outside energy ≤0.05. Contrast retention is diagnostic for this spatial
+selection task. Ideal-control images are diagnostic. No fitted gain, phase,
+registration or field correction is used. Common rules, including preflight,
+SAR, outcomes, image-metric definitions and numerical acceptance, are in
+[COMMON_EVALUATION.md](COMMON_EVALUATION.md); see also [S3](S3_EVALUATION.md)
+and the supplied `task.yaml` / `EVALUATION.md`.

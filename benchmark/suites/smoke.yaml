@@ -3,6 +3,6 @@ schema_version: 1
 id: smoke
 version: 1
 cases:
-- task: pulseq_smoke@1
+- task: pulseq_smoke@2
   physics:
   - static_b0@1

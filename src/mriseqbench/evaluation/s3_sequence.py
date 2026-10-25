@@ -1,23 +1,19 @@
 """S3 Cartesian sampling identity inferred from RF, gradients and ADC nodes."""
 
+from itertools import product
 from types import SimpleNamespace
 
 import numpy as np
 
-from .s1_sequence import MissingExcitation, check, family, gradient_integrals
+from .s1_sequence import (
+    MissingExcitation,
+    check,
+    family,
+    gradient_integrals,
+    midpoint_tolerance,
+)
 from .s1_sequence import inspect_sequence as inspect_base
 
-FAMILIES = {
-    "sense_sampling",
-    "grappa_sampling",
-    "caipirinha",
-    "compressed_sensing",
-    "variable_density",
-    "partial_fourier",
-    "reduced_fov",
-    "rfov_epi",
-    "elliptical_kspace",
-}
 PARALLEL = {
     "sense_sampling",
     "grappa_sampling",
@@ -26,6 +22,13 @@ PARALLEL = {
     "variable_density",
 }
 REDUCED_FOV = {"reduced_fov", "rfov_epi"}
+FAMILIES = PARALLEL | REDUCED_FOV | {"partial_fourier", "elliptical_kspace"}
+
+
+def receive_model(fam):
+    if fam == "variable_density":
+        return "s3_gaussian_y8_comoving@1"
+    return "s3_trigonometric_comoving@1" if fam in PARALLEL else "uniform@1"
 
 
 def rf_block_endpoints(seq):
@@ -115,6 +118,51 @@ def calibration_width(mask):
     return hi - lo
 
 
+def lattice_offset(q, matrix, expected):
+    """Fractional lattice origin per axis, in (-0.5, 0.5] by default.
+
+    The circular mean has a branch cut at half a sample: within 0.01 sample of
+    it, the -0.5-side and +0.5-side representatives index the same nodes one
+    grid point apart. Choose the representative that keeps every sample on
+    the grid, then the one matching more prescribed nodes, then the circular
+    mean itself (so a legitimate offset of e.g. -0.495 is never rebranched).
+    A band reaching +N/2 may also shift by whole samples when the shifted
+    samples equal the same samples wrapped modulo N (+N/2 aliases to -N/2);
+    the offset phase then reconstructs exactly that wrap.
+    """
+    mean = np.angle(np.mean(np.exp(2j * np.pi * q), axis=0)) / (2 * np.pi)
+    mean[np.isclose(mean, -0.5, atol=1e-5)] = 0.5
+    options = [
+        [value]
+        + ([value + 1] if value < 0 and abs(value + 0.5) <= 0.01 else [])
+        + ([value - 1] if value > 0 and abs(value - 0.5) <= 0.01 else [])
+        for value in mean
+    ]
+    base = np.rint(q - mean).astype(int) + matrix // 2
+    if base.min() >= 0 and np.all(base.max(axis=0) <= matrix):
+        wrapped = np.zeros(tuple(matrix), bool)
+        wrapped[tuple((base % matrix).T)] = True
+        for axis, n in enumerate(matrix):
+            if base[:, axis].max() != n:
+                continue
+            for shift in range(1, base[:, axis].min() + 1):
+                step = np.eye(len(matrix), dtype=int)[axis] * shift
+                shifted = np.zeros(tuple(matrix), bool)
+                shifted[tuple(((base - step) % matrix).T)] = True
+                if np.array_equal(shifted, wrapped):
+                    options[axis].append(mean[axis] + shift)
+    best, best_score = mean, None
+    for choice in product(*options):
+        offset = np.asarray(choice)
+        indices = np.rint(q - offset).astype(int) + matrix // 2
+        inside = ((indices >= 0) & (indices < matrix)).all(axis=1)
+        matched = int(np.sum(expected[tuple(indices[inside].T)]))
+        score = (bool(inside.all()), matched, int(np.sum(offset == mean)))
+        if best_score is None or score > best_score:
+            best, best_score = offset, score
+    return best
+
+
 def inspect_sequence(path, case):
     try:
         a = inspect_base(path, case)
@@ -146,13 +194,8 @@ def inspect_sequence(path, case):
     q = a.k[:, :dims] * fov
     # Fixed centred physical grid. S3's asymmetric support cannot estimate its
     # origin from its extrema: doing so silently recentres partial acquisitions.
-    offset = np.angle(np.mean(np.exp(2j * np.pi * q), axis=0)) / (2 * np.pi)
-    offset[np.isclose(offset, -0.5, atol=1e-5)] = 0.5
-    # The circular mean has a branch cut at half a sample. Small exported
-    # gradient round-off must not move an even readout to the adjacent integer
-    # origin. Choose the positive half-sample representative within the same
-    # published lattice tolerance, retaining the measured fractional offset.
-    offset[(offset < 0) & (abs(offset + 0.5) <= 0.01)] += 1
+    expected = prescribed_mask(fam, tuple(matrix), spec.get("sampling") or {})
+    offset = lattice_offset(q, matrix, expected)
     integer = np.rint(q - offset).astype(int)
     indices = integer + matrix // 2
     in_bounds = bool(((indices >= 0) & (indices < matrix)).all())
@@ -171,14 +214,16 @@ def inspect_sequence(path, case):
     if in_bounds:
         mask[tuple(indices.T)] = True
     no_duplicates = int(mask.sum()) == len(indices)
+    centres = np.array([ids[np.argmin(abs(q[ids, 0]))] for ids in a.lines])
     checks = [
         c
         for c in a.checks
         if c["name"]
         in {
+            "readout_samples",
+            "readout_bandwidth",
             "rf_before_adc",
             "echo_in_adc",
-            "single_line_per_excitation",
             "te_ms",
             "tr_ms",
             "flip_angle_deg",
@@ -206,23 +251,18 @@ def inspect_sequence(path, case):
         ),
     ]
     if fam == "rfov_epi":
-        checks = [
-            c
-            for c in checks
-            if c["name"] not in {"single_line_per_excitation", "echo_in_adc", "te_ms"}
-        ]
-        echo_times, centre_samples = [], []
+        checks = [c for c in checks if c["name"] not in {"echo_in_adc", "te_ms"}]
+        echo_times = []
         for ids in a.lines:
             span = q[ids[-1], 0] - q[ids[0], 0]
             fraction = -q[ids[0], 0] / span if abs(span) > 1e-12 else 0.5
             echo_times.append(
                 a.adc[ids[0]] + fraction * (a.adc[ids[-1]] - a.adc[ids[0]])
             )
-            centre_samples.append(ids[np.argmin(abs(q[ids, 0]))])
         a.te = np.asarray(echo_times) - np.array(
             [excitation_pulses[max(j, 0)].center for j in a.excitation]
         )
-        central_line = int(np.argmin(np.linalg.norm(q[centre_samples], axis=1)))
+        central_line = int(np.argmin(np.linalg.norm(q[centres], axis=1)))
         effective_te_ms = float(a.te[central_line] * 1000)
         a.measurements["echo_times_s"] = echo_times
         a.measurements["te_ms"] = (a.te * 1000).tolist()
@@ -286,7 +326,6 @@ def inspect_sequence(path, case):
                 },
             )
         )
-    expected = prescribed_mask(fam, tuple(matrix), spec.get("sampling") or {})
     valid = np.array_equal(mask, expected)
     detail = {
         "missing_samples": int(np.sum(expected & ~mask)),
@@ -294,7 +333,7 @@ def inspect_sequence(path, case):
     }
     checks.append(check("sampling_pattern", valid, {"family": fam, **detail}))
     if fam != "reduced_fov":
-        checks.extend(c for c in a.checks if c["name"] in {"gre", "no_refocusing"})
+        checks.extend(c for c in a.checks if c["name"] == "no_refocusing")
     else:
         # Spatial selectivity is tested by encoded Bloch probes, not RF labels.
         refs = [p for p in a.pulses if p.refocusing]
@@ -313,7 +352,7 @@ def inspect_sequence(path, case):
             check(
                 "inner_volume_rf",
                 all(count == 1 for count in counts)
-                and max(midpoint_errors) <= max(a.seq.rf_raster_time, 1e-6),
+                and max(midpoint_errors) <= midpoint_tolerance(a.seq),
                 {
                     "refocusing_per_readout": counts,
                     "max_midpoint_error_s": float(max(midpoint_errors)),
@@ -322,7 +361,6 @@ def inspect_sequence(path, case):
         )
     checks.append(check("positive_echo_times", np.all(a.te > 0), {}))
     a.indices, a.offset, a.checks = indices, offset, checks
-    centres = np.array([ids[np.argmin(abs(q[ids, 0]))] for ids in a.lines])
     a.measurements.update(
         family=fam,
         fov_mm=spec["fov_mm"],
@@ -332,7 +370,7 @@ def inspect_sequence(path, case):
         lattice_offset=offset.tolist(),
         centre_sample_indices=centres.tolist(),
         reconstruction="bart_sampling_sense@1",
-        receive_model="s3_trigonometric_comoving@1" if fam in PARALLEL else "uniform@1",
+        receive_model=receive_model(fam),
     )
     if fam in REDUCED_FOV:
         ys = np.flatnonzero(mask.all(axis=0))

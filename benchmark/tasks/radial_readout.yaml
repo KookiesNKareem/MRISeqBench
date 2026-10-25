@@ -1,13 +1,15 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: radial_readout
-objective: Create a spoiled GRE acquisition with radial readout.
+version: 2
+objective: Create a spoiled GRE acquisition of 202 full-diameter radial spokes through k=0, uniformly
+  spaced over 180 degrees, with one spoke per excitation.
 object: cardiac_2d@1
 sequence:
   level: S2
   capabilities: [spoiled_gre, radial]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 6
   readout:
-    spokes: 48
-evaluation: s2@4
+    spokes: 202
+evaluation: s2@5

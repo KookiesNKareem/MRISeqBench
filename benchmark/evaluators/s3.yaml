@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/evaluators.schema.json
 schema_version: 1
 id: s3
-version: 3
+version: 4
 scope: benchmark
 calibrated: true
 reconstruction: bart_sampling_sense@1
@@ -33,3 +33,69 @@ case_image_criteria:
     tissue_signal_fraction_min: 0.5
     contrast_retention_min: 0.5
     outside_energy_fraction_max: 0.25
+# Per-task limits (docs/S3_EVALUATION.md): max(1.5x worst reference, 1.2x worst
+# valid design at >=500 Hz/pixel) across hardware, never looser than static.
+family_image_criteria:
+  sense_sampling:
+    complex_nrmse_max: 0.23
+    magnitude_nrmse_max: 0.21
+    phase_rms_rad_max: 0.17
+    tissue_signal_fraction_min: 0.66
+    contrast_retention_min: 0.66
+    outside_energy_fraction_max: 0.05
+  grappa_sampling:
+    complex_nrmse_max: 0.23
+    magnitude_nrmse_max: 0.21
+    phase_rms_rad_max: 0.18
+    tissue_signal_fraction_min: 0.66
+    contrast_retention_min: 0.66
+    outside_energy_fraction_max: 0.05
+  caipirinha:
+    complex_nrmse_max: 0.23
+    magnitude_nrmse_max: 0.21
+    phase_rms_rad_max: 0.13
+    tissue_signal_fraction_min: 0.66
+    contrast_retention_min: 0.66
+    outside_energy_fraction_max: 0.05
+  compressed_sensing:
+    complex_nrmse_max: 0.23
+    magnitude_nrmse_max: 0.2
+    phase_rms_rad_max: 0.17
+    tissue_signal_fraction_min: 0.66
+    contrast_retention_min: 0.66
+    outside_energy_fraction_max: 0.05
+  variable_density:
+    complex_nrmse_max: 0.23
+    magnitude_nrmse_max: 0.21
+    phase_rms_rad_max: 0.17
+    tissue_signal_fraction_min: 0.66
+    contrast_retention_min: 0.66
+    outside_energy_fraction_max: 0.05
+  partial_fourier:
+    complex_nrmse_max: 0.23
+    magnitude_nrmse_max: 0.2
+    phase_rms_rad_max: 0.16
+    tissue_signal_fraction_min: 0.66
+    contrast_retention_min: 0.66
+    outside_energy_fraction_max: 0.05
+  elliptical_kspace:
+    complex_nrmse_max: 0.35
+    magnitude_nrmse_max: 0.3
+    phase_rms_rad_max: 0.21
+    tissue_signal_fraction_min: 0.62
+    contrast_retention_min: 0.71
+    outside_energy_fraction_max: 0.05
+  reduced_fov:
+    complex_nrmse_max: 0.34
+    magnitude_nrmse_max: 0.33
+    phase_rms_rad_max: 0.25
+    tissue_signal_fraction_min: 0.59
+    contrast_retention_min: 0.5
+    outside_energy_fraction_max: 0.05
+  rfov_epi:
+    complex_nrmse_max: 0.37
+    magnitude_nrmse_max: 0.35
+    phase_rms_rad_max: 0.27
+    tissue_signal_fraction_min: 0.63
+    contrast_retention_min: 0.63
+    outside_energy_fraction_max: 0.05

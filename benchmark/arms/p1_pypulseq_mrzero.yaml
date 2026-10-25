@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../../schemas/arms.schema.json
+schema_version: 1
+id: p1_pypulseq_mrzero
+version: 1
+language: python
+authoring: pypulseq
+pulse_designer: false
+unitful: false
+simulator: mrzero

@@ -14,12 +14,13 @@ from types import SimpleNamespace
 import numpy as np
 from scipy.optimize import minimize_scalar
 
-from ..io import write_json
+from ..io import finite_json, write_json
 from .bart import provenance as bart_provenance
 from .s1 import evaluate_s1, resolve_decision
-from .s1_image import expected_receiver_phase, material_masks
-from .s1_koma import reconstruct, simulate
-from .s1_phantom import Spins, phantom
+from .s1_case import converge_phase, rf_phasor, voxel_spins
+from .s1_image import expected_receiver_phase, material_masks, rf_only_response
+from .s1_koma import inversion_assay, reconstruct, simulate
+from .s1_phantom import phantom
 from .s1_sampling import analytic_reference, interval
 from .s1_sequence import MissingExcitation, check, family
 from .s4_sequence import frame_acquisition, inspect_sequence
@@ -113,21 +114,16 @@ def _central(acq):
     return int(np.argmin(np.linalg.norm(acq.k, axis=1)))
 
 
+def preparation_spoils(acq):
+    return [
+        t
+        for t in getattr(acq, "measurements", {}).get("preparation_spoil_times_s", [])
+        if t < acq.adc[-1]
+    ]
+
+
 def canonical_response(acq, properties):
-    """Finite-RF Bloch; all preparations/transients and intrinsic fat retained."""
-    a = copy(acq)
-    a.adc_phase = expected_receiver_phase(acq)
-    n = len(properties)
-    spins = Spins(
-        np.zeros((n, 3)),
-        np.arange(n),
-        [str(i) for i in range(n)],
-        properties,
-        np.ones(n),
-        (n,),
-        "s4-rf-only",
-    )
-    return simulate(a, spins, zero_gradients=True, individual=True).T
+    return rf_only_response(acq, properties, spoil_times_s=preparation_spoils(acq))
 
 
 def reference_image(acq, case, root, response, _reference_raw):
@@ -147,50 +143,51 @@ def reference_image(acq, case, root, response, _reference_raw):
     )
 
 
-def _inversion_response(pulse, field):
+# Adiabatic-inversion B1 robustness grid (relative transmit scale, 0.8-1.2).
+ADIABATIC_B1_SCALES = tuple(np.round(np.linspace(0.8, 1.2, 9), 2).tolist())
+INVERSION_MIN = 0.90
+
+
+def assay_offsets(field):
+    """17 B0 offsets over [-520, 70] Hz at 3 T, scaled linearly with field."""
+    return np.linspace(-520, 70, 17) * field / 3
+
+
+def inversion_grid(pulse, offsets, b1_scales=(1.0,), assay=None):
+    """Inverted Mz fraction for every (B1 scale, B0 offset) pair.
+
+    A B1 scale multiplies the complex RF waveform only; timing, phase and the
+    RF frequency sweep are unchanged. Returns an array of shape
+    (len(b1_scales), len(offsets)).
+    """
+    assay = assay or inversion_assay
+    rows = []
+    for scale in b1_scales:
+        scaled = copy(pulse)
+        scaled.signal = np.asarray(pulse.signal) * float(scale)
+        rows.append(np.asarray(assay(scaled, offsets), dtype=float))
+    return np.vstack(rows)
+
+
+def _inversion_response(pulse, field, b1_scales=(1.0,)):
     """Independent finite-waveform rotation assay, including the RF frequency sweep.
 
     The unitary assay isolates inversion efficiency; image replay additionally
     includes relaxation, complete RF history, encoding, B0 and chemical shift.
     """
-    offsets = np.linspace(-520, 70, 17) * field / 3
-    magnetization = np.tile([0.0, 0.0, 1.0], (len(offsets), 1))
-    # Match KomaMRICore: RF frequency offsets act in the RF frame (Bz - df/gamma),
-    # so an offset RF pulse is resonant with spins at +df. Folding +df into the
-    # envelope phase under this left-handed rotation would mirror the band.
-    detuning = offsets - pulse.frequency
-    for signal, dt in zip(pulse.signal, np.diff(pulse.edges), strict=True):
-        rf = signal * np.exp(1j * pulse.phase)
-        axes = (
-            2
-            * np.pi
-            * dt
-            * np.column_stack(
-                (
-                    np.full(len(offsets), rf.real),
-                    np.full(len(offsets), rf.imag),
-                    detuning,
-                )
-            )
-        )
-        angles = np.linalg.norm(axes, axis=1)
-        unit = axes / np.maximum(angles[:, None], 1e-30)
-        cosine, sine = np.cos(angles)[:, None], np.sin(angles)[:, None]
-        magnetization = (
-            magnetization * cosine
-            - np.cross(unit, magnetization) * sine
-            + unit * np.sum(unit * magnetization, axis=1)[:, None] * (1 - cosine)
-        )
-    return float(np.min(-magnetization[:, 2])), offsets.tolist()
+    offsets = assay_offsets(field)
+    grid = inversion_grid(pulse, offsets, b1_scales)
+    return float(np.min(grid)), offsets.tolist(), grid.min(axis=1).tolist()
 
 
-def mechanism_probes(acq, case, _materials, properties):
+def mechanism_probes(acq, case, materials, properties):
     response = canonical_response(acq, properties)
     frame = acq.measurements["frame"]
     prep_ids = frame["preparation_pulse_indices"]
     checks, metrics = [], {}
-    myocardial = _materials.index("myocardium")
-    usable = float(abs(response[myocardial, _central(acq)]) / properties[myocardial, 0])
+    myocardial = materials.index("myocardium")
+    central = _central(acq)
+    usable = float(abs(response[myocardial, central]) / properties[myocardial, 0])
     checks.append(
         check(
             "usable_echo_signal",
@@ -204,10 +201,7 @@ def mechanism_probes(acq, case, _materials, properties):
         a.pulses = [p for i, p in enumerate(acq.pulses) if i not in prep_ids]
         unprepared = canonical_response(a, properties)
         effect = float(
-            abs(
-                response[myocardial, _central(acq)]
-                - unprepared[myocardial, _central(acq)]
-            )
+            abs(response[myocardial, central] - unprepared[myocardial, central])
             / properties[myocardial, 0]
         )
         cutoff = case["evaluation"]["preparation_effect_fraction_min"]
@@ -222,17 +216,26 @@ def mechanism_probes(acq, case, _materials, properties):
         for pulse_index in prep_ids:
             if not acq.pulses[pulse_index].refocusing:
                 continue
-            efficiency, offsets = _inversion_response(
-                acq.pulses[pulse_index], case["hardware"]["field_strength_T"]
+            # Adiabatic pulses are defined by B1-insensitive inversion; T1-map
+            # inversions and T2-prep refocusers need not be adiabatic.
+            scales = (
+                ADIABATIC_B1_SCALES if family(case) == "adiabatic_inversion" else (1.0,)
+            )
+            efficiency, offsets, per_scale = _inversion_response(
+                acq.pulses[pulse_index],
+                case["hardware"]["field_strength_T"],
+                scales,
             )
             checks.append(
                 check(
                     f"preparation_rf_{pulse_index}_inversion_efficiency",
-                    efficiency >= 0.90,
+                    efficiency >= INVERSION_MIN,
                     {
                         "min_inverted_mz_fraction": efficiency,
-                        "min": 0.90,
+                        "min": INVERSION_MIN,
                         "assay_offsets_hz": offsets,
+                        "assay_b1_scales": list(scales),
+                        "min_inverted_mz_fraction_by_b1_scale": per_scale,
                     },
                 )
             )
@@ -242,7 +245,7 @@ def mechanism_probes(acq, case, _materials, properties):
 
 def _mapping_model(acquisitions, frames, case, root):
     """Fixed anatomical/RF dictionary, independent of spatial replay samples."""
-    geometry = phantom(case, root, 4)
+    geometry = phantom(case, root)
     mask = material_masks(geometry, case["task"]["sequence"])["myocardium"]
     if not mask.any():
         return None
@@ -284,16 +287,52 @@ def _mapping_model(acquisitions, frames, case, root):
     }
 
 
-def _mapping_decision(relative, bounds, limit, precision):
-    radius = max(abs(relative - bounds[0]), abs(bounds[1] - relative))
-    precise = bool(np.isfinite(radius) and radius <= precision)
-    outcome, basis = resolve_decision(
-        [{"name": "relative_error", "min": None, "max": limit}],
-        {"relative_error": relative},
-        {"relative_error": bounds},
-        precise,
+def _roi_magnitudes(ensembles, exclude=None):
+    """ROI-mean magnitude of each frame's complex replicate-ensemble mean.
+
+    Replicates are averaged as complex images before the magnitude is taken,
+    so independent spatial-sampling noise does not bias the magnitude upward.
+    ``exclude`` drops one replicate (leave-one-out ensemble).
+    """
+    values = []
+    for replicates in ensembles:
+        keep = np.ones(len(replicates), bool)
+        if exclude is not None:
+            keep[exclude] = False
+        values.append(np.mean(np.abs(np.mean(replicates[keep], axis=0))))
+    return np.asarray(values)
+
+
+def _fit_relaxation(dictionary, grid, values):
+    residuals = np.sum((dictionary - values[:, None]) ** 2, axis=0)
+    best = int(np.argmin(residuals))
+    lo, hi = grid[max(0, best - 1)], grid[min(len(grid) - 1, best + 1)]
+    fit = minimize_scalar(
+        lambda value: sum(
+            (np.interp(value, grid, row) - observation) ** 2
+            for row, observation in zip(dictionary, values, strict=True)
+        ),
+        bounds=(lo, hi),
+        method="bounded",
+        options={"xatol": 1e-8},
     )
-    return outcome, basis, radius
+    return float(fit.x)
+
+
+def _mapping_estimates(ensembles, dictionary, grid):
+    """Point fit from the full complex ensemble; jackknife refits every
+    leave-one-out ensemble through the complete magnitude/ROI/fit pipeline."""
+    n = len(ensembles[0])
+    if n < 2 or any(len(item) != n for item in ensembles):
+        raise ValueError("Mapping needs >=2 equal-size replicate ensembles")
+    point = _fit_relaxation(dictionary, grid, _roi_magnitudes(ensembles))
+    loo = np.array(
+        [
+            _fit_relaxation(dictionary, grid, _roi_magnitudes(ensembles, exclude=i))
+            for i in range(n)
+        ]
+    )
+    return point, loo
 
 
 def _mapping(acquisitions, frames, case, root, *, cache=None):
@@ -314,39 +353,23 @@ def _mapping(acquisitions, frames, case, root, *, cache=None):
     dictionary, grid, mask, truth, axis = (
         model[name] for name in ("dictionary", "grid", "mask", "truth", "axis")
     )
-    signals = []
+    ensembles = []
     for report in frames:
         with np.load(report["artifacts"]["images"]) as images:
-            signals.append(
-                np.mean(np.abs(images["physical_replicates"][:, mask]), axis=1)
-            )
-    observations = np.asarray(signals)
-
-    def estimate(values):
-        residuals = np.sum((dictionary - values[:, None]) ** 2, axis=0)
-        best = int(np.argmin(residuals))
-        lo, hi = grid[max(0, best - 1)], grid[min(len(grid) - 1, best + 1)]
-        fit = minimize_scalar(
-            lambda value: sum(
-                (np.interp(value, grid, row) - observation) ** 2
-                for row, observation in zip(dictionary, values, strict=True)
-            ),
-            bounds=(lo, hi),
-            method="bounded",
-            options={"xatol": 1e-8},
-        )
-        return float(fit.x)
-
-    n = observations.shape[1]
-    total = observations.sum(axis=1)
-    point = estimate(total / n)
-    loo = np.array([estimate((total - observations[:, i]) / (n - 1)) for i in range(n)])
+            ensembles.append(np.asarray(images["physical_replicates"][:, mask]))
+    point, loo = _mapping_estimates(ensembles, dictionary, grid)
     relative = abs(point - truth) / truth
     loo_error = abs(loo - truth) / truth
     bounds = interval(relative, loo_error)
     limit = case["evaluation"]["mapping_relative_error_max"]
     precision = case["evaluation"]["mapping_relative_error_precision"]
-    passed, basis, radius = _mapping_decision(relative, bounds, limit, precision)
+    radius = max(abs(relative - bounds[0]), abs(bounds[1] - relative))
+    passed, basis = resolve_decision(
+        [{"name": "relative_error", "min": None, "max": limit}],
+        {"relative_error": relative},
+        {"relative_error": bounds},
+        bool(np.isfinite(radius) and radius <= precision),
+    )
     name = (
         "myocardial_t1_relative_error" if axis == 1 else "myocardial_t2_relative_error"
     )
@@ -369,6 +392,11 @@ def _mapping(acquisitions, frames, case, root, *, cache=None):
     ], {name: relative, name.replace("relative_error", "estimate_ms"): point * 1000}
 
 
+def _sample_budget(case):
+    initial = case["evaluation"].get("spatial_samples") or 32768
+    return case["evaluation"].get("spatial_max_samples") or min(4 * initial, 1048576)
+
+
 def _evaluate_frames(
     acq,
     submission,
@@ -381,12 +409,36 @@ def _evaluate_frames(
     simulator=None,
 ):
     acquisitions, results = [], []
+    probe_case = id(acq), json.dumps(case, sort_keys=True)
+    if getattr(acq, "_frame_probe_case", None) != probe_case:
+        acq._frame_probe_case = probe_case
+        acq._frame_probe_results = {}
+        if hasattr(acq, "_phase_reference_batch"):
+            del acq._phase_reference_batch
+    if not hasattr(acq, "_phase_reference_batch"):
+        acq._phase_reference_batch = {
+            "acquisition": copy(acq),
+            "indices": np.asarray(
+                [frame["central_adc_index"] for frame in acq.measurements["frames"]]
+            ),
+            "images": {},
+        }
+    phase_batch = acq._phase_reference_batch
+    probe_results = acq._frame_probe_results
     for number, frame in enumerate(acq.measurements["frames"]):
         acquisition = frame_acquisition(acq, frame)
         acquisitions.append(acquisition)
         local_case = deepcopy(case)
         if samples is not None:
-            local_case["evaluation"]["spatial_samples"] = samples
+            local_case["evaluation"]["spatial_samples"] = min(
+                samples, _sample_budget(case)
+            )
+
+        def frame_probes(*args, frame_number=number):
+            if frame_number not in probe_results:
+                probe_results[frame_number] = mechanism_probes(*args)
+            return deepcopy(probe_results[frame_number])
+
         result = evaluate_s1(
             submission,
             local_case,
@@ -394,16 +446,31 @@ def _evaluate_frames(
             Path(workspace) / f"frame-{number}",
             deadline=deadline,
             inspector=lambda _path, _case, a=acquisition: a,
-            probes=mechanism_probes,
+            probes=frame_probes,
             reference_builder=reference_image,
-            phase_builder=phase_reference,
+            phase_builder=lambda *args, **kwargs: phase_reference(
+                *args, batch=phase_batch, **kwargs
+            ),
             encoded_integrator="bloch",
             simulator=simulator,
         )
         results.append(result)
-        if not result["sequence_valid"]:
+        # A certified failed frame already decides the verdict: later frames
+        # cannot restore the conjunction of all frame requirements.
+        if (
+            not result["sequence_valid"]
+            or result.get("status") == "numerically_unresolved"
+            or certified_failure(result)
+        ):
             break
     return acquisitions, results
+
+
+def certified_failure(result):
+    """A numerically converged frame with a certified failed image check."""
+    return bool(result.get("numerically_converged")) and any(
+        c.get("passed") is False for c in result["image_checks"]
+    )
 
 
 def _mapping_refinement(
@@ -418,42 +485,47 @@ def _mapping_refinement(
     deadline=None,
     simulator=None,
 ):
-    """Refine independent quadrature until mapping precision or its verdict resolves.
-
-    The maximum sample setting is the shared evaluator's initial budget, not an
-    acceptance shortcut. Each stage has separate frame artifacts; checkpointed
-    progress records the unresolved interval before starting further simulation.
-    """
-    # A numerically certified failed frame already falsifies the conjunction
-    # of image and mapping requirements. Further mapping refinement cannot
-    # change that verdict; retain the measured frame checks and metrics.
-    failed_frames = [
-        {
-            "frame": i,
-            "failed_checks": [
-                c["name"] for c in result["image_checks"] if c.get("passed") is False
-            ],
-        }
-        for i, result in enumerate(results)
-        if any(c.get("passed") is False for c in result["image_checks"])
-    ]
-    if failed_frames and all(result.get("numerically_converged") for result in results):
-        return (
-            acquisitions,
-            results,
-            [],
-            {},
-            {
-                "stop_reason": "certified_image_failure",
-                "mapping_not_evaluated": True,
-                "certified_failed_frames": failed_frames,
-                "acceptance_unchanged": "All image and mapping requirements must pass; a certified image failure suffices to fail",
-            },
-        )
-    cache, history = {}, []
-    initial = case["evaluation"].get("spatial_samples") or 32768
-    budget = case["evaluation"].get("spatial_max_samples") or min(4 * initial, 1048576)
+    """Refine mapping within the declared sample cap; uncertainty never passes."""
+    cache, history, budget = {}, [], _sample_budget(case)
     while True:
+        # A numerically certified failed frame already falsifies the
+        # conjunction of image and mapping requirements, at the initial
+        # sampling or after a refinement stage. Further mapping refinement
+        # cannot change that verdict; retain the measured checks and metrics.
+        failed_frames = [
+            {
+                "frame": i,
+                "failed_checks": [
+                    c["name"] for c in result["image_checks"] if c["passed"] is False
+                ],
+            }
+            for i, result in enumerate(results)
+            if certified_failure(result)
+        ]
+        if failed_frames:
+            return (
+                acquisitions,
+                results,
+                [],
+                {},
+                {
+                    "stop_reason": "certified_image_failure",
+                    "mapping_not_evaluated": True,
+                    "certified_failed_frames": failed_frames,
+                    "acceptance_unchanged": "All image and mapping requirements must pass; a certified image failure suffices to fail",
+                },
+            )
+        if any(result.get("status") == "numerically_unresolved" for result in results):
+            return (
+                acquisitions,
+                results,
+                [],
+                {},
+                {
+                    "stop_reason": "frame_numerically_unresolved",
+                    "mapping_not_evaluated": True,
+                },
+            )
         checks, metrics = _mapping(acquisitions, results, case, root, cache=cache)
         samples = [
             result["spatial_sampling"]["samples_per_replicate"] for result in results
@@ -468,16 +540,17 @@ def _mapping_refinement(
         )
         numerical = {
             "precision_target": case["evaluation"]["mapping_relative_error_precision"],
-            "initial_budget_per_replicate": budget,
-            "exceeded_initial_budget": any(
-                max(stage["samples_per_replicate"]) > budget for stage in history
-            ),
+            "max_samples_per_replicate": budget,
             "refinement_history": history,
         }
         write_json(Path(workspace) / "mapping-progress.json", numerical)
         if all(item["passed"] is not None for item in checks):
             return acquisitions, results, checks, metrics, numerical
-        count = 2 * max(samples)
+        if min(samples) >= budget:
+            numerical["stop_reason"] = "spatial_max_samples"
+            write_json(Path(workspace) / "mapping-progress.json", numerical)
+            return acquisitions, results, checks, metrics, numerical
+        count = min(2 * max(samples), budget)
         numerical["next_samples_per_replicate"] = count
         write_json(Path(workspace) / "mapping-progress.json", numerical)
         acquisitions, results = _evaluate_frames(
@@ -494,59 +567,36 @@ def _mapping_refinement(
             return acquisitions, results, checks, metrics, numerical
 
 
-def evaluate_s4(
-    submission, case, root, workspace, *, deadline=None, physio_resolution=None
-):
+def evaluate_s4(submission, case, root, workspace, *, physio_resolution, deadline=None):
+    """``physio_resolution`` comes from evaluate(), which resolves the ECG first."""
     workspace = Path(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
-    if physio_resolution is None:
-        from .s4_physio import InvalidPhysioSequence, resolve_sequence
-
-        try:
-            submission, physio_resolution = resolve_sequence(
-                submission, case, workspace / "physio"
-            )
-        except InvalidPhysioSequence as exc:
-            return {
-                "status": "failed",
-                "checks": [check("physio_trigger_resolution", False, str(exc))],
-                "metrics": {},
-                "sequence_valid": False,
-                "image_verdict": "not_evaluated",
-                "application_checks": [],
-                "evaluation_contract": f"s4@{case['evaluation']['version']}",
-                "reconstruction": "bart_cartesian_fft@1",
-            }
-    try:
-        acq = inspect_sequence(submission, case)
-    except MissingExcitation as exc:
-        return {
-            "status": "failed",
-            "image_verdict": "not_evaluated",
-            "checks": [check("excitation_before_adc", False, str(exc))],
-            "metrics": {},
-            "sequence_valid": False,
-            "application_checks": [],
-            "ideal_imaging_success": None,
-            "imaging_success_under_case_physics": None,
-            "image_acceptance_basis": "case_physics",
-            "evaluation_contract": f"s4@{case['evaluation']['version']}",
-            "reconstruction": "bart_cartesian_fft@1",
-        }
     report = {
         "status": "failed",
         "image_verdict": "not_evaluated",
-        "checks": acq.checks,
+        "checks": [],
         "metrics": {},
-        "sequence_valid": all(c["passed"] for c in acq.checks),
+        "sequence_valid": False,
         "ideal_imaging_success": None,
         "imaging_success_under_case_physics": None,
         "image_acceptance_basis": "case_physics",
         "evaluation_contract": f"s4@{case['evaluation']['version']}",
         "reconstruction": "bart_cartesian_fft@1",
         "application_checks": [],
-        "physio": physio_resolution,
     }
+    try:
+        acq = inspect_sequence(submission, case)
+    except MissingExcitation as exc:
+        report["checks"] = [check("excitation_before_adc", False, str(exc))]
+        return report
+    # Undefined candidate measurements are null, never NaN, in every artifact.
+    acq.checks = finite_json(acq.checks)
+    acq.measurements = finite_json(acq.measurements)
+    report.update(
+        checks=acq.checks,
+        sequence_valid=all(c["passed"] for c in acq.checks),
+        physio=physio_resolution,
+    )
     report["checks"].insert(
         0, check("physio_trigger_resolution", True, physio_resolution)
     )
@@ -568,10 +618,13 @@ def evaluate_s4(
         simulator=encoded_replay,
     )
     mapping_checks, mapping_metrics = [], {}
-    if all(result["sequence_valid"] for result in results) and family(case) in {
-        "t1_mapping",
-        "t2_mapping",
-    }:
+    if (
+        all(result["sequence_valid"] for result in results)
+        and not any(
+            result.get("status") == "numerically_unresolved" for result in results
+        )
+        and family(case) in {"t1_mapping", "t2_mapping"}
+    ):
         acquisitions, results, mapping_checks, mapping_metrics, numerical = (
             _mapping_refinement(
                 acq,
@@ -611,6 +664,30 @@ def evaluate_s4(
         )
     report["application_checks"].extend(mapping_checks)
     report["metrics"].update(mapping_metrics)
+    unresolved = [
+        number
+        for number, result in enumerate(results)
+        if result.get("status") == "numerically_unresolved"
+    ]
+    if unresolved:
+        # Keep a frame's timestep-cap cause; otherwise the normalized verdict
+        # would wrongly report the spatial sample cap.
+        kinds = {number: results[number].get("failure_kind") for number in unresolved}
+        temporal = [
+            n for n, kind in kinds.items() if kind == "unresolved_at_timestep_cap"
+        ]
+        report.update(
+            status="numerically_unresolved",
+            image_verdict="numerically_unresolved",
+            numerically_converged=False,
+            image_checks=[],
+            failure_kind="unresolved_at_timestep_cap"
+            if temporal
+            else "frame_numerically_unresolved",
+            unresolved_frames=unresolved,
+            unresolved_frame_failure_kinds={str(n): k for n, k in kinds.items()},
+        )
+        return report
     if not report["sequence_valid"]:
         if any("images" in frame.get("artifacts", {}) for frame in results):
             report["reconstruction_provenance"] = bart_provenance()
@@ -626,17 +703,19 @@ def evaluate_s4(
     application = [item["passed"] for item in report["application_checks"]]
     image = [item["passed"] for item in report["image_checks"]]
     all_outcomes = application + image
-    if None in all_outcomes:
-        report.update(
-            status="numerically_unresolved",
-            image_verdict="numerically_unresolved",
-            numerically_converged=False,
-        )
-    elif not all(all_outcomes):
+    # As in resolve_decision: one certified failure decides the conjunction,
+    # however many other outcomes stayed unresolved at the sample cap.
+    if False in all_outcomes:
         report.update(
             status="failed",
             image_verdict="failed",
             imaging_success_under_case_physics=False,
+        )
+    elif None in all_outcomes:
+        report.update(
+            status="numerically_unresolved",
+            image_verdict="numerically_unresolved",
+            numerically_converged=False,
         )
     elif case["evaluation"]["calibrated"]:
         report.update(
@@ -668,16 +747,7 @@ def evaluate_s4(
     return report
 
 
-def phase_reference(
-    acq,
-    case,
-    root,
-    reference,
-    *,
-    temporal_scale=1,
-    sample_index=None,
-    sample_indices=None,
-):
+def phase_reference(acq, case, root, reference, *, temporal_scale=1, batch=None):
     """Predict field-induced phase at the echo nearest the centre of k-space.
 
     This is a voxel-centre phase target, with fixed material volume fractions.
@@ -685,130 +755,66 @@ def phase_reference(
     A refined temporal replay checks numerical error in this reference model.
     Field-dependent phase is retained; motion encoding phase is not excused.
     """
-    if sample_indices is not None and sample_index is not None:
-        raise ValueError("Choose a single echo or acquisition echo contexts")
-    idx = np.asarray(
-        sample_indices
-        if sample_indices is not None
-        else [
-            int(np.argmin(np.linalg.norm(acq.k, axis=1)))
-            if sample_index is None
-            else sample_index
-        ],
-        dtype=int,
-    )
-    lines = [next(j for j, ids in enumerate(acq.lines) if i in ids) for i in idx]
-    line = lines[0]
-    a = copy(acq)
-    a.pulses = [p for p in acq.pulses if p.start < acq.adc[idx[-1]]]
-    a.adc = acq.adc[idx]
-    a.adc_phase = expected_receiver_phase(acq)[idx]
-    a.k = np.zeros((len(idx), 3))
-    matrix = tuple(case["task"]["sequence"]["matrix"])
-    fov = np.asarray(case["task"]["sequence"]["fov_mm"]) / 1000
-    geometry = phantom(case, root, 4)
-    loc = np.floor((geometry.positions[:, : len(matrix)] / fov + 0.5) * matrix).astype(
-        int
-    )
-    voxel = np.ravel_multi_index(tuple(loc.T), matrix)
-    groups = voxel * len(geometry.materials) + geometry.labels
-    unique, inverse = np.unique(groups, return_inverse=True)
-    weights = np.bincount(
-        inverse, weights=np.broadcast_to(geometry.weight, groups.shape)
-    )
-    loc = np.array(np.unravel_index(unique // len(geometry.materials), matrix)).T
-    positions = np.zeros((len(unique), 3))
-    positions[:, : len(matrix)] = ((loc + 0.5) / matrix - 0.5) * fov
-    spins = Spins(
-        positions,
-        unique % len(geometry.materials),
-        geometry.materials,
-        geometry.properties,
-        weights,
-        matrix,
-        geometry.source_sha256,
-    )
+    idx = np.asarray([_central(acq)])
+    line = next(j for j, ids in enumerate(acq.lines) if idx[0] in ids)
+    source = acq if batch is None else batch["acquisition"]
+    nodes = idx if batch is None else batch["indices"]
+    if batch is not None:
+        context = int(np.searchsorted(source.adc[nodes], acq.adc[idx[0]]))
+        if context >= len(nodes) or source.adc[nodes[context]] != acq.adc[idx[0]]:
+            raise ValueError("Batched phase reference must select an exact frame echo")
+    a = copy(source)
+    a.pulses = [p for p in source.pulses if p.start < source.adc[nodes[-1]]]
+    a.adc = source.adc[nodes]
+    a.adc_phase = expected_receiver_phase(source)[nodes]
+    a.k = np.zeros((len(nodes), 3))
+    matrix, spins, loc = voxel_spins(case, root)
+    spoils = preparation_spoils(a)
 
     def replay(refinement=1):
-        images = []
-        for effects in ((), case["physics"]["effects"]):
-            # Both baselines retain intrinsic fat shift. Only the physical
-            # oracle adds declared scanner B0, without changing tissue magnitude.
-            replay_spins = copy(spins)
-            values = simulate(
-                a,
-                replay_spins,
-                effects,
-                zero_gradients=True,
-                individual=True,
-                step_s=0.001 / temporal_scale / refinement,
-                rf_step_s=20e-6 / temporal_scale / refinement,
-            ).mean(axis=0)
-            image = np.zeros(matrix, complex)
-            np.add.at(image, tuple(loc.T), values)
-            images.append(image)
-        base, physical = images
-        floor = max(float(np.max(np.abs(base))) * 1e-6, 1e-15)
-        valid = (np.abs(base) > floor) & (
-            np.abs(physical) > np.maximum(0.01 * np.abs(base), floor)
+        key = temporal_scale, refinement
+        images = batch["images"].get(key) if batch is not None else None
+        if images is None:
+            images = []
+            for effects in ((), case["physics"]["effects"]):
+                # All frame echo samples share the exact preceding RF history.
+                # Later RF cannot affect earlier samples; each frame's scoring
+                # and temporal-convergence check remain independent below.
+                values = simulate(
+                    a,
+                    spins,
+                    effects,
+                    zero_gradients=True,
+                    individual=True,
+                    step_s=0.001 / temporal_scale / refinement,
+                    rf_step_s=20e-6 / temporal_scale / refinement,
+                    **({"spoil_times_s": spoils} if spoils else {}),
+                )
+                if batch is None:
+                    image = np.zeros(matrix, complex)
+                    np.add.at(image, tuple(loc.T), values.mean(axis=0))
+                else:
+                    image = np.zeros((len(nodes), *matrix), complex)
+                    np.add.at(image, (slice(None), *loc.T), values)
+                images.append(image)
+            if batch is not None:
+                batch["images"][key] = images
+        base, physical = (
+            images if batch is None else [image[context] for image in images]
         )
-        ratio = physical * base.conj()
-        phasor = np.ones(matrix, complex)
-        phasor[valid] = ratio[valid] / np.abs(ratio[valid])
-        return phasor, valid
+        return rf_phasor(base, physical, matrix)
 
-    fine, valid = replay()
-    refined, refined_valid = replay(2)
-    weights = np.abs(reference) ** 2
-
-    def discrepancy(other, other_valid):
-        # A validity-mask disagreement is counted, rather than silently dropped.
-        delta = np.abs(fine - other) ** 2
-        delta[valid != other_valid] = 4.0
-        return float(np.sqrt(np.sum(weights * delta) / max(np.sum(weights), 1e-30)))
-
-    temporal = discrepancy(refined, refined_valid)
-    temporal_history = [{"scale": temporal_scale, "phase_chord_rms": temporal}]
-    refinement = 2
-    while temporal > 0.01:
-        fine, valid = refined, refined_valid
-        refinement *= 2
-        refined, refined_valid = replay(refinement)
-        temporal = discrepancy(refined, refined_valid)
-        temporal_history.append(
-            {
-                "scale": temporal_scale * refinement / 2,
-                "phase_chord_rms": temporal,
-            }
-        )
-    coverage = float(np.sum(weights[valid]) / max(np.sum(weights), 1e-30))
+    fine, valid, summary = converge_phase(replay, reference, temporal_scale, case)
     return (
         fine,
         valid,
         {
-            "model": "koma_rf_acquisition_phase@1"
-            if sample_indices is not None
-            else "koma_rf_voxel_phase@1",
+            "model": "koma_rf_voxel_phase@1",
             "engine": "KomaMRICore",
-            "echo_time_s": float(a.adc[0]),
+            "echo_time_s": float(acq.adc[idx[0]]),
             "line": line,
             "sample_indices": idx.tolist(),
             "echo_contexts": 1,
-            "temporal_phase_chord_rms": temporal,
-            "reference_energy_coverage": coverage,
-            "spatial_model": (
-                "voxel centres with exact anatomical-cell/image-voxel fractions; no continuum phase-reference claim"
-                if case["object"]["phantom"].startswith("cardiac_")
-                else "voxel centres with fixed order-4 material fractions; no continuum phase-reference claim"
-            ),
-            "converged": temporal <= 0.01,
-            "coverage_adequate": coverage >= 0.5,
-            "temporal_refinement_history": temporal_history,
-            "limits": {
-                "temporal_phase_chord_rms": 0.01,
-                "reference_energy_coverage": 0.5,
-            },
-            "receiver_phase": "independent RF coherence convention; no fitted phase or gain",
-            "geometry_frame": "original object coordinates; no registration",
+            **summary,
         },
     )

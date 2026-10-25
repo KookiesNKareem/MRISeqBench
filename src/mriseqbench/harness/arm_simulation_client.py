@@ -18,7 +18,7 @@ def main():
         headers={"Content-Type": "application/octet-stream"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=1800) as response:
+        with urllib.request.urlopen(request, timeout=None) as response:
             result = json.load(response)
     except urllib.error.HTTPError as exc:
         text = exc.read(16384).decode("utf-8", errors="replace")

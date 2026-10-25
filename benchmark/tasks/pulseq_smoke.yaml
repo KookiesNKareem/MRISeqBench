@@ -1,12 +1,13 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: pulseq_smoke
-objective: Produce a Pulseq file with RF and ADC events that obeys the declared timing and
-  hardware limits.
+version: 2
+objective: Produce a Pulseq file with RF and ADC events that obeys the declared timing and hardware
+  limits.
 sequence:
   level: S1
   capabilities: [cartesian]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 1
 object: cardiac_2d@1
-evaluation: pulseq_preflight@2
+evaluation: pulseq_preflight@3

@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../schemas/arms.schema.json
+schema_version: 1
+id: j6_koma_base_julia_mcp
+version: 1
+language: julia
+authoring: koma_base
+pulse_designer: false
+unitful: false
+simulator: none
+tool_interface: julia_mcp

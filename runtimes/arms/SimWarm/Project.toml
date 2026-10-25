@@ -1,0 +1,16 @@
+name = "SimWarm"
+uuid = "5b0c3a52-7f0e-4d0a-9f62-3a1f3e0c9b11"
+version = "0.1.0"
+
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+KomaMRIBase = "d0bc0b20-b151-4d03-b2a4-6ca51751cb9c"
+KomaMRICore = "4baa4f4d-2ae9-40db-8331-a7d1080e3f4e"
+KomaMRIFiles = "fcf631a6-1c7e-4e88-9e64-b8888386d9dc"
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+
+[weakdeps]
+KomaMRI = "6a340f8b-2cdf-4c04-99be-4953d9b66d0a"
+
+[extensions]
+SimWarmKomaMRIExt = "KomaMRI"

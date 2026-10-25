@@ -1,6 +1,5 @@
 """Resolve explicit references; never merge manifests through inheritance."""
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -41,6 +40,18 @@ def manifest_directory(root, kind):
         if kind == "experiments"
         else Path(root) / "benchmark" / kind
     )
+
+
+def task_evaluation(evaluator, task_id):
+    """The evaluator contract with the task's calibrated image limits applied."""
+    contract = evaluator.model_dump(mode="json")
+    override = (contract.pop("family_image_criteria", None) or {}).get(task_id)
+    if override is not None:
+        contract["case_image_criteria"] = {
+            **contract["case_image_criteria"],
+            "static": override,
+        }
+    return contract
 
 
 class Catalog:
@@ -96,9 +107,9 @@ class Catalog:
             ]:
                 self.get(kind, ref)
             rf_task = task.id == "rf_excitation_2d" and task.object == "uniform_disc@1"
-            if rf_task and self.get("objects", task.object).phantom != "uniform_disc@1":
-                raise ValueError("AI excitation requires the fixed uniform water-disc phantom")
-            if not rf_task and not self.get("objects", task.object).phantom.startswith("cardiac_"):
+            if not rf_task and not self.get("objects", task.object).phantom.startswith(
+                "cardiac_"
+            ):
                 raise ValueError(f"{task.id}: active tasks require cardiac anatomy")
             evaluator = self.get("evaluators", task.evaluation)
             if (
@@ -123,25 +134,12 @@ class Catalog:
                         "simulator_image must be supplied exactly for simulation-enabled arms"
                     )
 
-    def validate_asset(self, asset):
-        path = (self.root / asset.path).resolve()
-        if not path.is_relative_to(self.root):
-            raise ValueError("asset path escapes catalog root")
-        if not path.is_file():
-            raise ValueError(f"missing asset: {asset.path}")
-        digest = hashlib.sha256()
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
-        if digest.hexdigest() != asset.sha256:
-            raise ValueError(f"asset hash mismatch: {asset.path}")
-
     def validate_geometry(self, task, object_ref=None):
         obj = self.get("objects", object_ref or task.object)
         if task.id == "rf_excitation_2d" and obj.phantom != "uniform_disc@1":
-            raise ValueError("AI excitation requires the fixed uniform water-disc phantom")
-        if obj.phantom not in self.phantoms:
-            raise ValueError(f"unknown KomaMRI phantom {obj.phantom!r}")
+            raise ValueError(
+                "AI excitation requires the fixed uniform water-disc phantom"
+            )
         definition = self.phantoms[obj.phantom]
         fov = task.sequence.fov_mm
         if definition.dimensions != len(fov):
@@ -156,7 +154,6 @@ class Catalog:
         task: Task,
         physics: Physics | None = None,
         object_ref=None,
-        seed=42,
         hardware_ref=None,
     ):
         if physics is None:
@@ -182,46 +179,16 @@ class Catalog:
             obj = self.get("objects", field_ref)
         self.validate_geometry(task, f"{obj.id}@{obj.version}")
         evaluator = self.get("evaluators", task.evaluation)
-        # Validate object, field and motion dimensions.
         for effect in physics.effects:
-            dimensions = None
-            for name in (
-                "gradient_hz_per_m",
-                "gradient_scale_per_m",
-                "center_mm",
-                "translation_amplitude_mm",
-                "strain_amplitude",
-            ):
-                if hasattr(effect, name):
-                    dimensions = len(getattr(effect, name))
-            if dimensions is not None and dimensions != len(task.sequence.fov_mm):
+            gradient = getattr(effect, "gradient_hz_per_m", None)
+            if gradient is not None and len(gradient) != len(task.sequence.fov_mm):
                 raise ValueError(
                     f"{task.id}/{physics.id}: effect dimensions do not match FOV"
                 )
-            if (
-                effect.kind == "motion"
-                and effect.model == "rigid_keyframes"
-                and len(task.sequence.fov_mm) != 3
-            ) and any(
-                p.translation_mm[2] or p.rotation_xyz_deg[0] or p.rotation_xyz_deg[1]
-                for p in effect.poses
-            ):
-                raise ValueError(
-                    "through-plane motion requires a 3D object/acquisition"
-                )
-            if hasattr(effect, "asset"):
-                if len(effect.asset.shape) != len(task.sequence.fov_mm):
-                    raise ValueError("field asset dimensions do not match FOV")
-                self.validate_asset(effect.asset)
-            if effect.kind == "time_variation" and effect.material:
-                materials = self.phantoms[obj.phantom].materials
-                if effect.material not in materials:
-                    raise ValueError("time variation references an unknown material")
         case_id = f"{task.id}-v{task.version}--{physics.id}-v{physics.version}"
         if object_ref and object_ref != task.object:
             case_id += f"--object-{obj.id}-v{obj.version}"
-        if f"{hardware.id}@{hardware.version}" != task.hardware:
-            case_id += f"--hardware-{hardware.id}-v{hardware.version}"
+        case_id += f"--hardware-{hardware.id}-v{hardware.version}"
         object_contract = obj.model_dump(mode="json", exclude_none=True)
         if obj.phantom.startswith("cardiac_"):
             from .evaluation.s1_anatomy import load_anatomy
@@ -266,71 +233,53 @@ class Catalog:
                     ]
             physics_contract["field_strength_T"] = hardware.field_strength_T
             physics_contract["field_scale"] = scale
-        legacy_levels = {}
-        if obj.level is not None and physics.level is not None:
-            legacy_levels = {
-                "object_level": f"P{max(int(obj.level[1:]), int(physics.level[1:]))}",
-                "geometry_level": obj.level,
-                "physics_level": physics.level,
-            }
         image_policy = (
             "static"
             if obj.phantom.startswith("cardiac_")
             or "static" in (evaluator.case_image_criteria or {})
-            else legacy_levels.get("object_level")
+            else None
         )
         return {
             "case_id": case_id,
             "sequence_level": task.sequence.level,
-            **legacy_levels,
             "image_policy": image_policy,
             "task": task_contract,
-            "seed": seed,
+            "seed": 42,
             "object": {
                 **object_contract,
                 "definition": self.phantoms[obj.phantom].model_dump(mode="json"),
             },
             "physics": physics_contract,
             "hardware": hardware.model_dump(mode="json", exclude_none=True),
-            "evaluation": self.get("evaluators", task.evaluation).model_dump(
-                mode="json"
-            ),
+            "evaluation": task_evaluation(evaluator, task.id),
         }
 
     def cases(self, suite: Suite):
         cases, seen = [], set()
         for entry in suite.cases:
             task = self.get("tasks", entry.task)
-            if f"{suite.id}@{suite.version}" in self.documents["suites"]:
-                expected = (
-                    "static_b0_3d@1"
-                    if len(task.sequence.matrix) == 3
-                    else "static_b0@1"
+            expected = (
+                "static_b0_3d@1" if len(task.sequence.matrix) == 3 else "static_b0@1"
+            )
+            rf_task = task.id == "rf_excitation_2d" and task.object == "uniform_disc@1"
+            if entry.objects is not None or (
+                not rf_task and not task.object.startswith("cardiac_")
+            ):
+                raise ValueError(
+                    "benchmark suites require fixed cardiac anatomy without an object axis"
                 )
-                rf_task = task.id == "rf_excitation_2d" and task.object == "uniform_disc@1"
-                if entry.objects is not None or (
-                    not rf_task and not task.object.startswith("cardiac_")
-                ):
-                    raise ValueError(
-                        "benchmark suites require fixed cardiac anatomy without an object axis"
-                    )
-                if entry.physics != [expected]:
-                    raise ValueError(
-                        "benchmark suites require one dimension-matched static B0 profile"
-                    )
-            for object_ref in entry.objects or [task.object]:
-                for ref in entry.physics:
-                    for hardware_ref in entry.hardware or [task.hardware]:
-                        case = self.resolve(
-                            task,
-                            self.get("physics", ref),
-                            object_ref,
-                            hardware_ref=hardware_ref,
-                        )
-                        if case["case_id"] in seen:
-                            raise ValueError(f"duplicate suite case {case['case_id']}")
-                        seen.add(case["case_id"])
-                        cases.append(case)
+            if entry.physics != [expected]:
+                raise ValueError(
+                    "benchmark suites require one dimension-matched static B0 profile"
+                )
+            for hardware_ref in entry.hardware or [task.hardware]:
+                case = self.resolve(
+                    task, self.get("physics", expected), hardware_ref=hardware_ref
+                )
+                if case["case_id"] in seen:
+                    raise ValueError(f"duplicate suite case {case['case_id']}")
+                seen.add(case["case_id"])
+                cases.append(case)
         return cases
 
     def find_case(self, case_id):

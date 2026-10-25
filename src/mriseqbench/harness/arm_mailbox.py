@@ -8,6 +8,7 @@ import base64
 import json
 import os
 import re
+import stat
 import threading
 import urllib.error
 import urllib.request
@@ -21,8 +22,6 @@ LIMIT = 24 * 1024 * 1024
 def read_request(path):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
-        import stat
-
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_size > LIMIT:
             raise ValueError("invalid mailbox request")
@@ -47,8 +46,15 @@ class Mailbox:
         return self
 
     def __exit__(self, *args):
+        self.close()
+
+    def close(self):
+        """Stop accepting requests and drain workers (idempotent)."""
         self.stop.set()
-        self.thread.join(2)
+        if self.simulator:
+            self.simulator.closed.set()  # Release requests still queued for a slot.
+        if self.thread.ident:
+            self.thread.join(2)
         self.pool.shutdown(wait=True, cancel_futures=True)
 
     def watch(self):

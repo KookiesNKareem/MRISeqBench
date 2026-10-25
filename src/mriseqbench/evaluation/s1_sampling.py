@@ -7,17 +7,10 @@ scrambles permit unbiased quadratic image scores without squaring sampling noise
 import numpy as np
 from scipy.stats import t
 
+from .s1_anatomy import anatomical_reference as analytic_reference
+from .s1_anatomy import sampled_anatomy as sampled_phantom
 
-def sampled_phantom(case, root, samples, replicate, *, directory=None):
-    from .s1_anatomy import sampled_anatomy
-
-    return sampled_anatomy(case, root, samples, replicate, directory=directory)
-
-
-def analytic_reference(acq, case, root, response):
-    from .s1_anatomy import anatomical_reference
-
-    return anatomical_reference(acq, case, root, response)
+__all__ = ["analytic_reference", "sampled_phantom"]
 
 
 def quadratic(values):

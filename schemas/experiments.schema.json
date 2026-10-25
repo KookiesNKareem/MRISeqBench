@@ -79,18 +79,32 @@
           "title": "Provider Endpoint"
         },
         "temperature": {
+          "anyOf": [
+            {
+              "maximum": 2,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "default": 0.6,
-          "maximum": 2,
-          "minimum": 0,
-          "title": "Temperature",
-          "type": "number"
+          "title": "Temperature"
         },
         "top_p": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "default": 0.95,
-          "exclusiveMinimum": 0,
-          "maximum": 1,
-          "title": "Top P",
-          "type": "number"
+          "title": "Top P"
         },
         "reasoning_effort": {
           "default": "medium",
@@ -106,10 +120,17 @@
           "type": "string"
         },
         "max_output_tokens": {
-          "default": 16384,
-          "exclusiveMinimum": 0,
-          "title": "Max Output Tokens",
-          "type": "integer"
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Output Tokens"
         },
         "upstream_url": {
           "default": "https://openrouter.ai/api/v1",
@@ -140,32 +161,6 @@
           "exclusiveMinimum": 0,
           "title": "Max Request Bytes",
           "type": "integer"
-        },
-        "max_campaign_usd": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Max Campaign Usd"
-        },
-        "max_trial_usd": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Max Trial Usd"
         }
       },
       "title": "ApiProxyConfig",
@@ -201,10 +196,17 @@
           "type": "number"
         },
         "simulation_timeout_s": {
-          "default": 300,
-          "exclusiveMinimum": 0,
-          "title": "Simulation Timeout S",
-          "type": "number"
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Simulation Timeout S"
         },
         "julia_heap_size_hint_mb": {
           "anyOf": [
@@ -244,10 +246,17 @@
           "type": "array"
         },
         "timeout_s": {
-          "default": 300,
-          "exclusiveMinimum": 0,
-          "title": "Timeout S",
-          "type": "number"
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout S"
         }
       },
       "required": [
@@ -271,6 +280,13 @@
           "maximum": 64,
           "minimum": 1,
           "title": "Graders",
+          "type": "integer"
+        },
+        "simulators": {
+          "default": 4,
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Simulators",
           "type": "integer"
         }
       },
@@ -445,13 +461,6 @@
     },
     "concurrency": {
       "$ref": "#/$defs/Concurrency"
-    },
-    "retries_after_spend": {
-      "default": 1,
-      "maximum": 5,
-      "minimum": 0,
-      "title": "Retries After Spend",
-      "type": "integer"
     }
   },
   "required": [

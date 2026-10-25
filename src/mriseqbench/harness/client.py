@@ -116,7 +116,6 @@ def main(argv=None):
                 "preflight_passed",
                 "lint_passed",
                 "passed",
-                "smoke_passed",
                 "running",
                 "preparing",
                 "closed",

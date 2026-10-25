@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/evaluators.schema.json
 schema_version: 1
 id: s1
-version: 4
+version: 5
 scope: benchmark
 calibrated: true
 reconstruction: bart_cartesian_fft@1

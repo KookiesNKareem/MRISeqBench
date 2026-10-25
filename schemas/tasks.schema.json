@@ -44,82 +44,6 @@
           },
           "title": "Preparation Durations Ms",
           "type": "array"
-        },
-        "saturation_offset_hz": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Saturation Offset Hz"
-        },
-        "diffusion_b_s_per_mm2": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Diffusion B S Per Mm2"
-        },
-        "labeling_duration_ms": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Labeling Duration Ms"
-        },
-        "post_label_delay_ms": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Post Label Delay Ms"
-        },
-        "flip_angle_schedule_deg": {
-          "items": {
-            "exclusiveMinimum": 0,
-            "maximum": 180,
-            "type": "number"
-          },
-          "title": "Flip Angle Schedule Deg",
-          "type": "array"
-        },
-        "tr_schedule_ms": {
-          "items": {
-            "exclusiveMinimum": 0,
-            "type": "number"
-          },
-          "title": "Tr Schedule Ms",
-          "type": "array"
-        },
-        "echo_times_ms": {
-          "items": {
-            "exclusiveMinimum": 0,
-            "type": "number"
-          },
-          "title": "Echo Times Ms",
-          "type": "array"
         }
       },
       "title": "ApplicationSpec",
@@ -179,19 +103,6 @@
           ],
           "default": null,
           "title": "Spokes"
-        },
-        "bandwidth_hz_per_pixel": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Bandwidth Hz Per Pixel"
         },
         "turns": {
           "anyOf": [
@@ -290,19 +201,6 @@
           ],
           "default": null,
           "title": "Calibration Lines"
-        },
-        "multiband_factor": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Multiband Factor"
         },
         "mask_seed": {
           "anyOf": [
@@ -623,46 +521,11 @@
           "title": "Frames",
           "type": "integer"
         },
-        "frame_duration_ms": {
+        "segments_per_frame": {
+          "default": 1,
           "exclusiveMinimum": 0,
-          "title": "Frame Duration Ms",
-          "type": "number"
-        },
-        "ordering": {
-          "enum": [
-            "sequential",
-            "interleaved",
-            "golden_angle"
-          ],
-          "title": "Ordering",
-          "type": "string"
-        },
-        "view_sharing_window": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "View Sharing Window"
-        },
-        "center_fraction": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "maximum": 1,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Center Fraction"
+          "title": "Segments Per Frame",
+          "type": "integer"
         },
         "trigger_source": {
           "anyOf": [
@@ -718,9 +581,7 @@
         }
       },
       "required": [
-        "frames",
-        "frame_duration_ms",
-        "ordering"
+        "frames"
       ],
       "title": "TemporalSpec",
       "type": "object"

@@ -1,9 +1,0 @@
-# yaml-language-server: $schema=../../schemas/arms.schema.json
-schema_version: 1
-id: s4_koma_base_koma
-version: 1
-language: julia
-authoring: koma_base
-pulse_designer: false
-unitful: false
-simulator: koma

@@ -15,9 +15,14 @@ RF dead time, ringdown, ADC dead time and gradient ramps must fit their blocks.
 Use `seq.check_timing()` before `seq.write('sequence.seq')`. This checks timing,
 not the benchmark's image, tissue-response or SAR acceptance criteria.
 """
-    text = """# Julia authoring API
+    session = (
+        "`julia_eval` MCP session"
+        if arm.tool_interface == "julia_mcp"
+        else "`./bin/julia` process"
+    )
+    text = f"""# Julia authoring API
 
-`using KomaMRIBase, KomaMRIFiles`; use the persistent `./bin/julia` process.
+`using KomaMRIBase, KomaMRIFiles`; use the persistent {session}.
 Package documentation: `/opt/sources/KomaMRIBase/src/` and
 `/opt/sources/KomaMRIFiles/src/`. Inspect Julia docstrings with `@doc`.
 

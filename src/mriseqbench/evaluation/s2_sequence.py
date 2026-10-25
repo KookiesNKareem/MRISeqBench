@@ -21,29 +21,35 @@ CARTESIAN = {"epi_single_shot", "epi_multishot", "tse_t2w", "grase"}
 REFOCUSED = {"tse_t2w", "propeller_tse", "grase"}
 
 
-def angular_coverage(angles, period):
-    angles = np.sort(np.remainder(angles, period))
-    gaps = np.diff(np.r_[angles, angles[0] + period])
-    return bool(
-        len(angles) >= 2
-        and gaps.min() > 0.1 * period / len(angles)
-        and gaps.max() <= 1.6 * period / len(angles)
-    )
+def epi_sampling_mask(matrix, sampling):
+    """Uniform physical ky multiples, plus the prescribed central ACS lines."""
+    from .s3_sequence import central_indices
+
+    step = sampling["acceleration"]
+    if step not in (2, 3):
+        raise ValueError("The fixed receive model supports EPI acceleration 2 or 3")
+    mask = np.zeros(tuple(matrix), bool)
+    mask[:, (np.arange(matrix[1]) - matrix[1] // 2) % int(step) == 0] = True
+    mask[:, central_indices(matrix[1], sampling.get("calibration_lines") or 0)] = True
+    return mask
 
 
 def angular_details(angles, period):
-    """Public measurements for the existing circular coverage predicate."""
+    """Circular coverage: no angular gap above 1.6x the uniform spacing."""
     angles = np.sort(np.remainder(angles, period))
     gaps = np.diff(np.r_[angles, angles[0] + period])
     return {
-        "passed": angular_coverage(angles, period),
+        "passed": bool(len(angles) >= 2 and gaps.max() <= 1.6 * period / len(angles)),
         "count": len(angles),
         "period_rad": float(period),
         "min_gap_rad": float(gaps.min()),
         "max_gap_rad": float(gaps.max()),
-        "min_gap_exclusive_rad": float(0.1 * period / len(angles)),
         "max_gap_inclusive_rad": float(1.6 * period / len(angles)),
     }
+
+
+def angular_coverage(angles, period):
+    return angular_details(angles, period)["passed"]
 
 
 def flip_details(values, target):
@@ -72,13 +78,107 @@ def inspect_sequence(path, case):
     matrix, fov = np.asarray(spec["matrix"]), np.asarray(spec["fov_mm"]) / 1000
     q = a.k[:, : len(matrix)] * fov
     read = spec.get("readout") or {}
+    sampling = spec.get("sampling") or {}
+    accelerated = fam == "epi_single_shot" and (sampling.get("acceleration") or 1) > 1
     checks = [
         c
         for c in a.checks
-        if c["name"] in {"rf_before_adc", "flip_angle_deg", "tr_ms"}
+        if c["name"]
+        in {
+            "readout_samples",
+            "readout_bandwidth",
+            "rf_before_adc",
+            "flip_angle_deg",
+            "tr_ms",
+        }
         or fam in CARTESIAN
         and c["name"] in {"cartesian", "matrix", "fov_mm"}
     ]
+    # Every S2 readout must travel through k-space (at least one sample
+    # spacing); a stationary ADC has no readout axis, angle or echo crossing.
+    travel = [
+        float(np.max(np.ptp(q[ids], axis=0))) if len(ids) else 0.0 for ids in a.lines
+    ]
+    stationary = [i for i, value in enumerate(travel) if value < 1.0]
+    checks.append(
+        check(
+            "readout_travel",
+            not stationary,
+            {
+                "min_travel_samples": 1.0,
+                "measured_min_travel_samples": min(travel, default=0.0),
+                "stationary_readouts": stationary[:20],
+            },
+        )
+    )
+    if (
+        stationary
+        or any(len(ids) < 2 for ids in a.lines)
+        or any(c["name"] == "readout_samples" and not c["passed"] for c in a.checks)
+    ):
+        # Trajectory geometry needs at least two samples per readout and real
+        # k travel; fail the structure instead of reducing over degenerate data.
+        a.checks = checks + [check("sequence_identity", False, fam)]
+        a.measurements.update(family=fam, fov_mm=spec["fov_mm"])
+        return a
+    if accelerated:
+        # An undersampled grid cannot infer its integer origin from its extrema.
+        # Use the same fixed centred origin and half-sample branch as S3.
+        a.offset = np.angle(np.mean(np.exp(2j * np.pi * q), axis=0)) / (2 * np.pi)
+        a.offset[(a.offset < 0) & (abs(a.offset + 0.5) <= 0.01)] += 1
+        integer = np.rint(q - a.offset).astype(int)
+        a.indices = integer + matrix // 2
+        residual = float(np.max(abs(q - a.offset - integer)))
+        cartesian = residual <= 0.01 and np.max(abs(a.k[:, 2])) <= 0.01 / min(fov)
+        cartesian &= all(
+            len(ids) == matrix[0]
+            and np.all(abs(abs(np.diff(q[ids, 0])) - 1) <= 0.01)
+            and np.ptp(q[ids, 1]) <= 0.01
+            for ids in a.lines
+        )
+        checks = [
+            item
+            for item in checks
+            if item["name"] not in {"cartesian", "matrix", "fov_mm"}
+        ]
+        mask = np.zeros(tuple(matrix), bool)
+        in_bounds = bool(((a.indices >= 0) & (a.indices < matrix)).all())
+        if in_bounds:
+            mask[tuple(a.indices.T)] = True
+        unique = int(mask.sum()) == len(a.adc)
+        prescribed = epi_sampling_mask(matrix, sampling)
+        checks += [
+            check(
+                "cartesian",
+                cartesian,
+                {"max_lattice_error_samples": residual, "readout_axis": "x"},
+            ),
+            check(
+                "matrix",
+                in_bounds and unique,
+                {"matrix": matrix.tolist(), "adc_samples": len(a.adc)},
+            ),
+            check("fov_mm", cartesian and in_bounds, {"fov_mm": spec["fov_mm"]}),
+            check(
+                "sampling_pattern",
+                np.array_equal(mask, prescribed) and unique,
+                {
+                    "acceleration": sampling["acceleration"],
+                    "calibration_lines": sampling.get("calibration_lines") or 0,
+                    "retained_ky_indices": np.flatnonzero(mask.any(axis=0)).tolist(),
+                    "required_ky_indices": np.flatnonzero(
+                        prescribed.any(axis=0)
+                    ).tolist(),
+                },
+            ),
+        ]
+        a.measurements.update(
+            parallel_imaging=True,
+            sampling_mask=mask.tolist(),
+            lattice_offset=a.offset.tolist(),
+            receive_encoding="s3_trigonometric_comoving@1",
+            receive_channels=4,
+        )
     exc = [p for p in a.pulses if not p.refocusing]
     groups = [np.flatnonzero(a.excitation == j) for j in np.unique(a.excitation)]
     # Each ADC event can contain a complete curved trajectory. Its effective TE
@@ -161,7 +261,11 @@ def inspect_sequence(path, case):
             )
             valid &= np.max(np.abs(ref_residual)) <= tolerance
         else:
-            # A GRASE refocusing interval contains >=2 opposite-polarity GEs.
+            # The declared GRASE train has two GEs per spin echo. Its total
+            # echo count determines the required number of refocusing intervals.
+            required_echoes = 2
+            required_intervals = read["echo_train_length"] // required_echoes
+            valid &= read["echo_train_length"] % required_echoes == 0
             paired_echoes = []
             for g in groups:
                 buckets = {}
@@ -170,9 +274,9 @@ def inspect_sequence(path, case):
                 paired_echoes.append(
                     {
                         "distinct_intervals": len(buckets),
-                        "min_distinct_intervals": 2,
+                        "required_distinct_intervals": required_intervals,
                         "echoes_per_interval": [len(b) for b in buckets.values()],
-                        "min_echoes_per_interval": 2,
+                        "required_echoes_per_interval": required_echoes,
                         "straddles_spin_echo": [
                             bool(
                                 min(ref_residual[i] for i in b) <= tolerance
@@ -182,8 +286,8 @@ def inspect_sequence(path, case):
                         ],
                     }
                 )
-                valid &= len(buckets) >= 2 and all(
-                    len(b) >= 2 for b in buckets.values()
+                valid &= len(buckets) == required_intervals and all(
+                    len(b) == required_echoes for b in buckets.values()
                 )
                 valid &= all(
                     min(ref_residual[i] for i in b) <= tolerance
@@ -238,20 +342,72 @@ def inspect_sequence(path, case):
             )
         )
     if fam.startswith("epi") or fam == "grase":
+        # Disclosed contract: EPI and GRASE read along x with unit sample steps
+        # and bounded transverse motion; polarity is the sign of x travel.
+        x_steps = [np.abs(np.abs(np.diff(q[ids, 0])) - 1) for ids in a.lines]
+        transverse = [np.ptp(q[ids, 1:], axis=0) for ids in a.lines]
+        x_readout = all(
+            len(ids) == matrix[0] and np.all(step <= 0.01) and np.all(motion <= 0.01)
+            for ids, step, motion in zip(a.lines, x_steps, transverse, strict=True)
+        )
+        checks.append(
+            check(
+                "readout_axis",
+                x_readout,
+                {
+                    "required_axis": "x",
+                    "samples_per_readout": int(matrix[0]),
+                    "max_x_step_error_samples": float(max(map(np.max, x_steps))),
+                    "max_transverse_motion_samples": float(
+                        max(map(np.max, transverse))
+                    ),
+                    "limit_samples": 0.01,
+                },
+            )
+        )
         polarity = np.array([np.sign(q[ids[-1], 0] - q[ids[0], 0]) for ids in a.lines])
         alternating = all(
             np.all(polarity[g][1:] * polarity[g][:-1] == -1) for g in groups
         )
         valid = alternating and all(len(g) >= 2 for g in groups)
+        epi_detail = {}
         if fam == "epi_single_shot":
             valid &= shots == 1
+            if accelerated:
+                ky = q[centre_ids, 1]
+                # One acquiring excitation. Other RF (e.g. CHESS + spoiler) must
+                # end before it starts: no RF may follow it inside the shot, and
+                # no other excitation is acquired. Unspoiled preparation
+                # coherence is judged physically by the spoiling probe and image.
+                shot = exc[int(a.excitation[0])] if shots == 1 else None
+                preparation = [p for p in a.pulses if p is not shot]
+                prepared = shot is not None and all(
+                    p.end <= shot.start + 1e-12 for p in preparation
+                )
+                valid &= prepared and bool(
+                    np.all(np.diff(ky) > 0) or np.all(np.diff(ky) < 0)
+                )
+                epi_detail = {
+                    "acquiring_excitations": shots,
+                    "preparation_rf_pulses": len(preparation),
+                    "preparation_rf_before_excitation": bool(prepared),
+                }
         elif fam == "epi_multishot":
             valid &= shots >= 2
             for g in groups:
                 ky = q[[centre_ids[i] for i in g], 1]
-                valid &= len(ky) > 1 and np.all(np.abs(np.diff(ky) - shots) <= 0.02)
+                steps = np.diff(ky)
+                valid &= (
+                    len(ky) > 1
+                    and np.all(np.abs(np.abs(steps) - shots) <= 0.02)
+                    and (np.all(steps > 0) or np.all(steps < 0))
+                )
         checks.append(
-            check("epi", valid, {"shots": shots, "alternating_polarity": alternating})
+            check(
+                "epi",
+                valid,
+                {"shots": shots, "alternating_polarity": alternating, **epi_detail},
+            )
         )
     if fam in {"radial_readout", "ute_radial", "stack_of_stars"}:
         angles, valid = [], True
@@ -314,19 +470,17 @@ def inspect_sequence(path, case):
         if fam == "stack_of_stars":
             z = np.array([np.mean(q[ids, 2]) for ids in a.lines])
             partitions = np.rint(z).astype(int)
-            valid &= np.max(np.abs(z - partitions)) <= 0.01 and set(partitions) == set(
-                range(-matrix[2] // 2, matrix[2] // 2)
+            partitioned = bool(
+                np.max(np.abs(z - partitions)) <= 0.01
+                and set(partitions) == set(range(-matrix[2] // 2, matrix[2] // 2))
+                and all(np.ptp(q[ids, 2]) <= 0.01 for ids in a.lines)
             )
-            valid &= all(np.ptp(q[ids, 2]) <= 0.01 for ids in a.lines)
+            valid &= partitioned
             angle_groups = [
                 np.flatnonzero(partitions == p) for p in np.unique(partitions)
             ]
             conditions["partitions"] = {
-                "passed": bool(
-                    np.max(np.abs(z - partitions)) <= 0.01
-                    and set(partitions) == set(range(-matrix[2] // 2, matrix[2] // 2))
-                    and all(np.ptp(q[ids, 2]) <= 0.01 for ids in a.lines)
-                ),
+                "passed": partitioned,
                 "measured": sorted(map(int, set(partitions))),
                 "required": list(range(-int(matrix[2]) // 2, int(matrix[2]) // 2)),
                 "max_integer_error_samples": float(np.max(np.abs(z - partitions))),
@@ -337,18 +491,16 @@ def inspect_sequence(path, case):
             }
         else:
             angle_groups = [np.arange(len(a.lines))]
-        for g in angle_groups:
-            valid &= angular_coverage(
-                np.asarray(angles)[g], 2 * np.pi if fam == "ute_radial" else np.pi
-            )
-            if read.get("spokes"):
-                valid &= len(g) == read["spokes"]
         conditions["angular_coverage"] = [
             angular_details(
                 np.asarray(angles)[g], 2 * np.pi if fam == "ute_radial" else np.pi
             )
             for g in angle_groups
         ]
+        for g, coverage in zip(angle_groups, conditions["angular_coverage"]):
+            valid &= coverage["passed"]
+            if read.get("spokes"):
+                valid &= len(g) == read["spokes"]
         conditions["spoke_count_per_partition"] = {
             "passed": not read.get("spokes")
             or all(len(g) == read["spokes"] for g in angle_groups),
@@ -377,10 +529,8 @@ def inspect_sequence(path, case):
             checks.append(
                 check(
                     "ute",
-                    np.all(a.te <= 0.001)
-                    and nonselective
-                    and all(p.end - p.start <= 0.0005 for p in exc),
-                    "Centre-out TE <=1 ms; nonselective RF <=0.5 ms",
+                    np.all(a.te <= 0.001) and nonselective,
+                    "Centre-out TE <=1 ms; nonselective excitation",
                 )
             )
     if fam == "spiral_gre":
@@ -396,26 +546,29 @@ def inspect_sequence(path, case):
             )
             turns.append(float(winding))
             angles.append(float(theta[keep][0]) if keep.any() else 0.0)
-            valid &= (
-                len(ids) >= matrix[0]
-                and np.max(np.linalg.norm(np.diff(xy, axis=0), axis=1)) <= 1.1
-            )
+            max_step = np.max(np.linalg.norm(np.diff(xy, axis=0), axis=1))
+            valid &= len(ids) >= matrix[0] and max_step <= 1.1
             trajectory = {
                 "samples": len(ids),
                 "min_samples": int(matrix[0]),
-                "max_step_samples": float(
-                    np.max(np.linalg.norm(np.diff(xy, axis=0), axis=1))
-                ),
+                "max_step_samples": float(max_step),
                 "max_step": 1.1,
             }
-            fit = np.polyfit(theta[keep], r[keep], 1) if keep.sum() > 2 else [0, 1e6]
+            # A radius-versus-angle fit needs angular travel; a straight or
+            # stationary trajectory has none and fails without a fit.
+            fitted = keep.sum() > 2 and np.ptp(theta[keep]) > 1e-6
+            fit = np.polyfit(theta[keep], r[keep], 1) if fitted else None
             residual = (
-                np.sqrt(np.mean((np.polyval(fit, theta[keep]) - r[keep]) ** 2))
-                if keep.any()
-                else 1e6
+                float(np.sqrt(np.mean((np.polyval(fit, theta[keep]) - r[keep]) ** 2)))
+                if fitted
+                else None
             )
             valid &= r[0] <= 0.6 and r[-1] >= matrix[0] / 2 - 0.75 and winding >= 1
-            valid &= np.mean(np.diff(r) >= -0.05) >= 0.95 and residual <= 0.1 * r.max()
+            valid &= (
+                np.mean(np.diff(r) >= -0.05) >= 0.95
+                and residual is not None
+                and residual <= 0.1 * r.max()
+            )
             if read.get("turns"):
                 valid &= abs(winding - read["turns"]) <= 0.5
             trajectory.update(
@@ -430,13 +583,14 @@ def inspect_sequence(path, case):
                 nondecreasing_fraction=float(np.mean(np.diff(r) >= -0.05)),
                 min_nondecreasing_fraction=0.95,
                 radial_step_tolerance=0.05,
-                archimedean_fit_rms_samples=float(residual),
+                archimedean_fit_rms_samples=residual,
                 max_fit_rms_samples=float(0.1 * r.max()),
             )
             trajectory_details.append(trajectory)
+        coverage = angular_details(angles, 2 * np.pi)
         if read.get("interleaves"):
             valid &= len(a.lines) == read["interleaves"]
-        valid &= angular_coverage(angles, 2 * np.pi)
+        valid &= coverage["passed"]
         valid &= all(len(g) == 1 for g in groups)
         checks.append(
             check(
@@ -447,7 +601,7 @@ def inspect_sequence(path, case):
                     "interleaves": len(a.lines),
                     "required_interleaves": read.get("interleaves"),
                     "one_readout_per_excitation": all(len(g) == 1 for g in groups),
-                    "angular_coverage": angular_details(angles, 2 * np.pi),
+                    "angular_coverage": coverage,
                     "turns": turns,
                 },
             )
@@ -500,13 +654,14 @@ def inspect_sequence(path, case):
                 }
             )
             angles.append(float(np.arctan2(axis[1], axis[0])))
-        valid &= angular_coverage(angles, np.pi)
+        coverage = angular_details(angles, np.pi)
+        valid &= coverage["passed"]
         checks.append(
             check(
                 "propeller",
                 valid,
                 {
-                    "angular_coverage": angular_details(angles, np.pi),
+                    "angular_coverage": coverage,
                     "blade_geometry": blade_details,
                     "blades": shots,
                     "angles_rad": angles,
@@ -556,6 +711,10 @@ def inspect_sequence(path, case):
         shots=shots,
         fov_mm=spec["fov_mm"],
         centre_sample_indices=centre_ids.tolist(),
-        reconstruction="bart_cartesian_fft@1" if fam in CARTESIAN else "bart_nufft@1",
+        reconstruction="bart_sampling_sense@1"
+        if accelerated
+        else "bart_cartesian_fft@1"
+        if fam in CARTESIAN
+        else "bart_nufft@1",
     )
     return a

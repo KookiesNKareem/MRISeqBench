@@ -1,16 +1,16 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: bssfp
-objective: Create Cartesian balanced SSFP with alternating 0/180-degree RF phase and zero
-  net gradient area on every axis each TR. Use a 35-degree flip angle, TE 2.5 ms and TR 5
-  ms.
+version: 2
+objective: Acquire Cartesian bSSFP with 35-degree excitation, alternating 0/180-degree RF phase,
+  and balanced gradient moments every TR, including after the final excitation. Use TE 2.5 ms and TR 5 ms.
 object: cardiac_2d@1
 sequence:
   level: S1
   capabilities: [bssfp, cartesian]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 6
   te_ms: {target: 2.5, tolerance: 0.25}
   tr_ms: {target: 5, tolerance: 0.25}
   flip_angle_deg: 35
-evaluation: s1@4
+evaluation: s1@5

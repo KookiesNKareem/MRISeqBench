@@ -5,34 +5,32 @@ import importlib.metadata
 import json
 import os
 import time
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
 import numpy as np
 
-from ..io import write_json
+from ..io import finite_json, write_json
 from ..models import ImagePrecision
-from ..storage import atomic_json, atomic_savez_compressed
+from ..storage import atomic_savez_compressed
 from . import bart
 from .s1_case import (
+    MAX_TEMPORAL_HALVINGS,
     case_bounds,
     case_image_scores,
     case_policy,
-    phase_reference,
+    contrast_required,
     uses_case_image,
 )
-from .s1_image import (
-    image_metrics,
-    material_masks,
-    nrmse,
-    reconstruct,
-    reference_signal,
-)
-from .s1_koma import simulate, versions
+from .s1_control import build_controls, corrected_raw
+from .s1_image import image_metrics, material_masks, nrmse, reference_signal
+from .s1_koma import NativeRejection, reconstruct, simulate, versions
 from .s1_numerics import ReplayCache
 from .s1_phantom import phantom
 from .s1_probes import mechanism_probes
-from .s1_sampling import analytic_reference, image_scores, interval, sampled_phantom
-from .s1_sequence import family, inspect_sequence
+from .s1_sampling import analytic_reference, image_scores, sampled_phantom
+from .s1_sequence import MissingExcitation, check, family, inspect_sequence
 
 IMPLEMENTATION_SHA256 = hashlib.sha256(
     b"".join(
@@ -47,19 +45,16 @@ IMPLEMENTATION_SHA256 = hashlib.sha256(
 ).hexdigest()
 
 
-def decision(bounds, metrics, prefix=""):
-    """Apply the published cutoffs to sufficiently precise point estimates."""
-    outcomes = []
-    for bound in bounds:
-        name = bound["name"].removeprefix(prefix)
-        if name not in metrics:
-            raise ValueError(f"S1 contract requests unsupported metric: {name}")
-        value = metrics[name]
-        outcomes.append(
-            (bound["min"] is None or value >= bound["min"])
-            and (bound["max"] is None or value <= bound["max"])
-        )
-    return all(outcomes)
+def decision(bound, metrics, prefix=""):
+    """Apply a published cutoff to a sufficiently precise point estimate."""
+    name = bound["name"].removeprefix(prefix)
+    if name not in metrics:
+        raise ValueError(f"S1 contract requests unsupported metric: {name}")
+    value = metrics[name]
+    return bool(
+        (bound["min"] is None or value >= bound["min"])
+        and (bound["max"] is None or value <= bound["max"])
+    )
 
 
 def score_precision(metrics, intervals, tolerances):
@@ -81,22 +76,18 @@ def score_precision(metrics, intervals, tolerances):
     ), errors
 
 
-def certified_decision(bounds, intervals, prefix=""):
+def certified_decision(bound, intervals, prefix=""):
     """An already decisive numerical interval needs no exact score estimate."""
-    outcomes = []
-    for bound in bounds:
-        lo, hi = intervals[bound["name"].removeprefix(prefix)]
-        if (bound["min"] is not None and hi < bound["min"]) or (
-            bound["max"] is not None and lo > bound["max"]
-        ):
-            outcomes.append(False)
-        elif (bound["min"] is None or lo >= bound["min"]) and (
-            bound["max"] is None or hi <= bound["max"]
-        ):
-            outcomes.append(True)
-        else:
-            outcomes.append(None)
-    return False if False in outcomes else None if None in outcomes else True
+    lo, hi = intervals[bound["name"].removeprefix(prefix)]
+    if (bound["min"] is not None and hi < bound["min"]) or (
+        bound["max"] is not None and lo > bound["max"]
+    ):
+        return False
+    if (bound["min"] is None or lo >= bound["min"]) and (
+        bound["max"] is None or hi <= bound["max"]
+    ):
+        return True
+    return None
 
 
 # Jackknife-corrected nonlinear scores and the squared statistic each derives from.
@@ -106,68 +97,94 @@ NONLINEAR = {
 }
 
 
-def nonlinear_status(name, metrics, intervals, errors, tolerances):
-    """'degenerate', 'precise' or 'imprecise' for a jackknife score; None if linear.
+def resolve_decision(bounds, metrics, intervals, precise, prefix=""):
+    """Use precise point estimates or a decisive numerical interval.
 
-    A negative bias-corrected square, or an interval reaching below zero, means
-    the correction is invalid at this sampling noise: it cannot support a verdict.
-    """
-    squared = NONLINEAR.get(name)
-    if squared is None or squared not in metrics:
-        return None
-    if metrics[squared] < 0 or intervals[squared][0] < 0:
-        return "degenerate"
-    error = (errors or {}).get(squared)
-    if error is not None and np.isfinite(error) and error <= tolerances[squared]:
-        return "precise"
-    return "imprecise"
-
-
-def resolve_decision(
-    bounds, metrics, intervals, precise, prefix="", errors=None, tolerances=None
-):
-    """Point decision when precise, else interval certification.
-
-    A nonlinear score never passes on its interval alone: it needs its own
-    precision target, and a degenerate estimate is unresolved either way.
+    Nonlinear squared errors have nonnegative support. Projecting their interval
+    onto that support preserves its coverage; a negative corrected estimate is
+    never accepted merely because its displayed square root clips to zero.
     """
     outcomes = []
+    point_valid = True
     for bound in bounds:
         name = bound["name"].removeprefix(prefix)
-        status = (
-            nonlinear_status(name, metrics, intervals, errors, tolerances)
-            if tolerances is not None
-            else None
+        local_intervals = intervals
+        squared = NONLINEAR.get(name)
+        admissible = True
+        if squared is not None and squared in metrics:
+            lo, hi = intervals[squared]
+            value = metrics[squared]
+            if not np.isfinite([value, lo, hi]).all() or lo > hi:
+                outcomes.append(None)
+                point_valid = False
+                continue
+            local_intervals = {name: (np.sqrt(max(0.0, lo)), np.sqrt(max(0.0, hi)))}
+            admissible = value >= 0
+            point_valid &= admissible
+        outcomes.append(
+            decision(bound, metrics, prefix)
+            if precise and admissible
+            else certified_decision(bound, local_intervals, prefix)
         )
-        if status == "degenerate":
-            outcomes.append(None)
-        elif precise:
-            outcomes.append(decision([bound], metrics, prefix))
-        else:
-            certified = certified_decision([bound], intervals, prefix)
-            if certified is True and status == "imprecise":
-                certified = None
-            outcomes.append(certified)
-    if precise and None not in outcomes:
+    if precise and point_valid and None not in outcomes:
         return all(outcomes), "precision_target"
     outcome = False if False in outcomes else None if None in outcomes else True
     return outcome, "interval_certified" if outcome is not None else "unresolved"
 
 
-def contrast_interval(images, masks):
-    def ratio(image):
-        magnitude = np.abs(image)
-        return float(
-            magnitude[masks["wm"]].mean() / max(magnitude[masks["gm"]].mean(), 1e-15)
-        )
+def failed_report(
+    case, checks, *, reconstruction="bart_cartesian_fft@1", artifacts=None
+):
+    """Complete shared S1-S4 report schema, initialised as a failed verdict."""
+    return {
+        "checks": checks,
+        "image_checks": [],
+        "ideal_image_checks": [],
+        "case_image_checks": [],
+        "metrics": {},
+        "sequence_valid": False,
+        "ideal_imaging_success": None,
+        "imaging_success_under_case_physics": None,
+        "numerically_converged": None,
+        "status": "failed",
+        "image_verdict": "not_evaluated",
+        "image_acceptance_basis": "case_physics"
+        if uses_case_image(case)
+        else "ideal_control",
+        "evaluation_contract": f"{case['evaluation']['id']}@{case['evaluation']['version']}",
+        "nominal_contrast_model": "finite_rf_intrinsic_materials_central_echo@1",
+        "reconstruction": reconstruction,
+        "artifacts": artifacts or {},
+        "limitations": [],
+    }
 
-    total = images.sum(axis=0)
-    value = ratio(total / len(images))
-    loo = np.array([ratio((total - image) / (len(images) - 1)) for image in images])
-    return value, interval(value, loo)
+
+def reconstructed_temporal_error(reconstructor):
+    def error(delta, acq, matrix, reference, coarse=None):
+        image = reconstructor(delta, acq, matrix)
+        return float(np.linalg.norm(image) / max(np.linalg.norm(reference), 1e-30))
+
+    return error
 
 
-def evaluate_s1(
+def structure_failure(case, name, detail):
+    return failed_report(case, [check(name, False, detail)])
+
+
+def evaluate_s1(submission, case, root, workspace, **kwargs):
+    """S1-S3 judge; a native parse rejection of the submitted bytes fails it.
+
+    Host failures (OOM, CUDA, interrupt, I/O, worker exit, timeout) propagate.
+    """
+    Path(workspace).mkdir(parents=True, exist_ok=True)  # Callers add artifacts.
+    try:
+        # Every report path is strict-JSON safe (NaN/inf metrics become null).
+        return finite_json(_evaluate_s1(submission, case, root, workspace, **kwargs))
+    except NativeRejection as exc:
+        return structure_failure(case, exc.check, str(exc))
+
+
+def _evaluate_s1(
     submission,
     case,
     root,
@@ -186,6 +203,7 @@ def evaluate_s1(
     region_builder=None,
     replay_shape=None,
     temporal_norm=None,
+    control_builder=build_controls,
 ):
     if encoded_integrator not in {"bloch", "magnus4"}:
         raise ValueError("Unsupported encoded integrator")
@@ -195,36 +213,46 @@ def evaluate_s1(
     probes = probes or mechanism_probes
     reconstructor = reconstructor or reconstruct
     sampler = sampler or reference_signal
-    phase_builder = phase_builder or phase_reference
+    if phase_builder is None:
+        # S1 shares the S2 context selector: target and phase oracle replay
+        # the same central echo.
+        from .s2 import phase_reference as phase_builder
     workspace = Path(workspace)
-    workspace.mkdir(parents=True, exist_ok=True)
-    acq = inspector(submission, case)
+
+    def check_deadline():
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("Image replay exceeded its grading budget")
+
+    check_deadline()
+    try:
+        acq = inspector(submission, case)
+    except MissingExcitation as exc:
+        return structure_failure(
+            case, getattr(exc, "check", "excitation_before_adc"), str(exc)
+        )
+    # Candidate geometry can leave measurements undefined (e.g. no k travel);
+    # report those as null so strict JSON never turns them into infra errors.
+    acq.checks = finite_json(acq.checks)
+    acq.measurements = finite_json(acq.measurements)
     checks = acq.checks
+    # Gate on the timestep difference through the task's reconstruction,
+    # normalised by the independent target (as image scores are), in addition
+    # to raw-signal NRMSE; the raw denominator is the coarse signal.
+    temporal_norm = temporal_norm or reconstructed_temporal_error(reconstructor)
     case_acceptance = uses_case_image(case)
-    report = {
-        "checks": checks,
-        "metrics": {},
-        "sequence_valid": False,
-        "ideal_imaging_success": None,
-        "imaging_success_under_case_physics": None,
-        "status": "failed",
-        "image_verdict": "not_evaluated",
-        "image_acceptance_basis": "case_physics"
-        if case_acceptance
-        else "ideal_control",
-        "evaluation_contract": f"{case['evaluation']['id']}@{case['evaluation']['version']}",
-        "nominal_contrast_model": "finite_rf_intrinsic_materials_central_echo@1",
-        "reconstruction": acq.measurements.get(
-            "reconstruction", "bart_cartesian_fft@1"
-        ),
-        "artifacts": {"sequence": str((workspace / "sequence.json").resolve())},
-    }
+    report = failed_report(
+        case,
+        checks,
+        reconstruction=acq.measurements.get("reconstruction", "bart_cartesian_fft@1"),
+        artifacts={"sequence": str((workspace / "sequence.json").resolve())},
+    )
     write_json(workspace / "sequence.json", acq.measurements)
     if not all(c["passed"] for c in checks):
         return report
     # Masks are used only for display/ROI diagnostics, never as a spin integration
     # grid. The signal is integrated independently below.
-    mask_spins = phantom(case, root, 4)
+    check_deadline()
+    mask_spins = phantom(case, root)
     probe_checks, diagnostic, response = probes(
         acq, case, mask_spins.materials, mask_spins.properties
     )
@@ -239,14 +267,8 @@ def evaluate_s1(
     if reference_builder is None:
         # Independent full Cartesian grid at central-echo material contrast;
         # encoding blur and displacement cannot enter their own target.
-        from .s2 import reference_image
-
-        reference_builder = reference_image
-    reference = (
-        reference_builder(acq, case, root, response, reference_raw)
-        if reference_builder is not None
-        else reconstructor(reference_raw, acq, matrix)
-    )
+        from .s2 import reference_image as reference_builder
+    reference = reference_builder(acq, case, root, response, reference_raw)
     masks = material_masks(mask_spins, spec)
     support = np.zeros(matrix, dtype=bool)
     dims = len(matrix)
@@ -258,24 +280,24 @@ def evaluate_s1(
     if region_builder is not None:
         support, masks = region_builder(acq, case, support, masks)
     effects = case["physics"]["effects"]
-    # Start at about two spins per image pixel; the contract value is a floor.
-    samples = max(
-        contract.get("spatial_samples") or 32768,
-        2 ** int(np.ceil(np.log2(2 * np.prod(case["task"]["sequence"]["matrix"])))),
-    )
+    samples = contract.get("spatial_samples") or 32768
     replicates = contract.get("spatial_replicates") or 8
     max_samples = contract.get("spatial_max_samples") or min(4 * samples, 1048576)
     tolerances = ImagePrecision.model_validate(
         contract.get("image_precision") or {}
     ).model_dump()
+    contrast = contrast_required(case)
+    if not contrast:
+        tolerances.pop("contrast_retention", None)
     seed = contract.get("spatial_seed")
     seed = 1729 if seed is None else seed
     temporal_scale = 2 ** (contract.get("temporal_refinement") or 0)
     base_steps = {"step_s": 0.001 / temporal_scale, "rf_step_s": 20e-6 / temporal_scale}
+    submission_sha256 = hashlib.sha256(Path(submission).read_bytes()).hexdigest()
     replay = ReplayCache(
         workspace / "replays",
         IMPLEMENTATION_SHA256
-        + hashlib.sha256(Path(submission).read_bytes()).hexdigest()
+        + submission_sha256
         + json.dumps(
             {"case": case, "encoded_integrator": encoded_integrator}, sort_keys=True
         ),
@@ -284,6 +306,7 @@ def evaluate_s1(
         ),
         chunk_size=min(max_samples, 32768),
         signal_shape=replay_shape(acq) if replay_shape is not None else None,
+        deadline=deadline,
     )
     robustness_bounds = [
         {"name": "complex_image_nrmse", "min": None, "max": 0.2},
@@ -304,7 +327,7 @@ def evaluate_s1(
     )
     case_details = None
     if case_acceptance:
-        robustness_bounds = case_bounds(case_policy(case))
+        robustness_bounds = case_bounds(case_policy(case), contrast=contrast)
         phasor, phase_valid, phase_info = phase_builder(
             acq,
             case,
@@ -312,6 +335,31 @@ def evaluate_s1(
             reference,
             temporal_scale=temporal_scale,
         )
+        if not phase_info["converged"]:
+            report.update(
+                status="numerically_unresolved",
+                numerically_converged=False,
+                failure_kind="unresolved_at_timestep_cap"
+                if phase_info.get("timestep_cap_reached")
+                else "phase_reference_not_resolved",
+                case_phase_reference=phase_info,
+            )
+            return report
+    # The control's integral is separate from the independent target encoding.
+    check_deadline()
+    controls = control_builder(acq, case, root) if control_builder else None
+    check_deadline()
+    control_description = (
+        {
+            "method": "known_integral_fid_history@1",
+            "history": controls[0].history,
+            "independent_target_preserved": True,
+            "native_residual_preserved": True,
+        }
+        if controls
+        else {"method": "intended_fourier@1"}
+    )
+    report["spatial_control_variate"] = control_description
     history = []
     temporal_history = []
     if checkpoint_path := os.environ.get("MRISEQBENCH_NUMERICAL_CHECKPOINT"):
@@ -320,126 +368,194 @@ def evaluate_s1(
             checkpoint["case_sha256"]
             == hashlib.sha256(json.dumps(case, sort_keys=True).encode()).hexdigest()
         )
-        assert (
-            checkpoint["sequence_sha256"]
-            == hashlib.sha256(Path(submission).read_bytes()).hexdigest()
-        )
+        assert checkpoint["sequence_sha256"] == submission_sha256
         history = checkpoint["progress"]["spatial_refinement"]
         temporal_history = checkpoint["progress"]["temporal_refinement"]
         assert history[-1]["decision_basis"]["case"] == "unresolved"
-        samples = history[-1]["samples"] * 2
+        if history[-1]["samples"] >= max_samples:
+            raise ValueError(
+                "Checkpoint already reached the declared spatial sample cap"
+            )
+        samples = min(history[-1]["samples"] * 2, max_samples)
         base_steps = {name: temporal_history[-1][name] for name in base_steps}
     stage_limit = int(os.environ.get("MRISEQBENCH_MAX_SPATIAL_STAGE", "0"))
-    stop_reason = "precision_target"
     while True:
-        if prefill_directory := os.environ.get("MRISEQBENCH_NATIVE_PREFILL"):
-            directory = Path(prefill_directory)
-            directory.mkdir(parents=True, exist_ok=True)
-            request = {
-                "samples": samples,
-                "base_steps": base_steps,
-                "case_sha256": hashlib.sha256(
-                    json.dumps(case, sort_keys=True).encode()
-                ).hexdigest(),
-                "sequence_sha256": hashlib.sha256(
-                    Path(submission).read_bytes()
-                ).hexdigest(),
-            }
-            request_path = directory / f"{samples}.request.json"
-            completed_path = directory / f"{samples}.complete.json"
-            if request_path.exists():
-                raise RuntimeError("Numerical stage was already dispatched")
-            atomic_json(request_path, request)
-            while not completed_path.exists():
-                time.sleep(0.5)
-            completed = json.loads(completed_path.read_text())
-            if completed.get("status") != "complete" or completed["request"] != request:
-                raise RuntimeError("Native cache precomputation did not complete")
+        check_deadline()
         ideal_runs, physical_runs = [], []
         ideal_raw_runs, physical_raw_runs = [], []
         koma_ideal_runs, koma_physical_runs, sampled_reference_runs = [], [], []
+        ideal_control_runs, physical_control_runs = [], []
         counts = []
-        for replicate in range(replicates):
-            spins = sampled_phantom(
-                case, root, samples, replicate, directory=workspace / ".sampling"
+        pool, pending, spin_batch = None, [], None
+        cancelled = Event()
+
+        def control_check(cancelled=cancelled):
+            check_deadline()
+            if cancelled.is_set():
+                raise CancelledError()
+
+        def control_samples(spins, check=control_check):
+            check()
+            ideal = controls[0].sampled(spins, check=check)
+            physical = (
+                controls[1].sampled(spins, check=check)
+                if controls[1] is not controls[0]
+                else ideal
             )
-            sampled_reference = sampler(acq, spins, spec, response)
-            ideal_spins = spins
-            chemical_shift = spins.properties.shape[1] > 3 and np.any(
-                spins.properties[:, 3]
-            )
-            ideal_sampled = replay(acq, ideal_spins, **base_steps)
-            physical_sampled = (
-                replay(acq, spins, effects, **base_steps)
-                if effects or chemical_shift
-                else ideal_sampled
-            )
-            if replicate == 0:
-                # Refine integration before accepting any spatial-stage scores.
-                # A single unsuccessful halving is a request for more work.
-                while True:
-                    refined_sampled = replay(
-                        acq,
-                        spins,
-                        effects,
-                        **{name: step / 2 for name, step in base_steps.items()},
+            return ideal, physical
+
+        try:
+            if controls and dims == 3:
+                pool = ThreadPoolExecutor(max_workers=4)
+                spin_batch = [
+                    sampled_phantom(
+                        case, root, samples, rep, directory=workspace / ".sampling"
                     )
-                    temporal_raw_error = nrmse(refined_sampled, physical_sampled)
-                    temporal_image_error = (
-                        temporal_norm(
-                            refined_sampled - physical_sampled, acq, matrix, reference
+                    for rep in range(replicates)
+                ]
+                pending = [pool.submit(control_samples, spins) for spins in spin_batch]
+            for replicate in range(replicates):
+                check_deadline()
+                spins = (
+                    spin_batch[replicate]
+                    if pending
+                    else sampled_phantom(
+                        case,
+                        root,
+                        samples,
+                        replicate,
+                        directory=workspace / ".sampling",
+                    )
+                )
+                sampled_reference = (
+                    None if controls else sampler(acq, spins, spec, response)
+                )
+                chemical_shift = spins.properties.shape[1] > 3 and np.any(
+                    spins.properties[:, 3]
+                )
+                ideal_sampled = replay(acq, spins, **base_steps)
+                physical_sampled = (
+                    replay(acq, spins, effects, **base_steps)
+                    if effects or chemical_shift
+                    else ideal_sampled
+                )
+                if replicate == 0:
+                    # Refine integration before accepting any spatial-stage scores.
+                    # A single unsuccessful halving is a request for more work.
+                    while True:
+                        refined_sampled = replay(
+                            acq,
+                            spins,
+                            effects,
+                            **{name: step / 2 for name, step in base_steps.items()},
                         )
-                        if temporal_norm is not None
-                        else 0.0
-                    )
-                    temporal_error = max(temporal_raw_error, temporal_image_error)
-                    temporal_history.append(
-                        {
-                            **base_steps,
-                            "nrmse": temporal_error,
-                            **(
-                                {
-                                    "raw_nrmse": temporal_raw_error,
-                                    "image_nrmse": temporal_image_error,
-                                }
-                                if temporal_norm is not None
-                                else {}
-                            ),
+                        temporal_raw_error = nrmse(refined_sampled, physical_sampled)
+                        temporal_image_error = temporal_norm(
+                            refined_sampled - physical_sampled,
+                            acq,
+                            matrix,
+                            reference,
+                            coarse=physical_sampled,
+                        )
+                        temporal_error = max(temporal_raw_error, temporal_image_error)
+                        temporal_history.append(
+                            {
+                                **base_steps,
+                                "nrmse": temporal_error,
+                                "raw_nrmse": temporal_raw_error,
+                                "image_nrmse": temporal_image_error,
+                            }
+                        )
+                        write_json(
+                            workspace / "progress.json",
+                            {
+                                "spatial_refinement": history,
+                                "temporal_refinement": temporal_history,
+                                "current_samples": samples,
+                                "cache_hits": replay.hits,
+                            },
+                        )
+                        if temporal_error <= 0.01:
+                            break
+                        halvings = round(
+                            float(
+                                np.log2(0.001 / temporal_scale / base_steps["step_s"])
+                            )
+                        )
+                        # The comparison just made used halving `halvings + 1`;
+                        # stop there, as the phase oracle does.
+                        if halvings + 1 >= MAX_TEMPORAL_HALVINGS:
+                            # Grading has no time limit, so a replay that never
+                            # converges must stop at a declared timestep cap.
+                            report.update(
+                                status="numerically_unresolved",
+                                numerically_converged=False,
+                                failure_kind="unresolved_at_timestep_cap",
+                                reason=(
+                                    "Temporal NRMSE stayed above 0.01 after "
+                                    f"{MAX_TEMPORAL_HALVINGS} timestep halvings"
+                                ),
+                                temporal_refinement=temporal_history,
+                                progress_checkpoint=str(workspace / "progress.json"),
+                            )
+                            return report
+                        base_steps = {
+                            name: step / 2 for name, step in base_steps.items()
                         }
+                        physical_sampled = refined_sampled
+                        ideal_sampled = (
+                            replay(acq, spins, **base_steps)
+                            if effects or chemical_shift
+                            else physical_sampled
+                        )
+                # A control variate, not substituted dynamics: only the known Fourier
+                # sampling error is removed. All finite-RF/coherence residuals survive.
+                if controls:
+                    ideal_control, physical_control = controls
+                    if pending:
+                        ideal_sampled_control, physical_sampled_control = pending[
+                            replicate
+                        ].result(
+                            timeout=None
+                            if deadline is None
+                            else max(0, deadline - time.monotonic())
+                        )
+                    else:
+                        ideal_sampled_control = ideal_control.sampled(spins)
+                        physical_sampled_control = (
+                            physical_control.sampled(spins)
+                            if physical_control is not ideal_control
+                            else ideal_sampled_control
+                        )
+                    ideal_raw = corrected_raw(
+                        ideal_sampled, ideal_sampled_control, ideal_control.known
                     )
-                    write_json(
-                        workspace / "progress.json",
-                        {
-                            "spatial_refinement": history,
-                            "temporal_refinement": temporal_history,
-                            "current_samples": samples,
-                            "cache_hits": replay.hits,
-                        },
+                    physical_raw = corrected_raw(
+                        physical_sampled,
+                        physical_sampled_control,
+                        physical_control.known,
                     )
-                    if temporal_error <= 0.01:
-                        break
-                    base_steps = {name: step / 2 for name, step in base_steps.items()}
-                    physical_sampled = refined_sampled
-                    ideal_sampled = (
-                        replay(acq, ideal_spins, **base_steps)
-                        if effects or chemical_shift
-                        else physical_sampled
-                    )
-            # A control variate, not substituted dynamics: only the known Fourier
-            # sampling error is removed. All finite-RF/coherence residuals survive.
-            ideal_raw = reference_raw + ideal_sampled - sampled_reference
-            physical_raw = reference_raw + physical_sampled - sampled_reference
-            koma_ideal_runs.append(ideal_sampled)
-            koma_physical_runs.append(physical_sampled)
-            sampled_reference_runs.append(sampled_reference)
-            ideal_raw_runs.append(ideal_raw)
-            physical_raw_runs.append(physical_raw)
-            ideal_runs.append(reconstructor(ideal_raw, acq, matrix))
-            physical_runs.append(reconstructor(physical_raw, acq, matrix))
-            counts.append(len(spins.positions))
-            # Do not retain the previous multi-million-node sample while the
-            # next independent scramble is generated.
-            del spins, ideal_spins
+                    ideal_control_runs.append(ideal_sampled_control)
+                    physical_control_runs.append(physical_sampled_control)
+                else:
+                    ideal_raw = reference_raw + ideal_sampled - sampled_reference
+                    physical_raw = reference_raw + physical_sampled - sampled_reference
+                    sampled_reference_runs.append(sampled_reference)
+                koma_ideal_runs.append(ideal_sampled)
+                koma_physical_runs.append(physical_sampled)
+                ideal_raw_runs.append(ideal_raw)
+                physical_raw_runs.append(physical_raw)
+                ideal_runs.append(reconstructor(ideal_raw, acq, matrix))
+                physical_runs.append(reconstructor(physical_raw, acq, matrix))
+                counts.append(len(spins.positions))
+                # Do not retain the previous multi-million-node sample while the
+                # next independent scramble is generated.
+                del spins
+        finally:
+            cancelled.set()
+            if pool is not None:
+                pool.shutdown(wait=False, cancel_futures=True)
+            spin_batch = None
         ideal_runs, physical_runs = np.asarray(ideal_runs), np.asarray(physical_runs)
         ideal_metrics, ideal_intervals = image_scores(ideal_runs, reference, support)
         if case_acceptance:
@@ -451,13 +567,6 @@ def evaluate_s1(
                 physical_runs, reference, support
             )
         bounds = list(contract["metrics"])
-        if family(case) == "gre_t1w" and all(
-            m in masks and masks[m].any() for m in ("wm", "gm")
-        ):
-            value, ci = contrast_interval(ideal_runs, masks)
-            ideal_metrics["wm_gm_ratio"] = value
-            ideal_intervals["wm_gm_ratio"] = ci
-            bounds.append({"name": "ideal_wm_gm_ratio", "min": 1.15, "max": None})
         ideal_precise, ideal_errors = score_precision(
             ideal_metrics, ideal_intervals, tolerances
         )
@@ -465,27 +574,11 @@ def evaluate_s1(
             physical_metrics, physical_intervals, tolerances
         )
         ideal_ok, ideal_basis = resolve_decision(
-            bounds,
-            ideal_metrics,
-            ideal_intervals,
-            ideal_precise,
-            "ideal_",
-            ideal_errors,
-            tolerances,
+            bounds, ideal_metrics, ideal_intervals, ideal_precise, "ideal_"
         )
         case_ok, case_basis = resolve_decision(
-            robustness_bounds,
-            physical_metrics,
-            physical_intervals,
-            case_precise,
-            errors=case_errors,
-            tolerances=tolerances,
+            robustness_bounds, physical_metrics, physical_intervals, case_precise
         )
-        if (
-            phase_info is not None
-            and phase_info.get("reference_energy_coverage", 1) < 0.5
-        ):
-            case_ok, case_basis = False, "phase_reference_coverage"
         history.append(
             {
                 "samples": samples,
@@ -513,7 +606,18 @@ def evaluate_s1(
                 else "interval_certified"
             )
             break
-        if stage_limit and samples >= stage_limit:
+        if samples >= max_samples or (stage_limit and samples >= stage_limit):
+            images_path = workspace / "images.npz"
+            atomic_savez_compressed(
+                images_path,
+                reference=reference,
+                case_reference=reference * phasor,
+                ideal=ideal_runs.mean(axis=0),
+                physical=physical_runs.mean(axis=0),
+                ideal_replicates=ideal_runs,
+                physical_replicates=physical_runs,
+            )
+            report["artifacts"]["images"] = str(images_path.resolve())
             report.update(
                 status="numerically_unresolved",
                 numerically_converged=False,
@@ -521,7 +625,7 @@ def evaluate_s1(
                 progress_checkpoint=str(workspace / "progress.json"),
             )
             return report
-        samples *= 2
+        samples = min(samples * 2, max_samples)
     converged = (
         temporal_error <= 0.01
         and case_ok is not None
@@ -544,14 +648,8 @@ def evaluate_s1(
         **{f"ideal_{k}": float(v) for k, v in ideal_metrics.items()},
         **{f"case_{k}": float(v) for k, v in physical_metrics.items()},
         "temporal_nrmse": temporal_error,
-        **(
-            {
-                "temporal_raw_nrmse": temporal_raw_error,
-                "temporal_image_nrmse": temporal_image_error,
-            }
-            if temporal_norm is not None
-            else {}
-        ),
+        "temporal_raw_nrmse": temporal_raw_error,
+        "temporal_image_nrmse": temporal_image_error,
         "case_vs_ideal_image_nrmse": nrmse(np.abs(physical), np.abs(ideal)),
         "case_signal_retention": float(
             np.linalg.norm(physical) / max(np.linalg.norm(ideal), 1e-15)
@@ -594,13 +692,7 @@ def evaluate_s1(
         {
             "name": bound["name"],
             "passed": resolve_decision(
-                [bound],
-                ideal_metrics,
-                ideal_intervals,
-                ideal_precise,
-                "ideal_",
-                ideal_errors,
-                tolerances,
+                [bound], ideal_metrics, ideal_intervals, ideal_precise, "ideal_"
             )[0]
             if temporal_error <= 0.01 and ideal_ok is not None
             else None,
@@ -619,12 +711,7 @@ def evaluate_s1(
         {
             "name": "case_" + bound["name"],
             "passed": resolve_decision(
-                [bound],
-                physical_metrics,
-                physical_intervals,
-                case_precise,
-                errors=case_errors,
-                tolerances=tolerances,
+                [bound], physical_metrics, physical_intervals, case_precise
             )[0]
             if converged
             else None,
@@ -637,17 +724,6 @@ def evaluate_s1(
         }
         for bound in robustness_bounds
     ]
-    if phase_info is not None:
-        report["case_image_checks"].append(
-            {
-                "name": "case_phase_reference_coverage",
-                "passed": phase_info.get("reference_energy_coverage", 1) >= 0.5,
-                "detail": {
-                    "value": phase_info.get("reference_energy_coverage", 1),
-                    "min": 0.5,
-                },
-            }
-        )
     report["image_checks"] = (
         report["case_image_checks"] if case_acceptance else report["ideal_image_checks"]
     )
@@ -686,7 +762,6 @@ def evaluate_s1(
         physical_raw=np.mean(physical_raw_runs, axis=0),
         koma_ideal_raw_replicates=np.asarray(koma_ideal_runs),
         koma_physical_raw_replicates=np.asarray(koma_physical_runs),
-        sampled_reference_raw_replicates=np.asarray(sampled_reference_runs),
         ideal_replicates=ideal_runs,
         physical_replicates=physical_runs,
         temporal_raw_difference=refined_sampled - koma_physical_runs[0],
@@ -694,6 +769,18 @@ def evaluate_s1(
         k_cycles_per_m=acq.k,
         matrix=np.asarray(matrix),
         fov_mm=np.asarray(spec["fov_mm"]),
+        **(
+            {
+                "known_control_raw": controls[1].known,
+                "ideal_known_control_raw": controls[0].known,
+                "sampled_control_raw_replicates": np.asarray(physical_control_runs),
+                "ideal_sampled_control_raw_replicates": np.asarray(ideal_control_runs),
+            }
+            if controls
+            else {
+                "sampled_reference_raw_replicates": np.asarray(sampled_reference_runs)
+            }
+        ),
     )
     write_json(
         workspace / "provenance.json",
@@ -712,13 +799,12 @@ def evaluate_s1(
             "julia_manifest_sha256": hashlib.sha256(
                 (Path(root) / "Manifest.toml").read_bytes()
             ).hexdigest(),
-            "submission_sha256": hashlib.sha256(
-                Path(submission).read_bytes()
-            ).hexdigest(),
+            "submission_sha256": submission_sha256,
             "phantom": case["object"]["phantom"],
             "shapes_sha256": mask_spins.source_sha256,
             "koma_versions": versions(),
-            "spatial_integration": "jittered-grid strata within every labeled anatomical cell, independently jittered per replicate; exact cell volumes and voxel-cell Fourier control variate; full Bloch residual retained",
+            "spatial_integration": "material-stratified native-cell CDF below the cell count, otherwise jittered strata within every cell; independent replicates, exact tissue volumes and Fourier control variate; full Bloch residual retained",
+            "spatial_control_variate": control_description,
             "encoded_integrator": "KomaMRICore.Bloch"
             if encoded_integrator == "bloch"
             else "KomaMRICore.BlochMagnus4",
@@ -734,11 +820,8 @@ def evaluate_s1(
             "dynamic_step_s": [base_steps["step_s"], base_steps["step_s"] / 2],
             "convergence_limits": {
                 "temporal_nrmse": 0.01,
-                **(
-                    {"temporal_raw_nrmse": 0.01, "temporal_image_nrmse": 0.01}
-                    if temporal_norm is not None
-                    else {}
-                ),
+                "temporal_raw_nrmse": 0.01,
+                "temporal_image_nrmse": 0.01,
                 "initial_spatial_budget": max_samples,
             },
             "numerically_converged": converged,

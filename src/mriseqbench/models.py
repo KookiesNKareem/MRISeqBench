@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 Positive = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 Finite = Annotated[float, Field(allow_inf_nan=False)]
+PositiveInt = Annotated[int, Field(gt=0)]
+NonNegative = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Identifier = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")]
 Reference = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*@[1-9][0-9]*$")]
 # Capabilities grouped by sequence programming layer.
@@ -52,14 +54,7 @@ Capability = Literal[
 ]
 Vector = tuple[Finite, Finite] | tuple[Finite, Finite, Finite]
 Extent = tuple[Positive, Positive] | tuple[Positive, Positive, Positive]
-Grid = (
-    tuple[Annotated[int, Field(gt=0)], Annotated[int, Field(gt=0)]]
-    | tuple[
-        Annotated[int, Field(gt=0)],
-        Annotated[int, Field(gt=0)],
-        Annotated[int, Field(gt=0)],
-    ]
-)
+Grid = tuple[PositiveInt, PositiveInt] | tuple[PositiveInt, PositiveInt, PositiveInt]
 
 
 class Strict(BaseModel):
@@ -69,7 +64,7 @@ class Strict(BaseModel):
 class Document(Strict):
     schema_version: Literal[1]
     id: Identifier
-    version: Annotated[int, Field(gt=0)]
+    version: PositiveInt
 
 
 class Timing(Strict):
@@ -89,13 +84,12 @@ class Timing(Strict):
 
 
 class ReadoutSpec(Strict):
-    shots: Annotated[int, Field(gt=0)] | None = None
-    echo_train_length: Annotated[int, Field(gt=0)] | None = None
-    interleaves: Annotated[int, Field(gt=0)] | None = None
-    spokes: Annotated[int, Field(gt=0)] | None = None
-    bandwidth_hz_per_pixel: Positive | None = None
+    shots: PositiveInt | None = None
+    echo_train_length: PositiveInt | None = None
+    interleaves: PositiveInt | None = None
+    spokes: PositiveInt | None = None
     turns: Positive | None = None
-    blade_width_lines: Annotated[int, Field(gt=0)] | None = None
+    blade_width_lines: PositiveInt | None = None
     echo_spacing_ms: Positive | None = None
     center_out: StrictBool | None = None
 
@@ -104,7 +98,6 @@ class SamplingSpec(Strict):
     acceleration: Annotated[float, Field(ge=1)] | None = None
     partial_fourier_fraction: Annotated[float, Field(gt=0.5, le=1)] | None = None
     calibration_lines: Annotated[int, Field(ge=0)] | None = None
-    multiband_factor: Annotated[int, Field(gt=0)] | None = None
     mask_seed: Annotated[int, Field(ge=0)] | None = None
     pattern: (
         Literal[
@@ -121,18 +114,17 @@ class SamplingSpec(Strict):
 
 
 class TemporalSpec(Strict):
-    frames: Annotated[int, Field(gt=0)]
-    frame_duration_ms: Positive
-    ordering: Literal["sequential", "interleaved", "golden_angle"]
-    view_sharing_window: Annotated[int, Field(gt=0)] | None = None
-    center_fraction: Annotated[float, Field(gt=0, le=1)] | None = None
+    frames: PositiveInt
+    segments_per_frame: PositiveInt = 1
     trigger_source: Literal["ecg"] | None = None
     rr_interval_ms: Positive | None = None
-    trigger_delay_ms: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None = None
+    trigger_delay_ms: NonNegative | None = None
     acquisition_window_ms: Positive | None = None
 
     @model_validator(mode="after")
     def cardiac_window(self):
+        if self.segments_per_frame > 1 and self.trigger_source != "ecg":
+            raise ValueError("Segmented cardiac frames require ECG triggering")
         cardiac = (
             self.trigger_source,
             self.rr_interval_ms,
@@ -155,29 +147,10 @@ class ApplicationSpec(Strict):
     inversion_time_ms: Positive | None = None
     inversion_times_ms: list[Positive] = Field(default_factory=list)
     preparation_duration_ms: Positive | None = None
-    preparation_durations_ms: list[
-        Annotated[float, Field(ge=0, allow_inf_nan=False)]
-    ] = Field(default_factory=list)
-    saturation_offset_hz: Finite | None = None
-    diffusion_b_s_per_mm2: Annotated[float, Field(ge=0)] | None = None
-    labeling_duration_ms: Positive | None = None
-    post_label_delay_ms: Positive | None = None
-    flip_angle_schedule_deg: list[Annotated[float, Field(gt=0, le=180)]] = Field(
-        default_factory=list
-    )
-    tr_schedule_ms: list[Positive] = Field(default_factory=list)
-    echo_times_ms: list[Positive] = Field(default_factory=list)
+    preparation_durations_ms: list[NonNegative] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def schedule_lengths(self):
-        if (
-            self.flip_angle_schedule_deg
-            and self.tr_schedule_ms
-            and len(self.flip_angle_schedule_deg) != len(self.tr_schedule_ms)
-        ):
-            raise ValueError("flip angle and TR schedule lengths must match")
-        if any(a >= b for a, b in zip(self.echo_times_ms, self.echo_times_ms[1:])):
-            raise ValueError("echo times must strictly increase")
+    def increasing_preparations(self):
         if any(
             a >= b
             for a, b in zip(
@@ -218,7 +191,7 @@ class Submission(Strict):
 
 class Task(Document):
     schema_version: Literal[1] = 1
-    version: Annotated[int, Field(gt=0)] = 1
+    version: PositiveInt = 1
     objective: Annotated[str, Field(min_length=1)]
     sequence: SequenceSpec
     object: Reference = "cardiac_2d@1"
@@ -230,10 +203,10 @@ class Task(Document):
     def cardiac_application_contract(self):
         if self.id == "rf_excitation_2d" and (
             self.sequence.level != "S4"
-            or self.evaluation != "rf_excitation@2"
+            or self.evaluation != "rf_excitation@3"
             or self.object != "uniform_disc@1"
             or self.sequence.capabilities != ["rf_excitation_2d"]
-            or self.sequence.matrix != (64, 64)
+            or self.sequence.matrix != (128, 128)
             or self.sequence.fov_mm != (200, 200)
             or any(
                 value is not None
@@ -560,6 +533,8 @@ class Evaluation(Document):
     image_precision: ImagePrecision | None = None
     temporal_refinement: Literal[0, 1] | None = None
     case_image_criteria: dict[Literal["static"], CaseImageCriteria] | None = None
+    # Optional per-task (family) overrides of the static case image criteria.
+    family_image_criteria: dict[str, CaseImageCriteria] | None = None
     preparation_effect_fraction_min: Annotated[float, Field(gt=0, le=1)] | None = None
     mapping_relative_error_max: Annotated[float, Field(gt=0, lt=1)] | None = None
     mapping_relative_error_precision: Annotated[float, Field(gt=0, lt=1)] | None = None
@@ -578,6 +553,8 @@ class Evaluation(Document):
             raise ValueError(f"{self.id} requires {expected[self.id]}")
         if imaging != (self.case_image_criteria is not None):
             raise ValueError("s1-s4 (only) require static case image criteria")
+        if self.family_image_criteria is not None and not imaging:
+            raise ValueError("family image criteria require s1-s4")
         if not imaging and any(
             value is not None
             for value in (
@@ -638,7 +615,7 @@ class Suite(Document):
 
 class Backend(Strict):
     command: Annotated[list[str], Field(min_length=1)]
-    timeout_s: Positive = 300
+    timeout_s: Positive | None = None
 
 
 class SandboxConfig(Strict):
@@ -651,18 +628,23 @@ class SandboxConfig(Strict):
 
 
 class FeedbackConfig(Strict):
-    max_submission_bytes: Annotated[int, Field(gt=0)] = 16777216
+    max_submission_bytes: PositiveInt = 16777216
     timeout_s: Positive = 300
 
 
 class ApiProxyConfig(Strict):
     provider_endpoint: str | None = None
-    temperature: Annotated[float, Field(ge=0, le=2)] = 0.6
-    top_p: Annotated[float, Field(gt=0, le=1)] = 0.95
+    # None omits the parameter upstream (required for models that reject it,
+    # since routing demands that providers support every sent parameter).
+    temperature: Annotated[float, Field(ge=0, le=2)] | None = 0.6
+    top_p: Annotated[float, Field(gt=0, le=1)] | None = 0.95
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh"] = (
         "medium"
     )
-    max_output_tokens: Annotated[int, Field(gt=0)] = 16384
+    # None sends the endpoint's own maximum (recorded per model in
+    # harness/pi_models.json, which Pi's descriptor states as well): omitting
+    # the field would let the provider apply a smaller default.
+    max_output_tokens: PositiveInt | None = None
     upstream_url: str = "https://openrouter.ai/api/v1"
     key_env: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")] = (
         "OPENROUTER_API_KEY"
@@ -671,10 +653,7 @@ class ApiProxyConfig(Strict):
         default_factory=lambda: ["/chat/completions", "/responses", "/models"]
     )
     timeout_s: Positive = 300
-    max_request_bytes: Annotated[int, Field(gt=0)] = 8388608
-    # Provider-reported USD; model campaigns must set the campaign cap.
-    max_campaign_usd: Annotated[float, Field(gt=0)] | None = None
-    max_trial_usd: Annotated[float, Field(gt=0)] | None = None
+    max_request_bytes: PositiveInt = 8388608
 
     @model_validator(mode="after")
     def safe_upstream(self):
@@ -720,6 +699,9 @@ class Arm(Document):
     pulse_designer: StrictBool = False
     unitful: StrictBool = False
     simulator: Literal["none", "mrzero", "komamripy", "koma"] = "none"
+    # cli: shell tools and ./bin/julia; julia_mcp: Julia only via julia_eval
+    # (pinned aplavin/julia-mcp), with file tools and no shell.
+    tool_interface: Literal["cli", "julia_mcp"] = "cli"
 
     @model_validator(mode="after")
     def consistent_tools(self):
@@ -740,6 +722,10 @@ class Arm(Document):
         }
         if self.simulator not in allowed[self.language]:
             raise ValueError("simulator is incompatible with arm language")
+        if self.tool_interface == "julia_mcp" and (
+            self.language != "julia" or self.unitful
+        ):
+            raise ValueError("julia_mcp requires a Julia arm without Unitful")
         return self
 
 
@@ -750,7 +736,7 @@ class ArmRuntime(Strict):
         None
     )
     probe_timeout_s: Positive = 120
-    simulation_timeout_s: Positive = 300
+    simulation_timeout_s: Positive | None = None
     julia_heap_size_hint_mb: Annotated[int, Field(ge=32)] | None = None
     author_memory_mb: Annotated[int, Field(ge=256)] = 2048
 
@@ -758,6 +744,8 @@ class ArmRuntime(Strict):
 class Concurrency(Strict):
     agents: Annotated[int, Field(ge=1, le=64)] = 1
     graders: Annotated[int, Field(ge=1, le=64)] = 1
+    # Campaign-wide agent simulator executions sharing the selected GPU.
+    simulators: Annotated[int, Field(ge=1, le=64)] = 4
 
 
 class Experiment(Document):
@@ -773,8 +761,6 @@ class Experiment(Document):
     arm: Reference | None = None
     arm_runtime: ArmRuntime | None = None
     concurrency: Concurrency = Field(default_factory=Concurrency)
-    # Fresh attempts allowed after an interrupted attempt that already cost money.
-    retries_after_spend: Annotated[int, Field(ge=0, le=5)] = 1
 
     @model_validator(mode="after")
     def arm_isolation(self):

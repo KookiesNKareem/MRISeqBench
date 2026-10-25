@@ -54,8 +54,19 @@ def normalize_usage(usage):
     }
 
 
+FIELDS = tuple(normalize_usage({}))
+
+
+# Events that end a model response stream (chat [DONE], Responses API).
+TERMINAL_EVENTS = {"response.completed", "response.incomplete", "response.failed"}
+
+
 class UsageCapture:
-    """Inspect JSON/SSE incrementally without buffering the response or saving text."""
+    """Inspect JSON/SSE incrementally without buffering the response or saving text.
+
+    `terminal` records protocol completion: an SSE stream must reach `[DONE]`
+    or a terminal Responses event, and a JSON body must parse as an object.
+    """
 
     limit = 2 * 1024 * 1024
 
@@ -73,9 +84,12 @@ class UsageCapture:
         self.provider_error = False
         self.provider_error_code = None
         self.provider_error_type = None
+        self.terminal = False
+        self.tail = b""  # Terminal markers stay detectable after an overflow.
 
     def payload(self, raw):
         if raw.strip() == b"[DONE]":
+            self.terminal = True
             return
         try:
             value = json.loads(raw)
@@ -84,6 +98,8 @@ class UsageCapture:
             return
         if not isinstance(value, dict):
             return
+        if not self.sse or value.get("type") in TERMINAL_EVENTS:
+            self.terminal = True
         # Responses streaming terminal events put counters inside response.
         if isinstance(value.get("response"), dict):
             value = value["response"]
@@ -124,6 +140,7 @@ class UsageCapture:
         self.data, self.data_size = [], 0
 
     def feed(self, chunk):
+        self.tail = (self.tail + chunk)[-512:]
         if self.overflow:
             return
         self.buffer += chunk
@@ -147,6 +164,10 @@ class UsageCapture:
 
     def finish(self):
         if self.overflow:
+            self.terminal = self.sse and (
+                b"data: [DONE]" in self.tail
+                or any(f'"{e}"'.encode() in self.tail for e in TERMINAL_EVENTS)
+            )
             return
         if self.sse:
             if self.buffer:
@@ -166,12 +187,11 @@ class UsageCapture:
             "provider_error": self.provider_error,
             "provider_error_code": self.provider_error_code,
             "provider_error_type": self.provider_error_type,
+            "protocol_complete": self.terminal,
         }
 
 
-def read_api(path):
-    """Join started/progress/finished journal rows by request id."""
-    requests = {}
+def journal(path):
     path = Path(path)
     if path.exists():
         with path.open() as stream:
@@ -180,17 +200,26 @@ def read_api(path):
                     row = json.loads(line)
                 except ValueError:
                     continue  # A partial journal line cannot manufacture usage.
-                if not isinstance(row, dict) or row.get("route") not in {
-                    "/chat/completions",
-                    "/responses",
-                }:
-                    continue
-                key = row.get("request_id", f"legacy-{len(requests)}")
-                requests.setdefault(key, {}).update(row)
-                requests[key]["request_id"] = key
-                if row.get("event") == "finished":
-                    requests[key]["transport_finished"] = True
+                if isinstance(row, dict):
+                    yield row
+
+
+def read_api(path):
+    """Join started/progress/finished journal rows by request id."""
+    requests = {}
+    for row in journal(path):
+        if row.get("route") not in {"/chat/completions", "/responses"}:
+            continue
+        request = requests.setdefault(row.get("request_id"), {})
+        request.update(row)
+        if row.get("event") == "finished":
+            request["transport_finished"] = True
     return list(requests.values())
+
+
+def read_rejections(path):
+    """Requests the proxy refused before any upstream send (policy/configuration)."""
+    return [row for row in journal(path) if row.get("event") == "rejected"]
 
 
 def usage_complete(row):
@@ -208,10 +237,9 @@ def usage_complete(row):
 def summarize_api(path, *, configured=True):
     """Join started/finished records, retaining interrupted requests in the denominator."""
     rows = read_api(path)
-    fields = tuple(normalize_usage({}))
     observed = {}
     totals = {}
-    for field in fields:
+    for field in FIELDS:
         values = [(row.get("usage") or {}).get(field) for row in rows]
         known = [v for v in values if v is not None]
         observed[field] = (
@@ -220,7 +248,7 @@ def summarize_api(path, *, configured=True):
         totals[field] = observed[field] if len(known) == len(rows) else None
     complete = sum(usage_complete(row) for row in rows)
     if complete != len(rows):
-        totals = dict.fromkeys(fields)
+        totals = dict.fromkeys(FIELDS)
     return {
         "source": "host_api_proxy" if configured else None,
         "status": "not_configured"
@@ -260,7 +288,6 @@ def summarize_trials(directory):
         json.loads(p.read_text()) for p in Path(directory).glob("*/accounting.json")
     ]
     usage = [trial["usage"] for trial in trials if "usage" in trial]
-    fields = tuple(normalize_usage({}))
 
     def total(rows, field):
         values = [row.get(field) for row in rows]
@@ -285,7 +312,7 @@ def summarize_trials(directory):
                 field: total([u["totals"] for u in usage], field)
                 if len(usage) == len(trials)
                 else None
-                for field in fields
+                for field in FIELDS
             },
             "observed_totals": {
                 field: sum(values)
@@ -297,7 +324,7 @@ def summarize_trials(directory):
                     ]
                 )
                 else None
-                for field in fields
+                for field in FIELDS
             },
         },
     }

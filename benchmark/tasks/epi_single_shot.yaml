@@ -1,13 +1,21 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: epi_single_shot
-objective: Acquire a complete 32 x 32 Cartesian image in one excitation using an alternating-polarity
-  EPI readout.
+version: 2
+objective: Acquire a 128 x 128 single-shot EPI image with nominal acceleration three.
+  Retain zero-based ky indices 1, 4, ..., 127 (43 lines total). Use exactly one acquiring
+  excitation; preparation RF such as spoiled fat saturation is allowed only before it.
+  Use alternating readout polarity and monotonic ky order. Standard SENSE reconstruction uses the fixed,
+  known receive maps; no calibration lines are required.
 object: cardiac_2d@1
 sequence:
   level: S2
-  capabilities: [epi, cartesian]
-  matrix: [32, 32]
+  capabilities: [epi, cartesian, undersampling, sense]
+  matrix: [128, 128]
   fov_mm: [200, 200]
-  te_ms: {target: 30, tolerance: 3}
+  te_ms: {max: 120}
   duration_s: 1
-evaluation: s2@4
+  sampling:
+    acceleration: 3
+    calibration_lines: 0
+    pattern: uniform
+evaluation: s2@5

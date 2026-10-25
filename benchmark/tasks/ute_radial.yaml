@@ -1,16 +1,18 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 id: ute_radial
-objective: Acquire 48 center-out radial spokes using a nonselective short excitation. Achieve
-  TE 0.5 ms while respecting RF and ADC dead times.
+version: 2
+objective: Acquire 404 center-out radial spokes uniformly spaced over 360 degrees, one per excitation,
+  using a nonselective short excitation with no gradient during RF. Achieve TE
+  0.9 ms while respecting RF and ADC dead times.
 object: cardiac_2d@1
 sequence:
   level: S2
   capabilities: [spoiled_gre, ute, radial]
-  matrix: [32, 32]
+  matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 6
-  te_ms: {target: 0.5, tolerance: 0.05}
+  te_ms: {target: 0.9, tolerance: 0.09}
   readout:
-    spokes: 48
+    spokes: 404
     center_out: true
-evaluation: s2@4
+evaluation: s2@5

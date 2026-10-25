@@ -1,15 +1,15 @@
 import argparse
-import math
 import signal
 import sys
 from pathlib import Path
 
 from .catalog import Catalog, load_yaml
-from .evaluation import evaluate
-from .harness.prepare import prompt
+from .evaluation import evaluate, normalize_verdict
+from .harness.arm_runtime import DockerUnavailable
+from .harness.prepare import pi_model, prompt
 from .harness.runner import CampaignStop, run
 from .io import write_json
-from .models import MODELS, SEQUENCE_CATEGORIES, Backend, Experiment
+from .models import MODELS, Backend, Experiment
 
 
 def parser():
@@ -23,9 +23,6 @@ def parser():
     commands = p.add_subparsers(dest="command", required=True)
     commands.add_parser("validate", help="validate every manifest and reference")
     commands.add_parser("arms", help="list versioned authoring/simulator arms")
-    commands.add_parser(
-        "axes", help="show sequence capabilities, cardiac anatomy and hardware profiles"
-    )
     schema = commands.add_parser(
         "schema", help="write JSON schemas for editor completion"
     )
@@ -37,13 +34,6 @@ def parser():
     )
     describe.add_argument("task")
     describe.add_argument("--hardware", help="override the task's hardware reference")
-    materialization = commands.add_parser(
-        "materialize", help="build a KomaMRI phantom and companion fields"
-    )
-    materialization.add_argument("--case", required=True)
-    materialization.add_argument("--out", type=Path, required=True)
-    materialization.add_argument("--seed", type=int, default=42)
-    materialization.add_argument("--timeout-s", type=float, default=600)
     evaluation = commands.add_parser(
         "evaluate", help="evaluate a submission independently of an agent"
     )
@@ -60,13 +50,6 @@ def parser():
         help="run or resume an experiment campaign (rerun the same --out to resume)",
     )
     running.add_argument("--experiment", type=Path, required=True)
-    running.add_argument("--arm", help="override the experiment's arm reference")
-    running.add_argument(
-        "--author-image", help="local Docker authoring image (required with --arm)"
-    )
-    running.add_argument(
-        "--simulator-image", help="local fixed-adapter simulator image"
-    )
     running.add_argument(
         "--out",
         type=Path,
@@ -92,37 +75,18 @@ def main(argv=None):
         if args.command == "arms":
             for arm in catalog.documents["arms"].values():
                 print(
-                    f"{arm.id}@{arm.version}: {arm.authoring}; PulseDesigner={arm.pulse_designer}; Unitful={arm.unitful}; simulator={arm.simulator}"
-                )
-            return 0
-        if args.command == "axes":
-            for level, capabilities in SEQUENCE_CATEGORIES.items():
-                active = {
-                    capability
-                    for task in catalog.documents["tasks"].values()
-                    if task.sequence.level == level
-                    for capability in task.sequence.capabilities
-                }
-                visible = [
-                    capability for capability in capabilities if capability in active
-                ]
-                print(f"{level}: {', '.join(visible)}")
-            print("\nCARDIAC ANATOMY (no motion)")
-            for ref in ("cardiac_2d", "cardiac_3d"):
-                doc = catalog.get("objects", ref)
-                print(f"{doc.id}@{doc.version}: {doc.description}")
-            print(
-                "Scanner-strength-specific cardiac T1/T2; static off-resonance and fat chemical shift follow the scanner field."
-            )
-            print("\nHARDWARE (per-axis gradient limits)")
-            for hw in catalog.documents["hardware"].values():
-                print(
-                    f"{hw.id}@{hw.version}: {hw.field_strength_T:g} T, "
-                    f"{hw.max_gradient_mT_per_m:g} mT/m, "
-                    f"{hw.max_slew_T_per_m_per_s:g} T/m/s"
+                    f"{arm.id}@{arm.version}: {arm.authoring}; PulseDesigner={arm.pulse_designer}; Unitful={arm.unitful}; simulator={arm.simulator}; tools={arm.tool_interface}"
                 )
             return 0
         if args.command == "validate":
+            for experiment in catalog.documents["experiments"].values():
+                agent = experiment.agent
+                if (
+                    agent.uses_model
+                    and agent.adapter == "pi"
+                    and "REPLACE_WITH" not in agent.model
+                ):
+                    pi_model(agent.model, experiment.api_proxy)
             print(
                 f"Validated {sum(len(v) for v in catalog.documents.values())} manifests"
             )
@@ -158,22 +122,6 @@ def main(argv=None):
             )
             print(prompt(case))
             return 0
-        if args.command == "materialize":
-            from .phantoms import materialize
-
-            if (
-                not 0 <= args.seed < 2**32
-                or not math.isfinite(args.timeout_s)
-                or args.timeout_s <= 0
-            ):
-                raise ValueError(
-                    "seed must be uint32 and timeout must be finite and positive"
-                )
-            case = catalog.find_case(args.case)
-            case["seed"] = args.seed
-            materialize(case, catalog.root, args.out, args.timeout_s)
-            print(f"KomaMRI phantom: {args.out / 'phantom.phantom'}")
-            return 0
         if args.command == "evaluate":
             backend = (
                 Backend.model_validate(load_yaml(args.backend))
@@ -182,25 +130,15 @@ def main(argv=None):
             )
             case = catalog.find_case(args.case)
             args.out.mkdir(parents=True, exist_ok=False)
-            report = evaluate(args.submission, case, catalog.root, args.out, backend)
+            report = normalize_verdict(
+                evaluate(args.submission, case, catalog.root, args.out, backend), case
+            )
             write_json(args.out / "result.json", report)
             print(
                 f"{report['case_id']}: {report['status']} ({args.out / 'result.json'})"
             )
-            return 0 if report["status"] in ("passed", "smoke_passed") else 1
-        data = load_yaml(args.experiment)
-        if args.arm:
-            selected_arm = catalog.get("arms", args.arm)
-            data["arm"] = f"{selected_arm.id}@{selected_arm.version}"
-        if args.author_image:
-            data["arm_runtime"] = {
-                **(data.get("arm_runtime") or {}),
-                "author_image": args.author_image,
-                "simulator_image": args.simulator_image,
-            }
-        elif args.simulator_image:
-            raise ValueError("--simulator-image requires --author-image")
-        experiment = Experiment.model_validate(data)
+            return 0 if report["status"] == "passed" else 1
+        experiment = Experiment.model_validate(load_yaml(args.experiment))
         # systemd stops with SIGTERM: unwind so in-flight trials record interruption.
         signal.signal(signal.SIGTERM, signal.default_int_handler)
         output, reports, complete = run(
@@ -215,6 +153,10 @@ def main(argv=None):
     except CampaignStop as exc:
         print(f"stopped: {exc}", file=sys.stderr)
         return 3
+    except DockerUnavailable as exc:
+        # Retryable: the systemd unit restarts on 4 (only 2 and 3 are final).
+        print(f"infrastructure unavailable: {exc}", file=sys.stderr)
+        return 4
     except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
