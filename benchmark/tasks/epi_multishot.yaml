@@ -1,11 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T2.2
 id: epi_multishot
 version: 2
 objective: Acquire the complete 128 x 128 Cartesian grid in 16 excitations, interleaving phase-encode
   lines across 16 alternating-polarity EPI shots; within each shot ky steps by 16 lines in one direction.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S2
+  level: T2
   capabilities: [epi, cartesian, multi_shot]
   matrix: [128, 128]
   fov_mm: [200, 200]

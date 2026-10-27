@@ -1,13 +1,14 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.4
 id: adiabatic_inversion
 version: 2
 objective: Acquire an ECG-triggered inversion-prepared bSSFP image using a 10 ms adiabatic
   hyperbolic-secant inversion pulse, robust to ±20% B1 error, and TI 600 ms. Acquire four 32-line segments in the declared cardiac window, repeating the
   preparation before each segment.
-object: cardiac_2d@1
+object: P1@1
 evaluation: s4@3
 sequence:
-  level: S4
+  level: T4
   capabilities: [bssfp, cartesian, adiabatic, inversion, triggering, gating]
   matrix: [128, 128]
   fov_mm: [200, 200]

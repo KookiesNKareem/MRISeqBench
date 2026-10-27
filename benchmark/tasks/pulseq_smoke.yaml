@@ -4,10 +4,10 @@ version: 2
 objective: Produce a Pulseq file with RF and ADC events that obeys the declared timing and hardware
   limits.
 sequence:
-  level: S1
+  level: T1
   capabilities: [cartesian]
   matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 1
-object: cardiac_2d@1
+object: P1@1
 evaluation: pulseq_preflight@3

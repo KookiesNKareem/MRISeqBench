@@ -1,11 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T1.4
 id: bssfp
 version: 2
 objective: Acquire Cartesian bSSFP with 35-degree excitation, alternating 0/180-degree RF phase,
   and balanced gradient moments every TR, including after the final excitation. Use TE 2.5 ms and TR 5 ms.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S1
+  level: T1
   capabilities: [bssfp, cartesian]
   matrix: [128, 128]
   fov_mm: [200, 200]

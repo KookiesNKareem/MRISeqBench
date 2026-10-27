@@ -9,6 +9,7 @@ from .harness.arm_runtime import DockerUnavailable
 from .harness.prepare import pi_model, prompt
 from .harness.runner import CampaignStop, run
 from .io import write_json
+from .labels import SIMULATOR_LABELS, arm_label, case_labels
 from .models import MODELS, Backend, Experiment
 
 
@@ -32,8 +33,10 @@ def parser():
     describe = commands.add_parser(
         "describe", help="render agent instructions from the resolved contract"
     )
-    describe.add_argument("task")
-    describe.add_argument("--hardware", help="override the task's hardware reference")
+    describe.add_argument("task", help="task label (e.g. T2.6) or manifest reference")
+    describe.add_argument(
+        "--hardware", help="hardware label (H1–H3) or manifest reference"
+    )
     evaluation = commands.add_parser(
         "evaluate", help="evaluate a submission independently of an agent"
     )
@@ -75,7 +78,7 @@ def main(argv=None):
         if args.command == "arms":
             for arm in catalog.documents["arms"].values():
                 print(
-                    f"{arm.id}@{arm.version}: {arm.authoring}; PulseDesigner={arm.pulse_designer}; Unitful={arm.unitful}; simulator={arm.simulator}; tools={arm.tool_interface}"
+                    f"{arm_label(arm)} ({arm.id}@{arm.version}): {arm.authoring}; PulseDesigner={arm.pulse_designer}; Unitful={arm.unitful}; simulator={SIMULATOR_LABELS.get(arm.simulator, 'none')} ({arm.simulator}); tools={arm.tool_interface}"
                 )
             return 0
         if args.command == "validate":
@@ -106,7 +109,9 @@ def main(argv=None):
         if args.command == "list":
             cases = catalog.cases(catalog.get("suites", args.suite))
             width = max(len(case["case_id"]) for case in cases) + 2
-            print(f"{'CASE':<{width}}SEQUENCE  EVALUATION")
+            print(
+                f"{'TASK':<8}{'LEVEL':<7}{'HW':<5}{'PHANTOM':<9}{'CASE':<{width}}EVALUATION"
+            )
             for case in cases:
                 evaluator = case["evaluation"]
                 label = (
@@ -114,7 +119,12 @@ def main(argv=None):
                     if evaluator["calibrated"] or evaluator["scope"] == "smoke"
                     else "draft"
                 )
-                print(f"{case['case_id']:<{width}}{case['sequence_level']:<10}{label}")
+                labels = case_labels(case)
+                print(
+                    f"{labels['task'] or 'smoke':<8}{labels['level']:<7}"
+                    f"{labels['hardware']:<5}{labels['phantom'] or 'assay':<9}"
+                    f"{case['case_id']:<{width}}{label}"
+                )
             return 0
         if args.command == "describe":
             case = catalog.resolve(

@@ -113,6 +113,28 @@ def test_resume_regrades_frozen_bytes_and_never_terminalises_paid_retries(
     assert reports[-1]["workspace"].endswith("--r1.retry2")
 
 
+def test_recovery_selection_runs_only_exact_case_repeat_keys(tmp_path):
+    catalog = Catalog(ROOT)
+    experiment = Experiment.model_validate(load_yaml(ROOT / "experiments/smoke.yaml"))
+    case = catalog.cases(catalog.get("suites", experiment.suite))[0]
+    key = case["case_id"] + "--r1"
+    out = tmp_path / "selected"
+    _, reports, complete = run(catalog, experiment, out, repeats=3, selected_keys={key})
+    assert complete and len(reports) == 1 and reports[0]["repeat"] == 1
+    assert len(list(out.glob("*/result.json"))) == 1
+    assert not list(out.glob("*--r0")) and not list(out.glob("*--r2"))
+
+
+def test_recovery_selection_rejects_unknown_or_empty_keys_before_authoring(tmp_path):
+    catalog = Catalog(ROOT)
+    experiment = Experiment.model_validate(load_yaml(ROOT / "experiments/smoke.yaml"))
+    for index, selection in enumerate([set(), {"not-a-case--r0"}]):
+        out = tmp_path / str(index)
+        with pytest.raises(ValueError, match="exact existing case/repeat"):
+            run(catalog, experiment, out, selected_keys=selection)
+        assert not list(out.glob("*/agent"))
+
+
 def attempt(workspace, number, status=None):
     directory = workspace / "control/submissions" / f"attempt-{number:03d}"
     directory.mkdir(parents=True)

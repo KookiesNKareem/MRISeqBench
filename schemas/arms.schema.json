@@ -47,6 +47,9 @@
       "default": "none",
       "enum": [
         "none",
+        "S1",
+        "S2",
+        "S3",
         "mrzero",
         "komamripy",
         "koma"

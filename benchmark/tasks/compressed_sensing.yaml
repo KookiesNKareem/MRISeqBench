@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T3.4
 id: compressed_sensing
 version: 2
 objective: Acquire the prescribed Poisson-disc Cartesian mask at nominal acceleration three, including
@@ -6,9 +7,9 @@ objective: Acquire the prescribed Poisson-disc Cartesian mask at nominal acceler
   24, 29, 34, 36, 39, 41, 44, 47, 49, 52, 55, 57, 60, 61, 62, 63, 64, 65, 66, 67, 69, 72, 74, 77,
   79, 81, 83, 85, 88, 90, 93, 95, 98, 101, 106, 108, 117, 120, 122]. The 43-line budget includes
   calibration. Grading reconstructs with the fixed four-coil L2 CG-SENSE policy, without a sparsity prior.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S3
+  level: T3
   capabilities: [spoiled_gre, cartesian, compressed_sensing, poisson_disc]
   matrix: [128, 128]
   fov_mm: [200, 200]

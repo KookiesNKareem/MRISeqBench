@@ -270,7 +270,7 @@
       "properties": {
         "agents": {
           "default": 1,
-          "maximum": 64,
+          "maximum": 128,
           "minimum": 1,
           "title": "Agents",
           "type": "integer"

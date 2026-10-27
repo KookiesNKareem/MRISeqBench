@@ -1,11 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T1.2
 id: gre_t2star
 version: 2
 objective: Create Cartesian spoiled GRE with a 20-degree flip angle, TE 20 ms and TR 30 ms for T2-star
   weighting.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S1
+  level: T1
   capabilities: [spoiled_gre, cartesian]
   matrix: [128, 128]
   fov_mm: [200, 200]

@@ -6,5 +6,5 @@ language: julia
 authoring: pulseq_julia
 pulse_designer: true
 unitful: false
-simulator: koma
+simulator: S2
 tool_interface: julia_mcp

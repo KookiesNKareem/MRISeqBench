@@ -1,11 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T1.1
 id: gre_t1w
 version: 2
 objective: Create a Cartesian spoiled GRE acquisition for T1-weighted imaging using the declared
   matrix, FOV and timing.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S1
+  level: T1
   capabilities: [spoiled_gre, cartesian]
   matrix: [128, 128]
   fov_mm: [200, 200]

@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=../../schemas/hardware.schema.json
+# H3
 schema_version: 1
 id: high_performance
 version: 1

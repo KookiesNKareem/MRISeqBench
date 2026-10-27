@@ -3,19 +3,25 @@
 Each arm selects the authoring tools and optional agent-side simulator available
 to the agent. The trusted judge and submission allowance are shared.
 
-| Arm | Authoring | PulseDesigner | Unitful | Simulator | Julia tools |
+Simulator modifiers follow the abstract: **S1** = MRzero/Python, **S2** =
+KomaMRI/Julia, and **S3** = KomaMRI through komamripy/Python. No simulator has
+no S modifier. These modifiers describe agent access; the shared judge always
+uses KomaMRI. P/J arm names remain authoring configuration names; the phantom
+label **P1** is a separate axis. Full mapping: [labels](LABELS.md).
+
+| Arm / simulator modifier | Authoring | PulseDesigner | Unitful | Simulator | Julia tools |
 |---|---|:---:|:---:|---|---|
-| `p0_pypulseq@1` | PyPulseq | — | — | None | — |
-| `p1_pypulseq_mrzero@1` | PyPulseq | — | — | MRzero | — |
-| `p2_pypulseq_koma@1` | PyPulseq | — | — | KomaMRI / komamripy | — |
-| `j0_koma_base@1` | KomaMRIBase / KomaMRIFiles | No | No | None | CLI |
-| `j1_pulseq_julia@1` | KomaMRIBase / KomaMRIFiles | Yes | No | None | CLI |
-| `j2_pulseq_julia_unitful@1` | KomaMRIBase / KomaMRIFiles | Yes | Yes | None | CLI |
-| `j3_koma_base_koma@1` | KomaMRIBase / KomaMRIFiles | No | No | KomaMRI | CLI |
-| `j4_pulseq_julia_koma@1` | KomaMRIBase / KomaMRIFiles | Yes | No | KomaMRI | CLI |
-| `j5_pulseq_julia_unitful_koma@1` | KomaMRIBase / KomaMRIFiles | Yes | Yes | KomaMRI | CLI |
-| `j6_koma_base_julia_mcp@1` | KomaMRIBase / KomaMRIFiles | No | No | None | MCP |
-| `j7_pulseq_julia_mcp_koma@1` | KomaMRIBase / KomaMRIFiles | Yes | No | KomaMRI | MCP |
+| P0 (`p0_pypulseq@1`) | PyPulseq | — | — | None | — |
+| P1 S1 (`p1_pypulseq_mrzero@1`) | PyPulseq | — | — | S1 · MRzero | — |
+| P2 S3 (`p2_pypulseq_koma@1`) | PyPulseq | — | — | S3 · KomaMRI / komamripy | — |
+| J0 (`j0_koma_base@1`) | KomaMRIBase / KomaMRIFiles | No | No | None | CLI |
+| J1 (`j1_pulseq_julia@1`) | KomaMRIBase / KomaMRIFiles | Yes | No | None | CLI |
+| J2 (`j2_pulseq_julia_unitful@1`) | KomaMRIBase / KomaMRIFiles | Yes | Yes | None | CLI |
+| J3 S2 (`j3_koma_base_koma@1`) | KomaMRIBase / KomaMRIFiles | No | No | S2 · KomaMRI | CLI |
+| J4 S2 (`j4_pulseq_julia_koma@1`) | KomaMRIBase / KomaMRIFiles | Yes | No | S2 · KomaMRI | CLI |
+| J5 S2 (`j5_pulseq_julia_unitful_koma@1`) | KomaMRIBase / KomaMRIFiles | Yes | Yes | S2 · KomaMRI | CLI |
+| J6 (`j6_koma_base_julia_mcp@1`) | KomaMRIBase / KomaMRIFiles | No | No | None | MCP |
+| J7 S2 (`j7_pulseq_julia_mcp_koma@1`) | KomaMRIBase / KomaMRIFiles | Yes | No | S2 · KomaMRI | MCP |
 
 ```bash
 uv run mriseqbench arms

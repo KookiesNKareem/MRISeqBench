@@ -1,6 +1,6 @@
 [project]
 name = "mriseqbench"
-version = "0.1.0"
+version = "1.0.0"
 description = "Composable MRI sequence tasks and independent submission evaluation"
 requires-python = ">=3.11"
 dependencies = [

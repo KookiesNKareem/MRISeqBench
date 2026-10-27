@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T3.5
 id: variable_density
 version: 2
 objective: Acquire the prescribed variable-density Cartesian mask at nominal acceleration three,
@@ -8,9 +9,9 @@ objective: Acquire the prescribed variable-density Cartesian mask at nominal acc
   includes calibration. Reconstruction uses eight fixed Gaussian receive profiles along y,
   centred at (j + 0.5) FOVy/8 - FOVy/2 for j=0..7, with sigma=FOVy/16 and unit summed squared
   sensitivity, and the standard fixed L2 SENSE policy.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S3
+  level: T3
   capabilities: [spoiled_gre, cartesian, undersampling, variable_density]
   matrix: [128, 128]
   fov_mm: [200, 200]

@@ -3,9 +3,9 @@ schema_version: 1
 id: rf_excitation
 version: 1
 cases:
-- task: rfov_epi@2
-  hardware: [low_field@1, standard_1_5t@1, high_performance@1]
+- task: T3.9@2
+  hardware: [H1@1, H2@1, H3@1]
   physics: [static_b0@1]
-- task: rf_excitation_2d@2
-  hardware: [low_field@1, standard_1_5t@1, high_performance@1]
+- task: T4.5@2
+  hardware: [H1@1, H2@1, H3@1]
   physics: [static_b0@1]

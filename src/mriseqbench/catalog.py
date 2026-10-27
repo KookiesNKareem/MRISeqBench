@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 
+from .labels import catalog_reference
 from .models import MODELS, PhantomDefinition, Physics, Suite, Task
 
 
@@ -85,6 +86,7 @@ class Catalog:
             validate_assets(self.root)
 
     def get(self, kind, ref):
+        ref = catalog_reference(kind, ref)
         # CLI convenience: a bare id selects its latest version.
         entries = self.documents[kind]
         if "@" not in ref:

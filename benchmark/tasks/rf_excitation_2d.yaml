@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.5
 id: rf_excitation_2d
 version: 2
 objective: Excite the upright letters AI in the supplied uniform water disc, matching target.npz
@@ -8,7 +9,7 @@ objective: Excite the upright letters AI in the supplied uniform water disc, mat
 object: uniform_disc@1
 evaluation: rf_excitation@3
 sequence:
-  level: S4
+  level: T4
   capabilities: [rf_excitation_2d]
   matrix: [128, 128]
   fov_mm: [200, 200]

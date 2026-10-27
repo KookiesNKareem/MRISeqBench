@@ -1,11 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T2.6
 id: spiral_gre
 version: 2
 objective: Acquire a 128 x 128 image with 16 uniformly rotated center-out Archimedean spiral interleaves,
   eight turns per interleaf, one interleaf per excitation, and TE 5 ms on every interleaf.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S2
+  level: T2
   capabilities: [spoiled_gre, spiral]
   matrix: [128, 128]
   fov_mm: [200, 200]

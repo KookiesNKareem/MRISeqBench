@@ -48,7 +48,10 @@ class Handler(BaseHTTPRequestHandler):
         temporary.rename(request)
         deadline = (
             float("inf")
-            if target == "simulate" or (target == "feedback" and route == "submit")
+            # The controller owns author/API lifetime, including excluded
+            # admission and provider waits. Do not impose a second wall clock.
+            if target in {"api", "simulate"}
+            or (target == "feedback" and route == "submit")
             else time.monotonic() + 1800
         )
         headers_sent = False

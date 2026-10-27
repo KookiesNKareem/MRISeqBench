@@ -4,9 +4,17 @@
       "additionalProperties": false,
       "properties": {
         "task": {
-          "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
-          "title": "Task",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+              "type": "string"
+            },
+            {
+              "pattern": "^T[1-4]\\.[1-9][0-9]*@[1-9][0-9]*$",
+              "type": "string"
+            }
+          ],
+          "title": "Task"
         },
         "objects": {
           "anyOf": [
@@ -29,8 +37,16 @@
           "anyOf": [
             {
               "items": {
-                "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  {
+                    "pattern": "^H[1-3]@[1-9][0-9]*$",
+                    "type": "string"
+                  }
+                ]
               },
               "minItems": 1,
               "type": "array"

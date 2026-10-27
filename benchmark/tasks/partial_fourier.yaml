@@ -1,11 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T3.3
 id: partial_fourier
 version: 2
 objective: Create Cartesian spoiled GRE using partial Fourier sampling. Retain the contiguous upper
   96 zero-based ky indices, 32 through 127 (ky = -32/FOV to +63/FOV), including the center.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S3
+  level: T3
   capabilities: [spoiled_gre, cartesian, partial_fourier]
   matrix: [128, 128]
   fov_mm: [200, 200]

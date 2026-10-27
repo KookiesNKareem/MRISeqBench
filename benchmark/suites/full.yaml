@@ -3,184 +3,184 @@ schema_version: 1
 id: full
 version: 1
 cases:
-- task: rfov_epi@2
-  hardware: [low_field@1, standard_1_5t@1, high_performance@1]
+- task: T3.9@2
+  hardware: [H1@1, H2@1, H3@1]
   physics: [static_b0@1]
-- task: rf_excitation_2d@2
-  hardware: [low_field@1, standard_1_5t@1, high_performance@1]
+- task: T4.5@2
+  hardware: [H1@1, H2@1, H3@1]
   physics: [static_b0@1]
-- task: adiabatic_inversion@2
+- task: T4.4@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: bssfp@2
+- task: T1.4@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: caipirinha@2
+- task: T3.7@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0_3d@1
-- task: compressed_sensing@2
+- task: T3.4@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: elliptical_kspace@2
+- task: T3.6@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0_3d@1
-- task: epi_multishot@2
+- task: T2.2@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: epi_single_shot@2
+- task: T2.1@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: grappa_sampling@2
+- task: T3.2@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: grase@2
+- task: T2.4@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: gre_t1w@2
+- task: T1.1@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: gre_t2star@2
+- task: T1.2@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: partial_fourier@2
+- task: T3.3@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: propeller_tse@2
+- task: T2.7@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: radial_readout@2
+- task: T2.5@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: reduced_fov@2
+- task: T3.8@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: sense_sampling@2
+- task: T3.1@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: spin_echo_t2w@2
+- task: T1.3@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: spiral_gre@2
+- task: T2.6@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: stack_of_stars@2
+- task: T2.8@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0_3d@1
-- task: t1_mapping@2
+- task: T4.1@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: t2_mapping@2
+- task: T4.2@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: t2_prepared@2
+- task: T4.3@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: tse_t2w@2
+- task: T2.3@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: ute_radial@2
+- task: T2.9@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1
-- task: variable_density@2
+- task: T3.5@2
   hardware:
-  - low_field@1
-  - standard_1_5t@1
-  - high_performance@1
+  - H1@1
+  - H2@1
+  - H3@1
   physics:
   - static_b0@1

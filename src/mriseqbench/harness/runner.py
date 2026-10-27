@@ -52,6 +52,8 @@ from .prepare import pi_model, prepare, prepare_pi
 from .proxy import ApiProxy
 from .sandbox import environment, launch
 
+REMOTE_AUTHORS = None  # Initialized only by an explicitly configured fleet launcher.
+
 
 class ModelAPIError(RuntimeError):
     """Inference infrastructure failed before a candidate could be scored."""
@@ -356,7 +358,9 @@ def _run_one(
             # when setup/agent execution raises instead of returning normally.
             stack.callback(proxy.revoke)
         launcher = (
-            launch_arm(runtime, command, agent_dir, workspace / "control", env)
+            (REMOTE_AUTHORS.launch if REMOTE_AUTHORS is not None else launch_arm)(
+                runtime, command, agent_dir, workspace / "control", env
+            )
             if arm
             else launch(
                 experiment.agent.sandbox,
@@ -488,6 +492,25 @@ def _run_one(
         server.closed.set()
         final = server.submitted.is_set()
         if proxy and not final:
+            last_assistant = None
+            for line in (workspace / "agent.stdout.log").open():
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if (
+                    event.get("type") == "message_end"
+                    and event.get("message", {}).get("role") == "assistant"
+                ):
+                    last_assistant = event["message"]
+            if last_assistant and last_assistant.get("stopReason") == "error":
+                raise ModelAPIError(
+                    "Author session ended with an inference/transport error; trial remains unscored; see agent stdout"
+                )
+            if proxy.exhausted == "context_budget":
+                raise ModelAPIError(
+                    "Local context budget guard rejected the request; trial remains unscored; see api.jsonl"
+                )
             # Pi exits 0 after refused requests; never score that as the agent's.
             if refusal := proxy_refusal(workspace / "api.jsonl"):
                 raise ProxyRejected(refusal)
@@ -754,7 +777,9 @@ def regrade(
     return finalize(workspace, experiment, report)
 
 
-def run(catalog, experiment, output=None, *, cases="*", repeats=None):
+def run(
+    catalog, experiment, output=None, *, cases="*", repeats=None, selected_keys=None
+):
     """Launch or resume a campaign; returns (output, reports, complete)."""
     started, started_at = time.monotonic(), utc_now()
     if experiment.agent.uses_model:
@@ -819,6 +844,18 @@ def run(catalog, experiment, output=None, *, cases="*", repeats=None):
         if fnmatch.fnmatch(case["case_id"], cases)
         for repeat in range(experiment.repeats if repeats is None else repeats)
     ]
+    if selected_keys is not None:
+        requested = set(selected_keys)
+        available = {case["case_id"] + "--r" + str(repeat) for case, repeat in selected}
+        if not requested or requested - available:
+            raise ValueError(
+                "recovery selection must contain only exact existing case/repeat keys"
+            )
+        selected = [
+            (case, repeat)
+            for case, repeat in selected
+            if case["case_id"] + "--r" + str(repeat) in requested
+        ]
     if not selected:
         raise ValueError(f"no suite case matches {cases!r}")
     lock, stop, abort = threading.Lock(), threading.Event(), threading.Event()

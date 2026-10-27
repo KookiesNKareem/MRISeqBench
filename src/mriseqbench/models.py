@@ -3,7 +3,16 @@
 import itertools
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictBool,
+    model_validator,
+)
+
+from .labels import LEVEL_LABELS, SIMULATOR_LABELS, catalog_reference
 
 Positive = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 Finite = Annotated[float, Field(allow_inf_nan=False)]
@@ -11,6 +20,60 @@ PositiveInt = Annotated[int, Field(gt=0)]
 NonNegative = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Identifier = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")]
 Reference = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*@[1-9][0-9]*$")]
+TaskReference = Annotated[
+    Reference,
+    BeforeValidator(
+        lambda value: catalog_reference("tasks", value),
+        json_schema_input_type=Reference
+        | Annotated[str, Field(pattern=r"^T[1-4]\.[1-9][0-9]*@[1-9][0-9]*$")],
+    ),
+]
+HardwareReference = Annotated[
+    Reference,
+    BeforeValidator(
+        lambda value: catalog_reference("hardware", value),
+        json_schema_input_type=Reference
+        | Annotated[str, Field(pattern=r"^H[1-3]@[1-9][0-9]*$")],
+    ),
+]
+ObjectReference = Annotated[
+    Reference,
+    BeforeValidator(
+        lambda value, info: catalog_reference(
+            "objects",
+            value,
+            dimensions=len(info.data["sequence"].matrix)
+            if "sequence" in info.data
+            else 2,
+        ),
+        json_schema_input_type=Reference
+        | Annotated[str, Field(pattern=r"^P1@[1-9][0-9]*$")],
+    ),
+]
+SequenceLevel = Annotated[
+    Literal["S1", "S2", "S3", "S4"],
+    BeforeValidator(
+        lambda value: (
+            {label: key for key, label in LEVEL_LABELS.items()}.get(value, value)
+            if isinstance(value, str)
+            else value
+        ),
+        json_schema_input_type=Literal["T1", "T2", "T3", "T4", "S1", "S2", "S3", "S4"],
+    ),
+]
+Simulator = Annotated[
+    Literal["none", "mrzero", "komamripy", "koma"],
+    BeforeValidator(
+        lambda value: (
+            {label: key for key, label in SIMULATOR_LABELS.items()}.get(value, value)
+            if isinstance(value, str)
+            else value
+        ),
+        json_schema_input_type=Literal[
+            "none", "S1", "S2", "S3", "mrzero", "komamripy", "koma"
+        ],
+    ),
+]
 # Capabilities grouped by sequence programming layer.
 SEQUENCE_CATEGORIES = {
     "S1": ("spoiled_gre", "spin_echo", "bssfp", "cartesian"),
@@ -162,7 +225,7 @@ class ApplicationSpec(Strict):
 
 
 class SequenceSpec(Strict):
-    level: Literal["S1", "S2", "S3", "S4"]
+    level: SequenceLevel
     capabilities: Annotated[list[Capability], Field(min_length=1)]
     matrix: Grid
     fov_mm: Extent
@@ -194,8 +257,8 @@ class Task(Document):
     version: PositiveInt = 1
     objective: Annotated[str, Field(min_length=1)]
     sequence: SequenceSpec
-    object: Reference = "cardiac_2d@1"
-    hardware: Reference = "high_performance@1"
+    object: ObjectReference = "cardiac_2d@1"
+    hardware: HardwareReference = "high_performance@1"
     evaluation: Reference
     submission: Submission = Field(default_factory=Submission)
 
@@ -603,9 +666,9 @@ class Evaluation(Document):
 
 
 class SuiteEntry(Strict):
-    task: Reference
+    task: TaskReference
     objects: Annotated[list[Reference], Field(min_length=1)] | None = None
-    hardware: Annotated[list[Reference], Field(min_length=1)] | None = None
+    hardware: Annotated[list[HardwareReference], Field(min_length=1)] | None = None
     physics: Annotated[list[Reference], Field(min_length=1)]
 
 
@@ -698,7 +761,7 @@ class Arm(Document):
     authoring: Literal["pypulseq", "koma_base", "pulseq_julia"]
     pulse_designer: StrictBool = False
     unitful: StrictBool = False
-    simulator: Literal["none", "mrzero", "komamripy", "koma"] = "none"
+    simulator: Simulator = "none"
     # cli: shell tools and ./bin/julia; julia_mcp: Julia only via julia_eval
     # (pinned aplavin/julia-mcp), with file tools and no shell.
     tool_interface: Literal["cli", "julia_mcp"] = "cli"
@@ -742,7 +805,7 @@ class ArmRuntime(Strict):
 
 
 class Concurrency(Strict):
-    agents: Annotated[int, Field(ge=1, le=64)] = 1
+    agents: Annotated[int, Field(ge=1, le=128)] = 1
     graders: Annotated[int, Field(ge=1, le=64)] = 1
     # Campaign-wide agent simulator executions sharing the selected GPU.
     simulators: Annotated[int, Field(ge=1, le=64)] = 4

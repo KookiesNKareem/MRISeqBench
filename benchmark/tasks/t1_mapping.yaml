@@ -1,13 +1,14 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.1
 id: t1_mapping
 version: 2
 objective: Acquire inversion-prepared bSSFP images at TI 100, 400 and 1200 ms, in that order, for
   T1 mapping. Use four 32-line ECG-triggered segments per image, repeat the preparation for each
   segment, and allow three RR intervals between preparations.
-object: cardiac_2d@1
+object: P1@1
 evaluation: s4@3
 sequence:
-  level: S4
+  level: T4
   capabilities: [bssfp, cartesian, inversion, multi_contrast, mapping, triggering, gating]
   matrix: [128, 128]
   fov_mm: [200, 200]

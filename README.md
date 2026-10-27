@@ -11,12 +11,20 @@ Agents submit Pulseq `sequence.seq` files for physical waveform checks and Bloch
 simulation. Imaging tasks use BART reconstruction and image-quality evaluation;
 RF design tasks score spatial magnetization directly.
 
+The first stable source release is **v1.0.0**. Use `git checkout v1.0.0` after
+cloning to reproduce this benchmark definition. See the [release notes](CHANGELOG.md)
+for scope and compatibility details.
+
 | Difficulty | Focus |
 |---|---|
-| S1 · Basic | GRE, spin echo and bSSFP |
-| S2 · Readout | EPI, non-Cartesian readouts and echo trains |
-| S3 · Sampling | Parallel imaging, partial Fourier, undersampling and 2D RF reduced-FOV EPI |
-| S4 · RF design and applications | 2D excitation of AI; ECG-triggered adiabatic inversion, T2 preparation and T1/T2 mapping with bSSFP readouts |
+| T1 · Basic | GRE, spin echo and bSSFP |
+| T2 · Readout | EPI, non-Cartesian readouts and echo trains |
+| T3 · Sampling | Parallel imaging, partial Fourier, undersampling and 2D RF reduced-FOV EPI |
+| T4 · RF design and applications | 2D excitation of AI; ECG-triggered adiabatic inversion, T2 preparation and T1/T2 mapping with bSSFP readouts |
+
+Repository configuration labels use **T1–T4** for levels and `T<level>.<task>`
+for individual tasks, **H1–H3** for hardware, **S1–S3** for simulators, and **P1** for the
+cardiac phantom. See the complete [label mapping](docs/LABELS.md).
 
 Imaging tasks use static cardiac anatomy with fat and field-dependent T1/T2, fat
 shift and B0 ([cardiac phantom](docs/CARDIAC_PHANTOM.md)); the 2D RF task uses a
@@ -33,7 +41,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 bash runtimes/bart/install.sh  # pinned BART v1.0.00; dependency notes in script
 uv run mriseqbench validate
 uv run mriseqbench list --suite full
-uv run mriseqbench describe spiral_gre
+uv run mriseqbench describe T2.6 --hardware H3
 uv run mriseqbench run --experiment experiments/pi.yaml
 ```
 
@@ -54,7 +62,7 @@ up to three `./bin/submit` evaluations per task. Outcomes are passed or failed
 
 Task definitions: [tasks](benchmark/tasks/) · [suites](benchmark/suites/) ·
 [experiments](experiments/).
-Evaluation: [S1](docs/S1_EVALUATION.md) · [S2](docs/S2_EVALUATION.md) ·
-[S3](docs/S3_EVALUATION.md) · [S4](docs/S4_EVALUATION.md) · [2D RF excitation](docs/RF_EXCITATION_EVALUATION.md).
+Evaluation: [T1](docs/S1_EVALUATION.md) · [T2](docs/S2_EVALUATION.md) ·
+[T3](docs/S3_EVALUATION.md) · [T4](docs/S4_EVALUATION.md) · [2D RF excitation](docs/RF_EXCITATION_EVALUATION.md).
 Runtime: [authoring arms](docs/ARMS.md).
 Run retention, deduplication and checkpoint recovery: [storage](docs/RUN_STORAGE.md).

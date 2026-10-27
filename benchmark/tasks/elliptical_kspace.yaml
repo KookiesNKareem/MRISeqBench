@@ -1,10 +1,11 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T3.6
 id: elliptical_kspace
 version: 2
 objective: Acquire a 128 x 128 x 32 Cartesian volume retaining pairs with ((iy-64)/64)^2 + ((iz-16)/16)^2
   <= 1, including the boundary.
 sequence:
-  level: S3
+  level: T3
   capabilities: [spoiled_gre, cartesian, elliptical_kspace]
   matrix: [128, 128, 32]
   fov_mm: [200, 200, 200]
@@ -14,5 +15,5 @@ sequence:
   flip_angle_deg: 20
   sampling:
     pattern: elliptical
-object: cardiac_3d@1
+object: P1@1
 evaluation: s3@4

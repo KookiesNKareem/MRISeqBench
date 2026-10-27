@@ -6,4 +6,4 @@ language: python
 authoring: pypulseq
 pulse_designer: false
 unitful: false
-simulator: mrzero
+simulator: S1

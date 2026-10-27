@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T3.9
 id: rfov_epi
 version: 2
 objective: Use 2D-selective RF excitation followed by single-shot EPI to image the central 160 x
@@ -7,10 +8,10 @@ objective: Use 2D-selective RF excitation followed by single-shot EPI to image t
   water magnitude at RF end must be at least 0.20, measured by T2-normalizing the first, central and
   last line centers. Maximum exterior / mean interior magnitude at each matching echo must be
   at most 0.10.
-object: cardiac_2d@1
+object: P1@1
 evaluation: s3@4
 sequence:
-  level: S3
+  level: T3
   capabilities: [rf_excitation_2d, epi, cartesian, reduced_fov]
   matrix: [128, 128]
   fov_mm: [200, 200]

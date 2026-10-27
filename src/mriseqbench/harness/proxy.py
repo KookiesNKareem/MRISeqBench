@@ -39,6 +39,7 @@ HOP = {
 class QuietHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
+    request_queue_size = 256
 
     def handle_error(self, request, client_address):
         pass
@@ -82,7 +83,93 @@ def endpoint_max_output_tokens(model):
     return descriptor.get("maxOutputTokens") if isinstance(descriptor, dict) else None
 
 
-def configure_request(payload, model, config, route="/chat/completions"):
+def model_reasoning_config(model, effort):
+    """Some reasoning endpoints expose an on/off switch, not effort levels."""
+    models = json.loads(Path(__file__).with_name("pi_models.json").read_text())
+    if models.get(model or "", {}).get("reasoningEnabledOnly") is True:
+        return {"enabled": True}
+    return {"effort": effort}
+
+
+class ContextBudget:
+    """Conservatively fit output without truncating any input or tool schema.
+
+    No provider-independent exact tokenizer exists here. Initially reserve one
+    token per serialized UTF-8 byte plus message framing. Once usage is known,
+    reuse its prompt count only for an identical input prefix and tool schema,
+    with 25% headroom and a byte bound for every newly appended message.
+    """
+
+    def __init__(self):
+        self.previous = None
+        self.audit = None
+
+    @staticmethod
+    def snapshot(payload, route):
+        inputs = payload.get("input" if route == "/responses" else "messages", [])
+        if not isinstance(inputs, list):
+            inputs = [inputs]
+
+        def encode(value):
+            return json.dumps(
+                value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+
+        fixed = encode(
+            {
+                key: payload[key]
+                for key in ("instructions", "tools", "tool_choice", "response_format")
+                if key in payload
+            }
+        )
+        return route, fixed, tuple(encode(item) for item in inputs)
+
+    def fit(self, payload, model, cap, route):
+        models = json.loads(Path(__file__).with_name("pi_models.json").read_text())
+        context = models.get(model or "", {}).get("contextWindow")
+        self.audit = None
+        if not isinstance(context, int) or context <= 0:
+            return cap
+        route, fixed, items = self.snapshot(payload, route)
+        bound = len(fixed) + sum(len(item) + 256 for item in items)
+        method = "serialized_utf8_bound"
+        if self.previous:
+            old_route, old_fixed, old_items, prompt_tokens = self.previous
+            if (
+                route == old_route
+                and fixed == old_fixed
+                and len(items) >= len(old_items)
+                and items[: len(old_items)] == old_items
+            ):
+                added = items[len(old_items) :]
+                bound = (prompt_tokens * 5 + 3) // 4 + sum(
+                    len(item) + 256 for item in added
+                )
+                method = "provider_prompt_usage_plus_utf8_delta"
+        safety = max(2048, (context + 99) // 100)
+        remaining = context - bound - safety
+        if remaining < 1:
+            raise ValueError("input and tools leave no safe output context budget")
+        fitted = min(cap, remaining)
+        self.audit = {
+            "context_window": context,
+            "configured_output_ceiling": cap,
+            "input_token_upper_estimate": bound,
+            "safety_tokens": safety,
+            "method": method,
+            "effective_output_tokens": fitted,
+        }
+        return fitted
+
+    def observe(self, payload, route, usage):
+        count = (usage or {}).get("input_tokens")
+        if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+            self.previous = (*self.snapshot(payload, route), count)
+
+
+def configure_request(
+    payload, model, config, route="/chat/completions", *, budget=None
+):
     """Host-owned sampling, output cap and caching; client-sent values never pass through."""
     for key in ("temperature", "top_p"):
         value = getattr(config, key)
@@ -95,15 +182,17 @@ def configure_request(payload, model, config, route="/chat/completions"):
     # Always explicit: with the cap omitted OpenRouter applies a provider
     # default (65536 for anthropic/* on 2026-10-23), not the model's maximum.
     cap = config.max_output_tokens or endpoint_max_output_tokens(model)
-    if cap is not None:
-        key = "max_output_tokens" if route == "/responses" else "max_tokens"
-        payload[key] = cap
     if (model or "").startswith("anthropic/"):
         # One automatic 5-minute breakpoint instead of the client's own
         # breakpoints (duplicates, or unapproved 1-hour cache writes).
         payload.pop("top_k", None)
         strip_cache_control(payload)
         payload["cache_control"] = {"type": "ephemeral"}
+    # Fit the same input representation that is sent and later usage-anchored.
+    if cap is not None:
+        cap = (budget or ContextBudget()).fit(payload, model, cap, route)
+        key = "max_output_tokens" if route == "/responses" else "max_tokens"
+        payload[key] = cap
     return payload
 
 
@@ -122,6 +211,7 @@ class ApiProxy:
         self.pause = pause
         self.exhausted = None
         self.model = model
+        self.context_budget = ContextBudget()
         self.stop_when = stop_when
         self.key = test_key if test_key is not None else os.environ.get(config.key_env)
         if not self.key:
@@ -159,6 +249,13 @@ class ApiProxy:
             ]
         for upstream_socket in sockets:
             self.cancel_socket(upstream_socket)
+        self.wake_admission()
+
+    def wake_admission(self):
+        if os.environ.get("MRISEQBENCH_HAIKU_CREDIT_GATE") == "1":
+            from .credit_gate import shared_gate
+
+            shared_gate(self.key).wake()
 
     def record(self, row):
         with self.lock, self.log_path.open("a") as log:
@@ -180,29 +277,122 @@ class ApiProxy:
         with self.idle:
             return self.idle.wait_for(lambda: not self.pending, timeout=timeout)
 
-    def begin(self, request_id, conn, route, effective_request=None):
-        with self.lock:
-            if not self.allowed():
-                return False
-            self.pending[request_id] = {"connection": conn, "socket": None}
+    def begin(self, request_id, conn, route, effective_request=None, connected=None):
+        reservation = None
+        gate = None
+        if (
+            os.environ.get("MRISEQBENCH_HAIKU_CREDIT_GATE") == "1"
+            and route == "/chat/completions"
+        ):
+            from .credit_gate import haiku_reservation, shared_gate
+
+            gate = shared_gate(self.key)
+            reservation = haiku_reservation(effective_request or {})
+            waited = time.monotonic()
             self.record(
                 {
-                    "event": "started",
+                    "event": "admission_wait_started",
                     "request_id": request_id,
-                    "route": route,
-                    "started_at": utc_now(),
-                    "effective_request": effective_request,
+                    "at": utc_now(),
+                    "estimated_reservation_usd": reservation,
+                    "estimate_not_billing": True,
+                    "admission_policy": getattr(gate, "policy", "legacy_balance"),
+                    "prepaid_balance_checked": getattr(gate, "policy", None)
+                    != "provider_feedback",
                 }
             )
-            return True
+            with self.pause() if self.pause else nullcontext():
+                if not gate.acquire(
+                    reservation,
+                    lambda: self.allowed() and (connected is None or connected()),
+                ):
+                    self.record(
+                        {
+                            "event": "admission_cancelled",
+                            "request_id": request_id,
+                            "wait_s": time.monotonic() - waited,
+                            "upstream_sent": False,
+                        }
+                    )
+                    return False
+            self.record(
+                {
+                    "event": "credit_admission",
+                    "request_id": request_id,
+                    "wait_s": time.monotonic() - waited,
+                    "estimated_reservation_usd": reservation,
+                    "estimate_not_billing": True,
+                }
+            )
+        # Never call the shared gate while holding the per-run proxy lock:
+        # FIFO cancellation checks acquire these locks in the other order.
+        can_start = self.allowed() and (connected is None or connected())
+        with self.lock:
+            can_start = can_start and self.allowed()
+            if can_start:
+                self.pending[request_id] = {
+                    "connection": conn,
+                    "socket": None,
+                    "credit_reservation": reservation,
+                    "connected": connected,
+                    "credit_gate": gate,
+                }
+                self.record(
+                    {
+                        "event": "started",
+                        "request_id": request_id,
+                        "route": route,
+                        "started_at": utc_now(),
+                        "effective_request": effective_request,
+                    }
+                )
+        if not can_start and reservation is not None:
+            gate.release(reservation, 0.0)
+        return can_start
 
     def attach_socket(self, request_id, upstream_socket):
         with self.lock:
             self.pending[request_id]["socket"] = upstream_socket
-        active = self.allowed()  # A stop during connection setup counts too.
+            connected = self.pending[request_id].get("connected")
+        active = self.allowed() and (connected is None or connected())
         if not active:
             self.cancel_socket(upstream_socket)
         return active
+
+    def cancel_request(self, request_id):
+        with self.lock:
+            pending = self.pending.get(request_id)
+            upstream_socket = pending.get("socket") if pending else None
+        self.cancel_socket(upstream_socket)
+        self.wake_admission()
+
+    def release_admission(self, request_id, cost):
+        with self.lock:
+            pending = self.pending[request_id]
+            amount = pending.get("credit_reservation")
+            pending["credit_reservation"] = None
+            gate = pending.get("credit_gate")
+        if amount is not None:
+            gate.release(amount, cost)
+
+    def reacquire_admission(self, request_id, effective_request, connected):
+        with self.lock:
+            gate = self.pending[request_id].get("credit_gate")
+        if gate is None:
+            return self.allowed()
+        from .credit_gate import haiku_reservation
+
+        amount = haiku_reservation(effective_request or {})
+        with self.pause() if self.pause else nullcontext():
+            acquired = gate.acquire(
+                amount,
+                lambda: self.allowed() and (connected is None or connected()),
+            )
+        if not acquired:
+            return False
+        with self.lock:
+            self.pending[request_id]["credit_reservation"] = amount
+        return True
 
     @staticmethod
     def cancel_socket(upstream_socket):
@@ -239,6 +429,8 @@ class ApiProxy:
                 return self.reply(code, message)
 
             def reply(self, code, message):
+                if getattr(self, "queued_stream", None) is not None:
+                    return self.queued_stream.error(code, message)
                 body = json.dumps({"error": {"message": message}}).encode()
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json")
@@ -247,6 +439,29 @@ class ApiProxy:
                 self.wfile.write(body)
 
             def forward(self):
+                self.queued_stream = None
+                try:
+                    self._forward()
+                except (OSError, http.client.HTTPException) as exc:
+                    if self.queued_stream is not None:
+                        proxy.record(
+                            {
+                                "event": "transport_error",
+                                "at": utc_now(),
+                                "error": str(exc),
+                            }
+                        )
+                        try:
+                            self.reply(502, "inference transport failed")
+                        except OSError:
+                            pass
+                    else:
+                        raise
+                finally:
+                    if self.queued_stream is not None:
+                        self.queued_stream.close()
+
+            def _forward(self):
                 self.connection.settimeout(proxy.config.timeout_s)
                 token = (
                     self.headers.get("Authorization", "")
@@ -278,6 +493,7 @@ class ApiProxy:
                 except (ValueError, OSError):
                     return self.reply(400, "invalid request body")
                 effective_request = None
+                payload = None
                 if route in ("/chat/completions", "/responses"):
                     try:
                         payload = json.loads(body or b"")
@@ -301,10 +517,31 @@ class ApiProxy:
                             "allow_fallbacks": False,
                             "require_parameters": True,
                         }
-                    configure_request(payload, proxy.model, proxy.config, route)
+                    try:
+                        configure_request(
+                            payload,
+                            proxy.model,
+                            proxy.config,
+                            route,
+                            budget=proxy.context_budget,
+                        )
+                    except ValueError as exc:
+                        proxy.record(
+                            {
+                                "event": "local_budget_rejected",
+                                "route": route,
+                                "at": utc_now(),
+                                "reason": str(exc),
+                                "upstream_sent": False,
+                            }
+                        )
+                        proxy.exhausted = "context_budget"
+                        return self.reply(400, str(exc))
                     payload["session_id"] = proxy.session_id
                     payload.pop("reasoning_effort", None)
-                    payload["reasoning"] = {"effort": proxy.config.reasoning_effort}
+                    payload["reasoning"] = model_reasoning_config(
+                        proxy.model, proxy.config.reasoning_effort
+                    )
                     effective_request = {
                         k: payload[k]
                         for k in (
@@ -325,6 +562,7 @@ class ApiProxy:
                         json.dumps(payload.get("tools", []), sort_keys=True).encode()
                     ).hexdigest()
                     effective_request["response_cache_enabled"] = False
+                    effective_request["context_budget"] = proxy.context_budget.audit
                     effective_request["client_session_header_present"] = bool(
                         self.headers.get("x-session-id")
                     )
@@ -341,8 +579,23 @@ class ApiProxy:
                 )
                 started, status, count = time.monotonic(), None, 0
                 request_id = secrets.token_hex(16)
-                if not proxy.begin(request_id, conn, route, effective_request):
+                if (
+                    os.environ.get("MRISEQBENCH_HAIKU_CREDIT_GATE") == "1"
+                    and route == "/chat/completions"
+                    and payload.get("stream") is True
+                ):
+                    from .queued_stream import QueuedStream
+
+                    self.queued_stream = QueuedStream(
+                        self, lambda: proxy.cancel_request(request_id)
+                    )
+                connected = self.queued_stream.connected if self.queued_stream else None
+                if not proxy.begin(
+                    request_id, conn, route, effective_request, connected
+                ):
                     return self.reply(401, "unknown or expired run token")
+                initial_admission_wait_s = time.monotonic() - started
+                retry_wait_s = 0.0
                 capture = None
                 last_receipt = None
                 temporary_budget = False
@@ -361,7 +614,8 @@ class ApiProxy:
                     headers["Accept-Encoding"] = "identity"
                     headers["X-OpenRouter-Cache"] = "false"
                     headers["x-session-id"] = proxy.session_id
-                    for retry in range(5):
+                    retry = 0
+                    while True:
                         if retry and not proxy.allowed():
                             # Access ended during back-off: never send again.
                             raise OSError("run access ended during provider back-off")
@@ -385,17 +639,34 @@ class ApiProxy:
                             # if this is a permanent error or retries run out.
                             buffered_error = response.read(65536)
                             temporary_budget = in_flight_budget_error(buffered_error)
+                        with proxy.lock:
+                            gate = proxy.pending[request_id].get("credit_gate")
+                        provider_admission = (
+                            getattr(gate, "policy", None) == "provider_feedback"
+                        )
                         if (
                             (status not in RETRY_STATUS and not temporary_budget)
-                            or retry == 4
+                            or (
+                                retry >= 4
+                                and not (temporary_budget and provider_admission)
+                            )
                             or not proxy.allowed()
                         ):
                             break
                         # Transient provider failures back off here instead of
                         # ending the agent's session; the wait is not charged.
                         delay = retry_delay(response, retry, budget=temporary_budget)
+                        if (
+                            gate is not None
+                            and (temporary_budget or status == 429)
+                            and hasattr(gate, "rejected")
+                        ):
+                            gate.rejected(delay)
                         response.read()
                         conn.close()
+                        # A rejected attempt releases its concurrency slot;
+                        # after backoff, the retry joins the shared FIFO again.
+                        proxy.release_admission(request_id, None)
                         proxy.record(
                             {
                                 "event": "upstream_retry",
@@ -410,8 +681,15 @@ class ApiProxy:
                         )
                         # Excluded from the agent clock for the time actually
                         # waited; revoke() ends the wait early.
+                        wait_started = time.monotonic()
                         with proxy.pause() if proxy.pause else nullcontext():
                             proxy.revoked.wait(delay)
+                        if not proxy.reacquire_admission(
+                            request_id, effective_request, connected
+                        ):
+                            raise OSError("run access ended during admission")
+                        retry_wait_s += time.monotonic() - wait_started
+                        retry += 1
                         conn = conn_cls(
                             upstream.hostname,
                             upstream.port,
@@ -421,6 +699,8 @@ class ApiProxy:
                             proxy.pending[request_id].update(
                                 connection=conn, socket=None
                             )
+                    if self.queued_stream is not None:
+                        self.queued_stream.stop_keepalives()
                     capture = UsageCapture(response.getheader("Content-Type", ""))
                     capture.generation_id = response.getheader("X-Generation-Id")
                     response_cache_status = response.getheader(
@@ -432,15 +712,36 @@ class ApiProxy:
                         return self.reply(
                             502, "response caching violates benchmark policy"
                         )
-                    self.send_response(status)
-                    for key, value in response.getheaders():
-                        if key.lower() not in HOP:
-                            self.send_header(key, value)
-                    # Close-delimited HTTP/1.1 preserves SSE without buffering the response.
-                    self.send_header("Connection", "close")
-                    self.end_headers()
+                    if self.queued_stream is None:
+                        self.send_response(status)
+                        for key, value in response.getheaders():
+                            if key.lower() not in HOP:
+                                self.send_header(key, value)
+                        # Close-delimited HTTP/1.1 preserves SSE without buffering.
+                        self.send_header("Connection", "close")
+                        self.end_headers()
                     sent_headers = True
                     self.close_connection = True
+                    if self.queued_stream is not None and status >= 400:
+                        error_body = (
+                            buffered_error
+                            if buffered_error is not None
+                            else response.read()
+                        )
+                        capture.feed(error_body)
+                        count += len(error_body)
+                        framed = True
+                        try:
+                            error = json.loads(error_body).get("error", {})
+                            message = (
+                                error.get("message", str(error))
+                                if isinstance(error, dict)
+                                else str(error)
+                            )
+                        except (ValueError, AttributeError):
+                            message = error_body.decode(errors="replace")
+                        self.queued_stream.error(status, message)
+                        return
                     while True:
                         chunk = (
                             buffered_error
@@ -468,14 +769,17 @@ class ApiProxy:
                             )
                             last_receipt = receipt
                         try:
-                            self.wfile.write(chunk)
-                            self.wfile.flush()
+                            if self.queued_stream is not None:
+                                self.queued_stream.write(chunk)
+                            else:
+                                self.wfile.write(chunk)
+                                self.wfile.flush()
                         except OSError:
                             client_closed = True  # The agent went away.
                             break
                         count += len(chunk)
                 except (OSError, http.client.HTTPException):
-                    if not sent_headers:
+                    if not sent_headers or self.queued_stream is not None:
                         self.reply(502, "upstream request failed")
                     self.close_connection = True
                 finally:
@@ -486,7 +790,22 @@ class ApiProxy:
                     # An incomplete response the host or agent did not cancel
                     # is an upstream truncation (an infrastructure failure).
                     response_complete = framed and bool(capture and capture.terminal)
-                    cancelled = client_closed or proxy.revoked.is_set()
+                    if (
+                        payload is not None
+                        and response_complete
+                        and status is not None
+                        and 200 <= status < 300
+                        and capture
+                        and not capture.provider_error
+                    ):
+                        proxy.context_budget.observe(payload, route, capture.usage)
+                    cancelled = (
+                        client_closed
+                        or proxy.revoked.is_set()
+                        or bool(
+                            self.queued_stream and not self.queued_stream.connected()
+                        )
+                    )
                     proxy.record(
                         {
                             "event": "finished",
@@ -496,6 +815,15 @@ class ApiProxy:
                             "finished_at": utc_now(),
                             "response_bytes": count,
                             "wall_s": round(time.monotonic() - started, 6),
+                            "admission_wait_s": initial_admission_wait_s,
+                            "retry_wait_s": retry_wait_s,
+                            "network_wall_s": max(
+                                0.0,
+                                time.monotonic()
+                                - started
+                                - initial_admission_wait_s
+                                - retry_wait_s,
+                            ),
                             "response_complete": response_complete,
                             "cancelled": cancelled and not response_complete,
                             "response_cache_status": response_cache_status
@@ -507,8 +835,15 @@ class ApiProxy:
                     with proxy.idle:
                         if status == 402 and not temporary_budget:
                             proxy.exhausted = "account"
-                        proxy.pending.pop(request_id, None)
+                        pending = proxy.pending.pop(request_id, None)
                         proxy.idle.notify_all()
+                    if pending and pending.get("credit_reservation") is not None:
+                        pending["credit_gate"].release(
+                            pending["credit_reservation"],
+                            (capture.usage or {}).get("cost_credits")
+                            if capture
+                            else None,
+                        )
 
             do_GET = do_POST = forward
 

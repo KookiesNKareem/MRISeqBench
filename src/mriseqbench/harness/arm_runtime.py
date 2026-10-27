@@ -239,18 +239,34 @@ def infrastructure_failure(isolation, execution):
         return None
     if execution.get("returncode") == 125:
         return "docker could not run the author container (exit 125)"
-    try:
-        docker_output(["info", "--format", "{{.ServerVersion}}"], timeout=30)
-    except (ValueError, DockerUnavailable) as exc:
-        return f"docker daemon unavailable: {exc}"
+    if not isolation.get("remote_host"):
+        try:
+            docker_output(["info", "--format", "{{.ServerVersion}}"], timeout=30)
+        except (ValueError, DockerUnavailable) as exc:
+            return f"docker daemon unavailable: {exc}"
     name = isolation.get("container")
     if not name:
         return None
     try:
-        state = json.loads(
-            docker_output(["inspect", "--format", "{{json .State}}", name], timeout=30)
-        )
-    except (ValueError, DockerUnavailable) as exc:
+        if isolation.get("remote_host"):
+            from .remote_author import remote
+
+            state = json.loads(
+                remote(
+                    isolation["remote_host"],
+                    ["sudo", "docker", "inspect", "--format", "{{json .State}}", name],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                ).stdout
+            )
+        else:
+            state = json.loads(
+                docker_output(
+                    ["inspect", "--format", "{{json .State}}", name], timeout=30
+                )
+            )
+    except (ValueError, DockerUnavailable, OSError, subprocess.SubprocessError) as exc:
         return f"author container lost: {exc}"
     isolation["container_state"] = state
     if state.get("OOMKilled"):

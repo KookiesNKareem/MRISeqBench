@@ -1,13 +1,14 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T3.8
 id: reduced_fov
 version: 2
 objective: Use an inner-volume excitation/refocusing pair to select the central 100 mm phase FOV.
   Acquire even zero-based ky indices with full 128-point readouts and suppress signal outside the selected
   region at the echo, either by y-selective excitation or by a y-selective refocuser whose unrefocused
   signal is removed by in-plane crusher dephasing within each image voxel.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S3
+  level: T3
   capabilities: [spin_echo, cartesian, reduced_fov]
   matrix: [128, 128]
   fov_mm: [200, 200]

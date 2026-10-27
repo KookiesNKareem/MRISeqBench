@@ -1,11 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T2.4
 id: grase
 version: 2
 objective: Acquire a Cartesian GRASE image in 16 shots. Each shot has four spin echoes and two gradient echoes per
   spin echo, with readout polarity alternating across all eight echoes of the shot.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S2
+  level: T2
   capabilities: [spin_echo, grase, epi]
   matrix: [128, 128]
   fov_mm: [200, 200]

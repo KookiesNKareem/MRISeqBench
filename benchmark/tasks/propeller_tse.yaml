@@ -1,11 +1,12 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T2.7
 id: propeller_tse
 version: 2
 objective: Acquire 64 Cartesian PROPELLER blades uniformly rotated over 180 degrees, each containing eight adjacent
   k-space lines acquired with a refocused echo train.
-object: cardiac_2d@1
+object: P1@1
 sequence:
-  level: S2
+  level: T2
   capabilities: [spin_echo, tse, propeller]
   matrix: [128, 128]
   fov_mm: [200, 200]
