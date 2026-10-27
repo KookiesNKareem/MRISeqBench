@@ -1,5 +1,5 @@
 The cardiac anatomy comes from the user-supplied file
-`/Users/kareemfareed/dev/Phantoms/cardiac_10xz_shortaxis_clean.phantom`.
+`cardiac_10xz_shortaxis_clean.phantom`.
 Its exact original bytes are pinned as `cardiac_source.phantom`; `../anatomy.json`
 records its SHA-256 and the hashes of the derived label assets. Evaluation has no
 external filesystem dependency. This is supplied project data; no third-party

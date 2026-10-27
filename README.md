@@ -48,8 +48,8 @@ uv run mriseqbench run --experiment experiments/pi.yaml
 Set `agent.model` and `api_proxy.provider_endpoint`
 in the experiment and provide `OPENROUTER_API_KEY` before running it. Rerunning
 with the same `--out` resumes a campaign; `--cases`/`--repeats` select a canary.
-Campaigns on Ultron run under systemd: [ops](ops/README.md).
-Raw results belong on Ultron; see [run storage](docs/RUN_STORAGE.md).
+For systemd deployment and GPU pools, see [operations](ops/README.md).
+For result retention and recovery, see [run storage](docs/RUN_STORAGE.md).
 
 Grading and agent simulators require CUDA (Float64 Bloch replay, CUDA BART);
 there is no CPU fallback. Select GPUs by UUID with `CUDA_VISIBLE_DEVICES` and

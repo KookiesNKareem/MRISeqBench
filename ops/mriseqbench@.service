@@ -5,11 +5,11 @@ After=mriseqbench-dockerd.service
 
 [Service]
 WorkingDirectory=%h/mriseqbench/src
-# EXPERIMENT, OPENROUTER_API_KEY, CUDA_VISIBLE_DEVICES, MRISEQBENCH_SIMULATOR_GPU, optional RUN_ARGS.
+# EXPERIMENT, RESULTS_DIR, OPENROUTER_API_KEY, CUDA_VISIBLE_DEVICES, MRISEQBENCH_SIMULATOR_GPU, optional RUN_ARGS.
 EnvironmentFile=%h/mriseqbench/campaigns/%i.env
 Environment=DOCKER_HOST=unix://%t/mriseqbench-docker.sock
-# Campaign results live on the results pool (AGENTS.md), not in the checkout.
-ExecStart=%h/mriseqbench/src/.venv/bin/mriseqbench run --experiment ${EXPERIMENT} --out /ssd-pool/kfareed/MRISeqBench-results/campaigns/%i $RUN_ARGS
+# Set RESULTS_DIR to an absolute results directory outside the checkout.
+ExecStart=%h/mriseqbench/src/.venv/bin/mriseqbench run --experiment ${EXPERIMENT} --out ${RESULTS_DIR} $RUN_ARGS
 # Exit 1 = resumable trials remain, 4 = Docker unavailable: retry after a pause.
 # 2 = config error, 3 = provider account empty.
 Restart=on-failure

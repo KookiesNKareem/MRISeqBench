@@ -170,7 +170,7 @@ def dispatch(
             dest = Path(outputs) / p.relative_to(returned / "output")
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(p, dest)
-    # All inputs, arrays and logs are now retained and verified on Ultron.
+    # All inputs, arrays and logs are now retained and verified on the campaign host.
     call(["rm", "-rf", "--", remote])
     (record / "receipt.json").write_text(
         json.dumps(

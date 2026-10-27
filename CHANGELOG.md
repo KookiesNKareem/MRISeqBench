@@ -18,9 +18,7 @@ First tagged source release of MRISeqBench.
   simulation capacity controls, and up to 128 concurrent authors. Transport and
   local context-budget failures remain unscored infrastructure outcomes.
 
-Campaign-specific AWS provisioning, fleet replacement and live-controller
-handoff scripts are excluded. Raw campaign data and operational receipts are not
-release assets; they remain on Ultron.
+Raw campaign data and operational receipts are not release assets.
 
 ### Compatibility and validation scope
 
@@ -33,11 +31,11 @@ Software regression tests and native CUDA controls validate implementation
 behavior. This release does not represent a fresh full reference-qualification
 campaign, a new model benchmark campaign, or scanner/in-vivo validation.
 
-Release validation on Ultron:
+Release validation:
 
 - Full regression suite: 615 passed; 10 opt-in CUDA checks skipped in that run.
 - Final remote-author, infrastructure, resume and native CUDA checks: 80 passed,
   including eight of the opt-in CUDA checks.
 - Full RF-evaluation reader controls: both remaining opt-in CUDA checks passed.
-- All 92 manifests validated; Ruff and diff checks passed; source distribution
+- Catalog manifests validated; Ruff and diff checks passed; source distribution
   and wheel built successfully as version 1.0.0.

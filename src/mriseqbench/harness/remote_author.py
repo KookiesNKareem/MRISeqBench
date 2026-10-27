@@ -212,7 +212,7 @@ class Fleet:
                 host["endpoint"] + ":" + str(workspace) + "/",
             )
             # Rootful cloud Docker uses uid 0 without DAC override capabilities.
-            # Uploaded files retain Ultron's uid, so make only these public
+            # Uploaded files retain the campaign host's uid, so make only these public
             # writable mounts belong to the sandbox's cloud uid.
             remote(
                 host,

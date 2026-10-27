@@ -2,7 +2,7 @@
 """SSH transport for qualified remote GPUs; the scientific worker is unchanged.
 
 Only evaluation inputs/checkpoints go to the scratch host. A fresh SHA-256
-manifest must verify on Ultron before the result is published. Losing the SSH
+manifest must verify on the campaign host before the result is published. Losing the SSH
 input channel kills the remote process group, including Julia/BART children.
 """
 
@@ -209,12 +209,8 @@ def dispatch(host, gpu, argv):
             ]
         )
         environment = {
-            "HOME": "/home/kfareed",
-            "PATH": "/home/kfareed/.juliaup/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin",
-            "JULIA_DEPOT_PATH": "/home/kfareed/.julia",
             "JULIA_PKG_PRECOMPILE_AUTO": "0",
             "JULIA_CUDA_HARD_MEMORY_LIMIT": "8GiB",
-            "MRISEQBENCH_BART": "/home/kfareed/.local/share/mriseqbench-bart-v1.0.00/bart",
             "MRISEQBENCH_KOMA_DEVICE": "cuda",
             "CUDA_VISIBLE_DEVICES": gpu,
             "OPENBLAS_NUM_THREADS": "1",
@@ -285,7 +281,7 @@ def dispatch(host, gpu, argv):
             state["scratch_cleanup"] = "pending"
             state["cleanup_error"] = str(exc)
             print(
-                "Remote scratch cleanup pending; verified outputs are on Ultron",
+                "Remote scratch cleanup pending; verified outputs are on the campaign host",
                 file=sys.stderr,
             )
         receipt.write_text(json.dumps(state, indent=2) + "\n")

@@ -1,6 +1,6 @@
 # Benchmark labels
 
-Repository configuration labels follow the [MRISeqBench Abstract](https://docs.google.com/document/d/1ssPmltYEzQQNVuKCOyroliBeHsXi6e7JOip7OZzillc/edit).
+Repository configuration uses stable labels for tasks, hardware, simulators and phantoms.
 The shared mapping is implemented in [`labels.py`](../src/mriseqbench/labels.py).
 Use these labels in repository configuration, tables, figures and CLI listings. Labels are
 stable: append future tasks within each level instead of renumbering tasks.
@@ -16,7 +16,7 @@ stable: append future tasks within each level instead of renumbering tasks.
 The infrastructure smoke task is unnumbered. T4.5 uses a fixed uniform-disc RF
 assay instead of cardiac anatomy; its phantom label is null (shown as `assay`
 in the CLI). This does not introduce a second numbered benchmark phantom.
-P0/P1/P2 and J0–J7 remain the abstract's authoring arm names; `P1 S1` as an arm
+P0/P1/P2 and J0–J7 remain the authoring arm names; `P1 S1` as an arm
 means PyPulseq with MRzero, independently of phantom P1.
 
 ## Hardware
@@ -41,7 +41,7 @@ See [authoring arms](ARMS.md) for the full configuration table.
 
 ## Tasks
 
-Numbering preserves the abstract's task order, including multi-shot EPI T2.2,
+Task numbering includes multi-shot EPI T2.2,
 spiral GRE T2.6, PROPELLER TSE T2.7 and 2D RF excitation T4.5.
 
 | Label | Manifest ID |

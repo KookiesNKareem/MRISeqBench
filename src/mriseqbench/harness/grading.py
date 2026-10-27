@@ -54,7 +54,7 @@ def grading_slot(slots, stop=None):
 
 def worker_command(mode, case_path, snapshot, root, workspace):
     # MRISEQBENCH_EVALUATION_WORKER names an executable taking the worker's
-    # own arguments, e.g. ops/remote_worker.py, which grades on a GPU host at
+    # own arguments, e.g. ops/local_gpu_worker.py, which grades on a GPU host at
     # identical absolute paths. Preflight (parsing) always stays local.
     remote = os.environ.get("MRISEQBENCH_EVALUATION_WORKER")
     program = (

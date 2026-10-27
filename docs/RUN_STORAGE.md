@@ -2,18 +2,12 @@
 
 ## Location
 
-Figures and plotting source stay on the laptop. Raw transcripts, results, arrays,
-submitted sequences, frozen sources and logs belong on
-`Ultron:/ssd-pool/kfareed/MRISeqBench-results/`; analyse and render there, then
-fetch only figures. `python3 scripts/offload_local_results.py` inventories local
-generated data; `--apply` archives it under `archives/laptop-generated-<UTC>/`,
-verifies every hash and removes the unchanged local copies. The latest receipt is
-`docs/local-storage-receipt.json`.
+Choose a results directory outside the source checkout and pass it with `--out`.
+Keep transcripts, submitted sequences, numerical arrays, logs, configuration and
+frozen source snapshots together so results can be audited and reproduced.
+Render figures from those retained inputs and preserve the plotting source.
 
-Historical reference and qualification outputs, along with the retired 256×256
-prototypes, are archived under
-`Ultron:/ssd-pool/kfareed/MRISeqBench-results/archives/laptop-pruned-20261021/`.
-Current reference authors and qualification commands are documented in
+Reference authors and qualification commands are documented in
 [`benchmark/references/README.md`](../benchmark/references/README.md).
 
 ## Resume

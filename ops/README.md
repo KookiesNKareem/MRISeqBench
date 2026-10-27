@@ -1,9 +1,9 @@
-# Ultron campaigns
+# Campaign operations
 
 A campaign is one `mriseqbench run` process under systemd. Rerunning the same
 `--out` resumes it, so restarts, reboots and crashes need no manual recovery.
-Campaign `<name>` writes its results to
-`/ssd-pool/kfareed/MRISeqBench-results/campaigns/<name>`.
+Set `RESULTS_DIR` to an absolute directory outside the source checkout for each
+campaign. Keep deployment credentials and host inventories outside version control.
 
 ## One-time setup
 
@@ -11,12 +11,9 @@ Campaign `<name>` writes its results to
 git clone <repo> ~/mriseqbench/src && cd ~/mriseqbench/src   # or rsync a checkout
 uv sync --locked && julia --project=. -e 'using Pkg; Pkg.instantiate()'
 bash runtimes/bart/install.sh
-# Arm images and rootless Docker tools live outside the checkout (ext4; /var/tmp
-# has no age-based cleanup on Ultron, and overlay2 does not suit the ZFS SSD).
-ln -s /var/tmp/kfareed-mriseqbench-docker-20261016 ~/mriseqbench/docker-data
-ln -s ~/mriseqbench/julia-alltasks-3x-20261016/infra/rootless-tools ~/mriseqbench/rootless-tools
-mkdir -p ~/.config/systemd/user ~/mriseqbench/campaigns
-mkdir -p /ssd-pool/kfareed/MRISeqBench-results/campaigns
+# Install rootless Docker and its networking dependencies before starting the service.
+# Use a filesystem supported by Docker's overlay2 storage driver.
+mkdir -p ~/mriseqbench/docker-data ~/.config/systemd/user ~/mriseqbench/campaigns
 cp ops/*.service ~/.config/systemd/user/ && systemctl --user daemon-reload
 systemctl --user enable --now mriseqbench-dockerd
 DOCKER_HOST=unix:///run/user/$(id -u)/mriseqbench-docker.sock docker images
@@ -27,15 +24,16 @@ DOCKER_HOST=unix:///run/user/$(id -u)/mriseqbench-docker.sock docker images
 `~/mriseqbench/campaigns/<name>.env` (chmod 600):
 
 ```bash
-EXPERIMENT=experiments/run_gpt6luna_p2_pypulseq_koma.yaml
+EXPERIMENT=experiments/pi_p2_pypulseq_koma.yaml
+RESULTS_DIR=/absolute/path/to/results/my-campaign
 OPENROUTER_API_KEY=...
-# GPU 3 (TITAN RTX) for the grader and the simulator.
-CUDA_VISIBLE_DEVICES=GPU-b67755a7-71f0-087b-9877-422e4b48b818
-MRISEQBENCH_SIMULATOR_GPU=GPU-b67755a7-71f0-087b-9877-422e4b48b818
-# Grader runtime (systemd does not expand $HOME): Julia 1.12.6 first on PATH,
-# the CUDA BART build, CUDA KomaMRI replay.
-PATH=/home/kfareed/.julia/juliaup/julia-1.12.6+0.x64.linux.gnu/bin:/home/kfareed/.local/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin
-MRISEQBENCH_BART=/home/kfareed/.local/share/mriseqbench-bart-v1.0.00/bart
+# Replace GPU-EXAMPLE with a UUID reported by nvidia-smi.
+CUDA_VISIBLE_DEVICES=GPU-EXAMPLE
+MRISEQBENCH_SIMULATOR_GPU=GPU-EXAMPLE
+# Set absolute paths to your pinned Julia installation and CUDA BART build.
+# systemd environment files do not expand $HOME.
+PATH=/absolute/path/to/julia/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin
+MRISEQBENCH_BART=/absolute/path/to/bart
 MRISEQBENCH_KOMA_DEVICE=cuda
 JULIA_CUDA_HARD_MEMORY_LIMIT=8GiB
 JULIA_PKG_PRECOMPILE_AUTO=0
@@ -43,6 +41,9 @@ OPENBLAS_NUM_THREADS=1
 # Canary; leave empty for the full campaign.
 RUN_ARGS=--cases gre_t1w* --repeats 1
 ```
+
+Fill in the experiment template's model and provider endpoint before launching.
+All example paths and GPU UUIDs must be replaced with your installation values.
 
 systemd keeps a trailing `# ...` as part of the value, so comments in this
 file go on their own lines.
@@ -74,13 +75,13 @@ its slots to zero drains existing grades; pending work is assigned to the
 remaining pool. Running evaluations finish on their original device with their
 existing checkpoints, and agent sessions continue without a restart.
 
-For local GPU grading, create a campaign-specific JSON file on Ultron before
-launch, containing UUIDs from `nvidia-smi --query-gpu=index,uuid --format=csv`:
+For local GPU grading, create a campaign configuration file before launch,
+containing UUIDs from `nvidia-smi --query-gpu=index,uuid --format=csv`:
 
 ```json
 [
-  {"uuid": "GPU-c24ca001-f55b-f1a9-bb74-41d0d9087e68", "slots": 2},
-  {"uuid": "GPU-b67755a7-71f0-087b-9877-422e4b48b818", "slots": 1}
+  {"uuid": "GPU-EXAMPLE-SECOND", "slots": 2},
+  {"uuid": "GPU-EXAMPLE", "slots": 1}
 ]
 ```
 
@@ -88,21 +89,21 @@ Add these environment settings before starting a campaign with the updated
 runner and worker:
 
 ```bash
-MRISEQBENCH_EVALUATION_WORKER=/home/kfareed/mriseqbench/src/ops/local_gpu_worker.py
-MRISEQBENCH_GRADING_GPU_CONFIG=/ssd-pool/kfareed/MRISeqBench-results/campaign-support/<name>/grading-gpus.json
+MRISEQBENCH_EVALUATION_WORKER=/absolute/path/to/MRISeqBench/ops/local_gpu_worker.py
+MRISEQBENCH_GRADING_GPU_CONFIG=/absolute/path/to/campaign-config/grading-gpus.json
 ```
 
-The total slots in this file determines grading concurrency. To add GPU 1 while
-the campaign runs, execute on Ultron:
+The total slots in this file determines grading concurrency. To change the GPU
+allocation while the campaign runs, execute on the campaign host:
 
 ```bash
 python3 ops/set_grading_pool.py \
-  --config /ssd-pool/kfareed/MRISeqBench-results/campaign-support/<name>/grading-gpus.json \
-  --gpu 2=2 --gpu 3=1 --gpu 1=1
+  --config /absolute/path/to/campaign-config/grading-gpus.json \
+  --gpu GPU-EXAMPLE=2 --gpu GPU-EXAMPLE-SECOND=1
 ```
 
 Each `--gpu` accepts an index or UUID and a slot count. Supply the complete
-desired pool: omit a device to drain it, or use `--gpu 1=0` to stop new work on
+desired pool: omit a device to drain it, or use `--gpu GPU-EXAMPLE=0` to stop new work on
 that device. Slot counts and their total must be integers from 0 to 64. Qualify
 new hardware using the same CUDA/native and reconstruction controls as the
 existing graders. The command validates device identities and atomically
@@ -136,10 +137,10 @@ actual remote GPU UUID:
   "GPU-remote-uuid": {
     "endpoint": "root@gpu-host.example",
     "port": 22,
-    "key": "/home/kfareed/.ssh/grading-key",
+    "key": "/absolute/path/to/grading-key",
     "root": "/absolute/path/to/frozen/source",
     "gpu_name": "NVIDIA H100 PCIe",
-    "qualified_at": "2026-10-24T23:00:00Z"
+    "qualified_at": "<qualification timestamp>"
   }
 }
 ```
@@ -149,15 +150,17 @@ precision on the host. Run the same native CUDA and BART controls before adding
 its UUID with `--gpu GPU-remote-uuid=4` alongside every retained local device.
 The operator command accepts UUIDs from this qualified registry. Register the
 host before increasing capacity; drain its pool entry before removing the host.
-SSH host keys must already be trusted on Ultron.
+SSH host keys must already be trusted on the campaign host. The remote SSH
+environment must make the pinned Julia executable available on `PATH` and
+provide `MRISEQBENCH_BART` if BART is not in its standard installation location.
+The worker inherits the remote account's home directory and Julia depot.
 
 `remote_gpu_dispatch.py` transfers only grading inputs and checkpoints to
 identical scratch paths, supervises the scientific worker, and kills its whole
 process group if the SSH input channel closes. Downloads go to a staging folder
-on Ultron; every file must match the remote SHA-256 manifest before publishing
-the verdict. Transport failures remain incomplete evaluations. Live Ultron
+on the campaign host; every file must match the remote SHA-256 manifest before
+publishing the verdict. Transport failures remain incomplete evaluations. Live
 worker logs are never overwritten by scratch copies. Verified outputs return to
-Ultron before deleting remote scratch files. Preserve failed transfers for
-recovery; do not treat them as agent failures. Cloud leases also need a verified
-external termination guard and an admission-drain deadline; the legacy RunPod
-CLI's `--terminate-after` flag does not enforce a deadline.
+the campaign host before remote scratch files are deleted. Preserve failed
+transfers for recovery; do not treat them as agent failures. Manage cloud lease
+deadlines independently of job execution and drain admission before retiring a host.
