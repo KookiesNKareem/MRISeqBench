@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../schemas/workflows.schema.json
+id: tse_t2w
+version: 1
+task: tse_t2w@2
+qualification: draft
+initial_patch: {}
+stages:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: parameter
+  request: 'Set tr_ms to {''target'': 1400, ''tolerance'': 40}. Retain the larger
+    FOV and all other requirements.'
+  patch:
+    tr_ms:
+      target: 1400
+      tolerance: 40
+- id: restore_fov
+  request: Restore the original 200 x 200 mm in-plane FOV, while retaining the parameter
+    changes from the preceding turn.
+  patch:
+    fov_mm:
+    - 200
+    - 200

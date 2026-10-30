@@ -290,6 +290,16 @@ def case_evaluation_summary(case):
             "selection gradients, removes later imaging gradients, and excludes submitted ADC phase. "
             "Details: docs/RFOV_EPI_EVALUATION.md."
         )
+    if case["evaluation"]["id"] == "rf_excitation" and case["task"]["sequence"].get(
+        "excitation_target"
+    ):
+        target = case["task"]["sequence"]["excitation_target"]
+        amplitude = target["amplitude"]
+        text = text.replace("Target amplitude 0.5", f"Target amplitude {amplitude:g}")
+        text = text.replace("target>=0.45", f"target>={0.9 * amplitude:g}")
+        text = text.replace("target<=0.005", f"target<={0.01 * amplitude:g}")
+        text = text.replace("divides by 0.5", f"divides by {amplitude:g}")
+        text += f" Workflow target offset in mm: {target['offset_mm']}. target.npz contains the current target."
     if case["evaluation"]["id"] == "s4":
         text += " Details: docs/S4_EVALUATION.md."
     elif case["evaluation"]["id"] == "rf_excitation":
@@ -388,7 +398,10 @@ def prepare_inputs(workspace, case, root, phantom_dir=None):
     if case["evaluation"]["id"] == "rf_excitation":
         from ..evaluation.excitation_target import save_target
 
-        save_target(Path(workspace) / "target.npz")
+        save_target(
+            Path(workspace) / "target.npz",
+            case["task"]["sequence"].get("excitation_target"),
+        )
         assets["target.npz"] = "target.npz"
     if phantom_dir is not None:
         metadata = json.loads((Path(phantom_dir) / "artifacts.json").read_text())
@@ -480,6 +493,11 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
     )
     prepare_inputs(workspace, case, server.root, phantom_dir)
     python = "python3" if arm else sys.executable
+    submission_allowance = (
+        server.max_submissions
+        if experiment.workflow is not None
+        else experiment.max_submissions
+    )
     instructions = prompt(case) + (
         f"\n## Execution\n\nTime budget: {experiment.agent.timeout_s:g} s of agent runtime, excluding submission grading.\n"
         "All other work counts. The harness tracks time automatically.\n"
@@ -536,7 +554,7 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
     instructions += (
         "\n## Submissions\n\n`./bin/lint`: file/timing checks. `./bin/check`: also RF amplitude, gradients and slew.\n"
         "Both are unlimited; neither consumes submissions or scores SAR/images.\n"
-        f"`./bin/submit`: judge `sequence.seq`; up to {experiment.max_submissions} attempts; only the last counts.\n"
+        f"`./bin/submit`: judge `sequence.seq`; up to {submission_allowance} attempts; only the last counts.\n"
         "Wait in the foreground; grading can take minutes. Full responses are saved automatically "
         "under `feedback/` before output is printed; `feedback/latest-submit.json` retains the latest "
         "submission response. Output lists failed sequence, application and image checks with their "
@@ -564,6 +582,20 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
         instructions += "You must run `./bin/submit` before your time expires.\n"
     else:
         instructions += "Submit explicitly, or leave `sequence.seq` and exit successfully for one final evaluation without revision.\n"
+    if experiment.workflow is not None:
+        instructions = instructions.replace("three submissions", "submission attempts")
+        instructions += (
+            "\n## Multi-turn workflow\n"
+            f"This {experiment.workflow.mode} workflow shares the conversation and workspace. Each stage allows {submission_allowance} submissions "
+            f"and {server.stage_timeout_s:g} charged seconds, within the total budget above. "
+            "On stage_passed, finish your response immediately and wait for the next user request. "
+            "On submitted, the entire workflow is finished. A pass does not reset the total time budget. "
+            "The current case.json, task.yaml and EVALUATION.md are refreshed at each user turn. "
+            "Preserve all requirements not explicitly changed.\n"
+        )
+        (workspace / ".workflow_rpc.py").write_text(
+            Path(__file__).with_name("workflow_rpc.py").read_text()
+        )
     (workspace / "PROMPT.md").write_text(instructions)
     write_json(
         workspace / ".harness.json",

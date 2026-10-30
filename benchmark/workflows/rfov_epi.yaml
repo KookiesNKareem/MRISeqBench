@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../schemas/workflows.schema.json
+id: rfov_epi
+version: 1
+task: rfov_epi@2
+qualification: draft
+initial_patch:
+  te_ms:
+    target: 100
+    tolerance: 2
+stages:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: parameter
+  request: 'Set te_ms to {''target'': 120, ''tolerance'': 2}. Retain the larger FOV
+    and all other requirements.'
+  patch:
+    te_ms:
+      target: 120
+      tolerance: 2
+- id: restore_fov
+  request: Restore the original 200 x 200 mm in-plane FOV, while retaining the parameter
+    changes from the preceding turn.
+  patch:
+    fov_mm:
+    - 200
+    - 200

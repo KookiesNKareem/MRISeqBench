@@ -224,7 +224,13 @@ class ApplicationSpec(Strict):
         return self
 
 
+class ExcitationTarget(Strict):
+    amplitude: Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)] = 0.5
+    offset_mm: tuple[Finite, Finite] = (0, 0)
+
+
 class SequenceSpec(Strict):
+    excitation_target: ExcitationTarget | None = None
     level: SequenceLevel
     capabilities: Annotated[list[Capability], Field(min_length=1)]
     matrix: Grid
@@ -240,6 +246,12 @@ class SequenceSpec(Strict):
 
     @model_validator(mode="after")
     def unique_capabilities(self):
+        if self.excitation_target is not None and self.capabilities != [
+            "rf_excitation_2d"
+        ]:
+            raise ValueError(
+                "excitation_target is restricted to the excitation-only task"
+            )
         if len(self.matrix) != len(self.fov_mm):
             raise ValueError("matrix and FOV dimensions must match")
         if len(set(self.capabilities)) != len(self.capabilities):
@@ -811,7 +823,43 @@ class Concurrency(Strict):
     simulators: Annotated[int, Field(ge=1, le=64)] = 4
 
 
+class WorkflowStage(Strict):
+    id: Identifier
+    request: Annotated[str, Field(min_length=1)]
+    # Dotted paths relative to SequenceSpec. Values replace the whole named field.
+    patch: dict[str, object] = Field(min_length=1)
+
+
+class Workflow(Document):
+    schema_version: Literal[1] = 1
+    initial_patch: dict[str, object] = Field(default_factory=dict)
+    task: TaskReference
+    qualification: Literal["draft"] = "draft"
+    stages: Annotated[list[WorkflowStage], Field(min_length=3, max_length=3)]
+
+    @model_validator(mode="after")
+    def unique_stages(self):
+        if len({s.id for s in self.stages}) != len(self.stages):
+            raise ValueError("workflow stage IDs must be unique")
+        return self
+
+
+class WorkflowRun(Strict):
+    mode: Literal["generate_edit", "supplied_edit", "final_spec"] = "generate_edit"
+    seed_manifest: str | None = None
+    version: Literal[1] = 1
+    stage_timeout_s: Positive = 3600
+    allow_unqualified: bool = False
+
+    @model_validator(mode="after")
+    def supplied_seed(self):
+        if (self.mode == "supplied_edit") != (self.seed_manifest is not None):
+            raise ValueError("seed_manifest is required exactly for supplied_edit mode")
+        return self
+
+
 class Experiment(Document):
+    workflow: WorkflowRun | None = None
     suite: Reference
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)] = 42
     repeats: Annotated[int, Field(gt=0, le=1000)] = 1
@@ -827,6 +875,11 @@ class Experiment(Document):
 
     @model_validator(mode="after")
     def arm_isolation(self):
+        if self.workflow is not None:
+            if self.submission_mode != "submit":
+                raise ValueError("workflows require explicit submission mode")
+            if self.agent.uses_model and self.agent.adapter != "pi":
+                raise ValueError("model workflows currently require the Pi RPC adapter")
         if self.agent.uses_model and self.api_proxy is None:
             raise ValueError("model runs require an api_proxy")
         if (self.arm is None) != (self.arm_runtime is None):
@@ -855,6 +908,7 @@ class Experiment(Document):
 
 
 MODELS = {
+    "workflows": Workflow,
     "tasks": Task,
     "objects": Object,
     "physics": Physics,

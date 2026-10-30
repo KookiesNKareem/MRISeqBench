@@ -236,7 +236,11 @@ def usage_complete(row):
 
 def summarize_api(path, *, configured=True):
     """Join started/finished records, retaining interrupted requests in the denominator."""
-    rows = read_api(path)
+    return summarize_requests(read_api(path), configured=configured)
+
+
+def summarize_requests(rows, *, configured=True):
+    """Summarize an explicit request slice (e.g. one workflow stage)."""
     observed = {}
     totals = {}
     for field in FIELDS:

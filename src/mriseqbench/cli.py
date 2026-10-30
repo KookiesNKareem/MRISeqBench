@@ -23,6 +23,9 @@ def parser():
     )
     commands = p.add_subparsers(dest="command", required=True)
     commands.add_parser("validate", help="validate every manifest and reference")
+    commands.add_parser(
+        "workflows", help="list draft agentic workflows for the full suite"
+    )
     commands.add_parser("arms", help="list versioned authoring/simulator arms")
     schema = commands.add_parser(
         "schema", help="write JSON schemas for editor completion"
@@ -37,6 +40,10 @@ def parser():
     describe.add_argument(
         "--hardware", help="hardware label (H1–H3) or manifest reference"
     )
+    describe.add_argument(
+        "--workflow", action="store_true", help="show an agentic workflow stage"
+    )
+    describe.add_argument("--stage", type=int, choices=range(4), default=0)
     evaluation = commands.add_parser(
         "evaluate", help="evaluate a submission independently of an agent"
     )
@@ -48,6 +55,10 @@ def parser():
     evaluation.add_argument(
         "--out", type=Path, required=True, help="new evaluation directory"
     )
+    evaluation.add_argument(
+        "--workflow", action="store_true", help="grade an agentic workflow stage"
+    )
+    evaluation.add_argument("--stage", type=int, choices=range(4), default=0)
     running = commands.add_parser(
         "run",
         help="run or resume an experiment campaign (rerun the same --out to resume)",
@@ -75,6 +86,17 @@ def main(argv=None):
             print(f"Wrote {len(MODELS)} schemas to {args.out}")
             return 0
         catalog = Catalog(args.root)
+        if args.command == "workflows":
+            from .workflows import workflow_for
+
+            cases = catalog.cases(catalog.get("suites", "full"))
+            for case in cases:
+                workflow = workflow_for(catalog, case)
+                print(
+                    f"{workflow['id']} {case['hardware']['id']}: 4 stages ({workflow['qualification']})"
+                )
+            print(f"{len(cases)} workflows; {4 * len(cases)} stage specifications")
+            return 0
         if args.command == "arms":
             for arm in catalog.documents["arms"].values():
                 print(
@@ -130,6 +152,12 @@ def main(argv=None):
             case = catalog.resolve(
                 catalog.get("tasks", args.task), hardware_ref=args.hardware
             )
+            if args.workflow:
+                from .workflows import workflow_for
+
+                case = workflow_for(catalog, case)["stages"][args.stage]["case"]
+            elif args.stage:
+                raise ValueError("--stage requires --workflow")
             print(prompt(case))
             return 0
         if args.command == "evaluate":
@@ -139,6 +167,12 @@ def main(argv=None):
                 else None
             )
             case = catalog.find_case(args.case)
+            if args.workflow:
+                from .workflows import workflow_for
+
+                case = workflow_for(catalog, case)["stages"][args.stage]["case"]
+            elif args.stage:
+                raise ValueError("--stage requires --workflow")
             args.out.mkdir(parents=True, exist_ok=False)
             report = normalize_verdict(
                 evaluate(args.submission, case, catalog.root, args.out, backend), case

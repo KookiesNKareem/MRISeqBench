@@ -245,21 +245,45 @@ def _run_one(
     simulator_slots=None,
     abort_event=None,
 ):
+    workflow = None
+    if experiment.workflow is not None:
+        from ..workflows import execution_workflow
+
+        workflow = execution_workflow(catalog, case, experiment.workflow.mode)
+        case = workflow["stages"][0]["case"]
     arm = catalog.get("arms", experiment.arm) if experiment.arm else None
     agent_dir, judge_dir = workspace / "agent", workspace / "evaluation"
     agent_dir.mkdir(parents=True, mode=0o700)
     judge_dir.mkdir()
     with ExitStack() as stack:
+        from .workflow import WorkflowServer
+
+        server_type = WorkflowServer if workflow else FeedbackServer
+        workflow_args = (
+            {
+                "workflow": workflow,
+                "stage_timeout_s": experiment.agent.timeout_s
+                if experiment.workflow.mode == "final_spec"
+                else experiment.workflow.stage_timeout_s,
+            }
+            if workflow
+            else {}
+        )
         server = stack.enter_context(
-            FeedbackServer(
+            server_type(
                 case,
                 experiment.feedback,
                 catalog.root,
                 workspace / "control",
                 experiment.backend,
-                max_submissions=experiment.max_submissions,
+                max_submissions=(
+                    4 * experiment.max_submissions
+                    if workflow and experiment.workflow.mode == "final_spec"
+                    else experiment.max_submissions
+                ),
                 grading_slots=grading_slots,
                 abort=abort_event,
+                **workflow_args,
             )
         )
         proxy = (
@@ -275,9 +299,36 @@ def _run_one(
             if experiment.api_proxy
             else None
         )
+        seed_sources = {}
+        if workflow and experiment.workflow.mode == "supplied_edit":
+            from .workflow_seed import load_seed
+
+            base_case_id = workflow["case_id"].split("--workflow-")[0]
+            seed_bytes, seed_sources, seed_identity = load_seed(
+                experiment.workflow.seed_manifest,
+                catalog.root,
+                base_case_id,
+                experiment.arm,
+            )
+            if len(seed_bytes) > experiment.feedback.max_submission_bytes:
+                raise ValueError("seed sequence exceeds submission byte limit")
+            server.handle("submit", server.token, seed_bytes)
+            if server.stages[0]["status"] != "passed":
+                raise ValueError(
+                    "supplied seed failed full initial-stage grading; no agent was run"
+                )
+            server.stages[0].update(origin="supplied", seed_identity=seed_identity)
+            server.handle("next", server.token, b'{"after_stage":0}')
+            case = server.case
         prompt_path, case_path, submission = prepare(
             agent_dir, case, experiment, server, phantom_dir, arm=arm
         )
+        if seed_sources:
+            submission.write_bytes(seed_bytes)
+            for name, data in seed_sources.items():
+                destination = agent_dir / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(data)
         values = {
             "prompt": prompt_path,
             "prompt_text": prompt_path.read_text(),
@@ -295,7 +346,16 @@ def _run_one(
         }
         if arm:
             values["python"] = "python3"
-        command = expand(experiment.agent.command, catalog.root, agent_dir, **values)
+        command_template = experiment.agent.command
+        if workflow and experiment.agent.adapter == "pi":
+            from .workflow_rpc import rpc_command
+
+            if "{prompt_text}" not in command_template:
+                raise ValueError(
+                    "workflow Pi command must use the {prompt_text} placeholder"
+                )
+            command_template = rpc_command(command_template)
+        command = expand(command_template, catalog.root, agent_dir, **values)
         executable = shutil.which(command[0]) if not arm else None
         if executable:
             command[0] = executable
@@ -326,6 +386,14 @@ def _run_one(
             env["OPENROUTER_API_KEY"] = proxy.token
         if not arm:
             env["PATH"] = str(Path(command[0]).parent) + ":" + env["PATH"]
+        if workflow and experiment.agent.adapter == "pi":
+            import sys
+
+            command = [
+                "python3" if arm else sys.executable,
+                str(agent_dir / ".workflow_rpc.py"),
+                *command,
+            ]
         ports = [server.port, *([proxy.port] if proxy else [])]
         simulator = None
         if arm:
@@ -349,6 +417,10 @@ def _run_one(
                             "trial remains unscored"
                         )
                     ),
+                )
+            if workflow and simulator:
+                server.on_stage = lambda public: setattr(
+                    simulator, "public_case", public
                 )
             mailbox = stack.enter_context(
                 Mailbox(workspace / "control/transport", server, proxy, simulator)
@@ -386,6 +458,8 @@ def _run_one(
                         if abort_event is not None and abort_event.is_set():
                             server.closed.set()
                             return True
+                        if workflow and server.stage_expired():
+                            return True
                         return server.submitted.is_set() or bool(
                             proxy and proxy.exhausted
                         )
@@ -412,6 +486,12 @@ def _run_one(
                     simulator.closed.set()
                 if abort_event is not None and abort_event.is_set():
                     raise RuntimeError("Campaign aborted; trial remains unscored")
+                if workflow and execution.get("returncode") == 70:
+                    raise server.interrupt(
+                        EvaluationIncomplete(
+                            "Workflow RPC driver failed; see agent stdout"
+                        )
+                    )
                 if execution["status"] == "launch_error":
                     raise RuntimeError(
                         f"Agent failed to launch ({execution.get('error')}); "
@@ -536,7 +616,7 @@ def _run_one(
             # Reuse the immutable attempt verdict; never regrade changed agent files.
             report = dict(attempts[-1]["evaluation"])
             shutil.copyfile(server.submission_path, judge_dir / "sequence.seq")
-            write_json(judge_dir / "case.json", case)
+            write_json(judge_dir / "case.json", server.case if workflow else case)
             write_json(judge_dir / "result.json", report)
         elif source is not None:
             grading_started = time.monotonic()
@@ -552,6 +632,9 @@ def _run_one(
                 accounting["grading_wall_s"] = (
                     grading_wall(server) + accounting["post_agent_evaluation_wall_s"]
                 )
+        if workflow:
+            report = server.report(ended=execution["status"])
+            write_json(judge_dir / "result.json", report)
         report.update(
             repeat=repeat,
             agent=execution,
@@ -686,6 +769,11 @@ def recover(workspace, max_submissions):
         return None
     path = workspace / "session.json"
     session = json.loads(path.read_text()) if path.exists() else clean_exit(workspace)
+    if (workspace / "control/workflow-state.json").exists():
+        from .workflow import recover_workflow
+
+        report = recover_workflow(workspace, session)
+        return ("workflow", report) if report else None
     attempts = [
         d
         for d in sorted((workspace / "control/submissions").glob("attempt-*"))
@@ -781,6 +869,15 @@ def run(
     catalog, experiment, output=None, *, cases="*", repeats=None, selected_keys=None
 ):
     """Launch or resume a campaign; returns (output, reports, complete)."""
+    if experiment.workflow is not None:
+        from ..workflows import workflow_for
+
+        for selected_case in catalog.cases(catalog.get("suites", experiment.suite)):
+            workflow_for(catalog, selected_case)
+        if not experiment.workflow.allow_unqualified:
+            raise ValueError(
+                "Agentic v1 workflows are draft: qualify reference stages first, or explicitly enable workflow.allow_unqualified for development runs"
+            )
     started, started_at = time.monotonic(), utc_now()
     if experiment.agent.uses_model:
         # Unpinned models/providers make scores incomparable across runs.
@@ -823,6 +920,18 @@ def run(
         if runtime
         else None,
     }
+    if experiment.workflow is not None and experiment.workflow.mode == "supplied_edit":
+        from .workflow_seed import load_seed
+
+        identity["workflow_seeds"] = {
+            c["case_id"]: load_seed(
+                experiment.workflow.seed_manifest,
+                catalog.root,
+                c["case_id"],
+                experiment.arm,
+            )[2]
+            for c in catalog.cases(catalog.get("suites", experiment.suite))
+        }
     if (output / "campaign.json").exists():
         recorded = json.loads((output / "campaign.json").read_text())
         # Campaigns launched before concurrency left the identity recorded it.
@@ -889,6 +998,10 @@ def run(
             grading_pool=grading_slots.stats(),
         )
         write_json(output / "accounting.json", campaign)
+        if experiment.workflow is not None:
+            from ..workflows import summarize_workflows
+
+            write_json(output / "workflow-summary.json", summarize_workflows(reports))
 
     def plan(case, repeat):
         dirs, fresh = attempt_dirs(output, case["case_id"], repeat)
@@ -902,7 +1015,18 @@ def run(
         if stop.is_set() or simulator_slots.broken.is_set():
             return
         try:
-            if action == "regrade":
+            if action == "workflow":
+                report = finalize(
+                    workspace,
+                    experiment,
+                    {
+                        **extra,
+                        "repeat": repeat,
+                        "workspace": str(workspace),
+                        "resumed": "workflow_checkpoint",
+                    },
+                )
+            elif action == "regrade":
                 report = regrade(
                     catalog,
                     experiment,

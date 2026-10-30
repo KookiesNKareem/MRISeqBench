@@ -11,6 +11,10 @@ Agents submit Pulseq `sequence.seq` files for physical waveform checks and Bloch
 simulation. Imaging tasks use BART reconstruction and image-quality evaluation;
 RF design tasks score spatial magnetization directly.
 
+An opt-in [agentic development suite](docs/AGENTIC.md) adds four-stage workflows
+for all 27 tasks. It is draft and requires separate simulation qualification.
+Single-turn experiments remain the default.
+
 The first stable source release is **v1.0.0**. Use `git checkout v1.0.0` after
 cloning to reproduce this benchmark definition. See the [release notes](CHANGELOG.md)
 for scope and compatibility details.

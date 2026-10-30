@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../../schemas/workflows.schema.json
+id: t1_mapping
+version: 1
+task: t1_mapping@2
+qualification: draft
+initial_patch: {}
+stages:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: parameter
+  request: Set application.inversion_times_ms to [150, 500, 1300]. Retain the larger
+    FOV and all other requirements.
+  patch:
+    application.inversion_times_ms:
+    - 150
+    - 500
+    - 1300
+- id: restore_fov
+  request: Restore the original 200 x 200 mm in-plane FOV, while retaining the parameter
+    changes from the preceding turn.
+  patch:
+    fov_mm:
+    - 200
+    - 200

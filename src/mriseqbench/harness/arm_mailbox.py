@@ -94,7 +94,7 @@ class Mailbox:
                     raise ValueError("mailbox body exceeds 16 MiB")
                 target, route = request.get("target"), request.get("path")
                 if target == "feedback" and (
-                    route in {"/lint", "/check", "/submit"}
+                    route in {"/lint", "/check", "/submit", "/next"}
                     and request.get("method") == "POST"
                     or route in {"/status", "/receipt"}
                     and request.get("method") == "GET"

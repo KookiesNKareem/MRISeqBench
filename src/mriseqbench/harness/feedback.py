@@ -227,11 +227,13 @@ class FeedbackServer:
             receipt = {
                 "case_id": self.case["case_id"],
                 "attempt": attempt,
+                **self.submission_metadata(),
                 "sha256": hashlib.sha256(body).hexdigest(),
                 "bytes": len(body),
                 "accepted_at_unix_s": time.time(),
             }
             write_json(directory / "receipt.json", receipt)
+            write_json(directory / "case.json", self.case)
             started = time.monotonic()
             with (
                 self.excluded("grading"),
@@ -266,6 +268,12 @@ class FeedbackServer:
         self.attempts.append(
             {**receipt, "evaluation": result, "directory": str(directory)}
         )
+        return self.complete_submission(attempt, result)
+
+    def submission_metadata(self):
+        return {}
+
+    def complete_submission(self, attempt, result):
         if result["status"] == "failed" and attempt < self.max_submissions:
             return 200, {
                 "status": "retry_required",
@@ -405,7 +413,7 @@ class FeedbackServer:
 
             def do_POST(self):
                 self.connection.settimeout(10)
-                if self.path not in ("/lint", "/check", "/submit"):
+                if self.path not in ("/lint", "/check", "/submit", "/next"):
                     return self.reply(404, {"status": "not_found"})
                 if self.headers.get("Transfer-Encoding"):
                     return self.reply(400, {"status": "invalid_body"})

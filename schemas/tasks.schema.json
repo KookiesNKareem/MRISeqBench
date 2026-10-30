@@ -49,6 +49,38 @@
       "title": "ApplicationSpec",
       "type": "object"
     },
+    "ExcitationTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "amplitude": {
+          "default": 0.5,
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Amplitude",
+          "type": "number"
+        },
+        "offset_mm": {
+          "default": [
+            0,
+            0
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Offset Mm",
+          "type": "array"
+        }
+      },
+      "title": "ExcitationTarget",
+      "type": "object"
+    },
     "ReadoutSpec": {
       "additionalProperties": false,
       "properties": {
@@ -268,6 +300,17 @@
     "SequenceSpec": {
       "additionalProperties": false,
       "properties": {
+        "excitation_target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExcitationTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "level": {
           "enum": [
             "T1",

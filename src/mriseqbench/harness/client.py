@@ -113,6 +113,7 @@ def main(argv=None):
             in (
                 "submitted",
                 "retry_required",
+                "stage_passed",
                 "preflight_passed",
                 "lint_passed",
                 "passed",

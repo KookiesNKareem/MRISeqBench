@@ -118,8 +118,8 @@ def diagnostic_acquisition(submission, case, workspace):
     )
 
 
-def target_spins():
-    arrays = target_arrays()
+def target_spins(spec=None):
+    arrays = target_arrays(spec)
     x, y = np.meshgrid(arrays["x_mm"], arrays["y_mm"], indexing="ij")
     mask = arrays["object_mask"]
     positions = np.column_stack((x[mask] / 1000, y[mask] / 1000, np.zeros(mask.sum())))
@@ -130,7 +130,7 @@ def target_spins():
         np.array([[1.0, 1.0, 0.1]]),
         1.0,
         mask.shape,
-        target_sha256(),
+        target_sha256(spec),
     ), arrays["target_mxy_magnitude"][mask]
 
 
@@ -160,8 +160,9 @@ def evaluate_excitation(submission, case, root, workspace, *, deadline=None):
             "detail": "Nonzero RF, no ADC or triggers",
         }
     )
-    save_target(workspace / "target.npz")
-    spins, target = target_spins()
+    target_spec = case["task"]["sequence"].get("excitation_target")
+    save_target(workspace / "target.npz", target_spec)
+    spins, target = target_spins(target_spec)
     previous = None
     stages = []
     converged = False
@@ -184,7 +185,9 @@ def evaluate_excitation(submission, case, root, workspace, *, deadline=None):
                 {"name": exc.check, "passed": False, "detail": str(exc)}
             )
             return report
-        metrics = excitation_metrics(response, target)
+        metrics = excitation_metrics(
+            response, target, (target_spec or {}).get("amplitude", 0.5)
+        )
         np.savez_compressed(
             workspace / f"replay-{len(stages)}.npz",
             positions_m=spins.positions,
@@ -229,7 +232,11 @@ def evaluate_excitation(submission, case, root, workspace, *, deadline=None):
         status=("passed" if case["evaluation"]["calibrated"] else "uncalibrated")
         if all(c["passed"] for c in report["checks"])
         else "failed",
-        target_sha256=target_sha256(),
+        target_sha256=hashlib.sha256(
+            (workspace / "target.npz").read_bytes()
+        ).hexdigest(),
+        target_definition_sha256=target_sha256(target_spec),
+        target_spec=target_spec,
         submission_sha256=hashlib.sha256(Path(submission).read_bytes()).hexdigest(),
         diagnostic_sha256=hashlib.sha256(
             Path(acq.source_path).read_bytes()

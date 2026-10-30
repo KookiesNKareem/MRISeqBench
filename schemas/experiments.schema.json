@@ -353,6 +353,52 @@
       },
       "title": "SandboxConfig",
       "type": "object"
+    },
+    "WorkflowRun": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "generate_edit",
+          "enum": [
+            "generate_edit",
+            "supplied_edit",
+            "final_spec"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "seed_manifest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed Manifest"
+        },
+        "version": {
+          "const": 1,
+          "default": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "stage_timeout_s": {
+          "default": 3600,
+          "exclusiveMinimum": 0,
+          "title": "Stage Timeout S",
+          "type": "number"
+        },
+        "allow_unqualified": {
+          "default": false,
+          "title": "Allow Unqualified",
+          "type": "boolean"
+        }
+      },
+      "title": "WorkflowRun",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -371,6 +417,17 @@
       "exclusiveMinimum": 0,
       "title": "Version",
       "type": "integer"
+    },
+    "workflow": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorkflowRun"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "suite": {
       "pattern": "^[a-z][a-z0-9_]*@[1-9][0-9]*$",

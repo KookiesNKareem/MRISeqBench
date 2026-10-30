@@ -123,6 +123,18 @@ class Catalog:
                     f"{task.id}: evaluator must match sequence tier {task.sequence.level}"
                 )
             self.validate_geometry(task)
+        from .workflows import compile_workflow
+
+        for workflow in self.documents["workflows"].values():
+            task = self.get("tasks", workflow.task)
+            for hardware in self.documents["hardware"].values():
+                compile_workflow(
+                    self,
+                    self.resolve(
+                        task, hardware_ref=f"{hardware.id}@{hardware.version}"
+                    ),
+                    workflow,
+                )
         for suite in self.documents["suites"].values():
             self.cases(suite)
         for experiment in self.documents["experiments"].values():
@@ -285,6 +297,18 @@ class Catalog:
         return cases
 
     def find_case(self, case_id):
+        from .workflows import compile_workflow
+
+        for workflow in self.documents["workflows"].values():
+            task = self.get("tasks", workflow.task)
+            for hardware in self.documents["hardware"].values():
+                compile_workflow(
+                    self,
+                    self.resolve(
+                        task, hardware_ref=f"{hardware.id}@{hardware.version}"
+                    ),
+                    workflow,
+                )
         for suite in self.documents["suites"].values():
             for case in self.cases(suite):
                 if case["case_id"] == case_id:
