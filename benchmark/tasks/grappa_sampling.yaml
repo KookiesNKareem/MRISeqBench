@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 # T3.2
 id: grappa_sampling
-version: 2
+version: 4
 objective: 'Acquire an auto-calibrating (GRAPPA-style) Cartesian spoiled GRE mask: every third phase-encode
   line plus 24 contiguous central autocalibration lines. Grid indices are zero based: retain ky indices
   divisible by 3 and add central indices 52 through 75 (59 lines). Grading estimates the coil sensitivities
@@ -17,4 +17,4 @@ sequence:
     acceleration: 3
     calibration_lines: 24
     pattern: uniform
-evaluation: s3@4
+evaluation: s3@6

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.3
+id: t2_prepared
+version: 3
+objective: Acquire an ECG-triggered bSSFP image after a 40 ms T2 preparation (90-180-180-90, phases
+  0-90-90-180 degrees). Use four 32-line segments in the declared cardiac window, repeating the preparation
+  for each segment.
+object: P1@1
+evaluation: s4@4
+sequence:
+  level: T4
+  capabilities: [bssfp, cartesian, t2_preparation, triggering, gating]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  duration_s: 20
+  application:
+    preparation_duration_ms: 40
+  temporal:
+    frames: 1
+    trigger_source: ecg
+    rr_interval_ms: 1000
+    trigger_delay_ms: 600
+    acquisition_window_ms: 200
+    segments_per_frame: 4

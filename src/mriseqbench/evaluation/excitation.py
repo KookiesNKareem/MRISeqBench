@@ -118,17 +118,24 @@ def diagnostic_acquisition(submission, case, workspace):
     )
 
 
-def target_spins():
+def target_spins(slab_mm=None, layers=32):
     arrays = target_arrays()
     x, y = np.meshgrid(arrays["x_mm"], arrays["y_mm"], indexing="ij")
     mask = arrays["object_mask"]
     positions = np.column_stack((x[mask] / 1000, y[mask] / 1000, np.zeros(mask.sum())))
+    weight = 1.0
+    if slab_mm is not None:
+        positions = np.repeat(positions, layers, axis=0)
+        positions[:, 2] = np.tile(
+            ((np.arange(layers) + 0.5) / layers - 0.5) * slab_mm / 1000, mask.sum()
+        )
+        weight = 1.0 / layers
     return Spins(
         positions,
-        np.zeros(mask.sum(), dtype=np.int64),
+        np.zeros(len(positions), dtype=np.int64),
         ["water"],
         np.array([[1.0, 1.0, 0.1]]),
-        1.0,
+        weight,
         mask.shape,
         target_sha256(),
     ), arrays["target_mxy_magnitude"][mask]

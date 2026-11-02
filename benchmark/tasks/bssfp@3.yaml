@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T1.4
+id: bssfp
+version: 3
+objective: Acquire Cartesian bSSFP with 35-degree excitation, alternating 0/180-degree RF phase,
+  and balanced gradient moments every TR, including after the final excitation. Use TE 2.5 ms and TR 5 ms.
+object: P1@1
+sequence:
+  level: T1
+  capabilities: [bssfp, cartesian]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  duration_s: 6
+  te_ms: {target: 2.5, tolerance: 0.25}
+  tr_ms: {target: 5, tolerance: 0.25}
+  flip_angle_deg: 35
+evaluation: s1@6

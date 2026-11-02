@@ -1,0 +1,58 @@
+{
+  "sequence_sha256": "815ffc3b46b4f9c359f879aa9855ae28fd5f09608035f1509f3fdd6fde59f904",
+  "case_sha256": "b35cba046ee2ddd5c336cb768b7b65407a188917346f427e74f663eba6666f3b",
+  "signal_processing": "native_koma",
+  "implementation_sha256": "9fc44b517805e91d07d7d7d5803b686176ebeffc82e5fb74a0bfd9beeea4fccd",
+  "slab_mm": 5.0,
+  "maximum_image_change": 0.02,
+  "image_changes": [
+    0.016481982351806958
+  ],
+  "density_qualified": true,
+  "runtime": {
+    "KomaMRIFiles": "0.12.0",
+    "KomaMRIBase": "0.15.1",
+    "Julia": "1.12.7",
+    "KomaMRICore": "0.14.0",
+    "SimulationBackend": "metal",
+    "SimulationDevice": "Apple M4 Max",
+    "SimulationPrecision": "f32",
+    "SimulationProjectSHA256": "db719ee5a57e4e6c2338a5e9fe4fa9006db54e7f3e520bf69e89173ab0f64558",
+    "SimulationManifestSHA256": "4c160c53d5a0947b2e090c3f1c7824218fe263f5731a5e972995500fdae10100"
+  },
+  "bart": {
+    "engine": "BART",
+    "version": "v1.0.00",
+    "binary_sha256": "3c8b34234c9ab769f10cf96979beb186d47bf297f4f4e1ea486fa89f148c0ae0",
+    "source_commit": null,
+    "commands": []
+  },
+  "scope": "Preserved 3 T GRE candidate used for native density qualification only; not a calibration of other tasks/scanners.",
+  "profiles": [
+    {
+      "name": "base",
+      "wall_s": 70.28572975000134,
+      "requested_samples_per_set": 2097152,
+      "sets": 4,
+      "actual_spins": 5578752,
+      "complex_nrmse": 0.09863901972684487,
+      "magnitude_nrmse": 0.05294904534229065
+    },
+    {
+      "name": "double-density",
+      "wall_s": 61.09171308297664,
+      "requested_samples_per_set": 4194304,
+      "sets": 4,
+      "actual_spins": 11157504,
+      "complex_nrmse": 0.09738848967772094,
+      "magnitude_nrmse": 0.05144424378437258
+    }
+  ],
+  "limits": {
+    "image_nrmse_max": 0.15,
+    "per_trial_spatial_convergence_gate": false
+  },
+  "input_note": "Original candidate bytes retain undefined RF use metadata. This is a native-signal density probe, not an author starter. Label-aware simulator reconstruction additionally requires explicit RF use labels.",
+  "remaining": "Qualify other task/scanner controls and a passing spatial-RF image control at 15%; contracts remain uncalibrated.",
+  "environment_note": "Machine-local project paths omitted; project/manifest hashes and package versions identify the qualification environment."
+}

@@ -91,7 +91,15 @@ def run(command, arrays):
     """
     output = "out"
     command = [str(token) for token in command]
-    if command and command[0] in {"nufft", "pics"} and "-g" not in command:
+    device = os.environ.get("MRISEQBENCH_BART_DEVICE", "cuda")
+    if device not in {"cpu", "cuda"}:
+        raise ValueError("MRISEQBENCH_BART_DEVICE must be cpu or cuda")
+    if (
+        device == "cuda"
+        and command
+        and command[0] in {"nufft", "pics"}
+        and "-g" not in command
+    ):
         command.insert(1, "-g")
     if not command or "{" + output + "}" not in command:
         raise ValueError("BART command must contain its named output placeholder")
@@ -229,7 +237,6 @@ def _trajectory(nodes, matrix):
 def _inverse_nufft(data, trajectory, shape):
     command = [
         "nufft",
-        "-g",
         "-i",
         "-P",
         "-r",

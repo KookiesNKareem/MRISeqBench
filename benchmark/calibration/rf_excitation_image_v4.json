@@ -1,0 +1,104 @@
+{
+  "task": "rf_excitation_2d@3",
+  "evaluation": "rf_excitation@4",
+  "hardware": "low_field@1",
+  "cases": [
+    {
+      "name": "spatial_ai",
+      "status": "passed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 0.1609848447651709,
+        "inside_signal_fraction": 0.8935226169337851,
+        "outside_rms_fraction": 0.015835627995774884
+      },
+      "numerically_converged": true,
+      "sequence_sha256": "487abfc26baeb0c6587f9eea1695ba1ff46c952f9c1fca75bbdb491c49510a8a",
+      "protocol": {
+        "shots": 128,
+        "samples": 16384,
+        "duration_s": 261.36960000000045,
+        "rf_module_duration_s": 0.038930000000000006
+      },
+      "execution": {
+        "backend": "metal",
+        "device": "Apple M4 Max",
+        "cpu_fallback": false,
+        "precision": "f32"
+      },
+      "numerics": [
+        {
+          "step_s": 1e-05,
+          "metrics": {
+            "excitation_magnitude_nrmse": 0.16052353045508988,
+            "inside_signal_fraction": 0.8942478923643151,
+            "outside_rms_fraction": 0.015920337251634484
+          },
+          "estimated_error": null
+        },
+        {
+          "step_s": 5e-06,
+          "metrics": {
+            "excitation_magnitude_nrmse": 0.1609848447651709,
+            "inside_signal_fraction": 0.8935226169337851,
+            "outside_rms_fraction": 0.015835627995774884
+          },
+          "estimated_error": {
+            "excitation_magnitude_nrmse": 0.0009226286201620137,
+            "inside_signal_fraction": 0.0014505508610600515,
+            "outside_rms_fraction": 0.0001694185117191993
+          }
+        }
+      ]
+    },
+    {
+      "name": "uniform_control",
+      "status": "failed",
+      "metrics": {
+        "excitation_magnitude_nrmse": 1.9321795278543363,
+        "inside_signal_fraction": 0.9712071664898033,
+        "outside_rms_fraction": 0.4307466827884122
+      },
+      "numerically_converged": true,
+      "sequence_sha256": "a49e9842634399e04da3feb23eed228846838ed84433738f5666946e763c9d62",
+      "protocol": {
+        "shots": 128,
+        "samples": 16384,
+        "duration_s": 256.5312000000005,
+        "rf_module_duration_s": 0.0011300000000000001
+      },
+      "execution": {
+        "backend": "metal",
+        "device": "Apple M4 Max",
+        "cpu_fallback": false,
+        "precision": "f32"
+      },
+      "numerics": [
+        {
+          "step_s": 1e-05,
+          "metrics": {
+            "excitation_magnitude_nrmse": 1.9321436967626209,
+            "inside_signal_fraction": 0.9711998415442513,
+            "outside_rms_fraction": 0.4307397997363226
+          },
+          "estimated_error": null
+        },
+        {
+          "step_s": 5e-06,
+          "metrics": {
+            "excitation_magnitude_nrmse": 1.9321795278543363,
+            "inside_signal_fraction": 0.9712071664898033,
+            "outside_rms_fraction": 0.4307466827884122
+          },
+          "estimated_error": {
+            "excitation_magnitude_nrmse": 0.0001,
+            "inside_signal_fraction": 0.0001,
+            "outside_rms_fraction": 0.0001
+          }
+        }
+      ]
+    }
+  ],
+  "task_sha256": "252518559f8edaa9397fba3366b10e26dc5045d07ba55999c99fd03e84ffbc34",
+  "evaluator_sha256": "b0b2a010257d0cffc91a87b31023b457e4cccb6227be7c496c7978bfbde9fa89",
+  "implementation_sha256": "18785890d4352a2e5f89d1a6885748a9d29ecf50bac26a59dee9d72c5bc2874c"
+}

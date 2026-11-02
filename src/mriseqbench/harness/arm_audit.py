@@ -68,7 +68,8 @@ def audit(arm, julia_heap_size_hint_mb=None):
                 if normalized in forbidden:
                     errors.append(f"forbidden package/source: {directory}/{name}")
     if arm["language"] == "julia":
-        code = """using Revise, KomaMRIBase, KomaMRIFiles
+        code = """using KomaMRIBase, KomaMRIFiles, FFTW
+@assert isapprox(ifft(fft([1.0, 2.0])), [1.0, 2.0])
 @assert isdefined(KomaMRIBase, :PulseDesigner) == PD
 @assert isdefined(KomaMRIFiles, :write_seq)
 @assert (Base.find_package("Unitful") !== nothing) == UNITS
@@ -79,7 +80,7 @@ def audit(arm, julia_heap_size_hint_mb=None):
         )
         if arm["unitful"]:
             code += '\nusing Unitful; @assert 1u"ms" == 0.001u"s"\n'
-        code += '\nprintln("{\\"julia\\":\\"", VERSION, "\\",\\"Revise\\":\\"", pkgversion(Revise), "\\",\\"KomaMRIBase\\":\\"", pkgversion(KomaMRIBase), "\\",\\"KomaMRIFiles\\":\\"", pkgversion(KomaMRIFiles), "\\"}")\n'
+        code += '\nprintln("{\\"julia\\":\\"", VERSION, "\\",\\"KomaMRIBase\\":\\"", pkgversion(KomaMRIBase), "\\",\\"KomaMRIFiles\\":\\"", pkgversion(KomaMRIFiles), "\\"}")\n'
         result = subprocess.run(
             [
                 "julia",

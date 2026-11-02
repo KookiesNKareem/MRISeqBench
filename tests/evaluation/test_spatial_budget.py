@@ -112,12 +112,10 @@ def test_unresolved_scores_refine_only_within_declared_budget(
         inspector=lambda *_: acquisition,
         probes=lambda *_: ([], {}, np.ones((1, 1))),
         analytic_sampler=lambda *_: np.ones(1),
-        sampler=lambda *_: np.ones(1),
         # Linear like the real reconstructions: a zero timestep difference
         # gives a zero reconstructed temporal error.
         reconstructor=lambda raw, *_: np.reshape(raw, (1, 1)),
         reference_builder=lambda *_: np.ones((1, 1)),
-        control_builder=None,
     )
     assert requested == [
         (count, replicate)
@@ -186,10 +184,8 @@ def test_never_converging_replay_stops_at_the_timestep_cap(monkeypatch, tmp_path
         inspector=lambda *_: acquisition,
         probes=lambda *_: ([], {}, np.ones((1, 1))),
         analytic_sampler=lambda *_: np.ones(1),
-        sampler=lambda *_: np.ones(1),
         reconstructor=lambda raw, *_: np.reshape(raw, (1, 1)),
         reference_builder=lambda *_: np.ones((1, 1)),
-        control_builder=None,
     )
     assert report["status"] == "numerically_unresolved"
     assert report["failure_kind"] == "unresolved_at_timestep_cap"

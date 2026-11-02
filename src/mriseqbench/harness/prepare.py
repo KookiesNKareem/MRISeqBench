@@ -179,6 +179,23 @@ def evaluation_summary(contract, image_policy, *, contrast, task_id):
         if not contract["calibrated"]
         else ""
     )
+    if kind == "rf_excitation" and contract["version"] >= 4:
+        return (
+            header
+            + "Image acquisition: spatial excitation (<=40 ms), one 128-sample Cartesian "
+            "x-readout line within 5 ms after the last RF sample, then >=2 s recovery; "
+            "repeat for all 128 phase-encoding lines, including the final recovery. "
+            "FOV=200x200 mm, matrix=128x128, every Cartesian sample once, <=262 s total. "
+            "Use LIN labels and Nx/Ny/Nz/FOV definitions for your simulator's reconstruction. "
+            "Finite-RF replay and BART FFT compare the full-FOV magnitude image with target.npz. "
+            "Water disc: radius 60 mm, PD=1, T1=1 s, T2=0.1 s; phase is free. "
+            "No fitted gain or registration. "
+            f"Limits: {_metric_limits(contract['metrics'])}. "
+            "Temporal metric error must resolve below 0.002 and clear each limit. "
+            + BUDGET_NOTICE
+            + " "
+            + pending
+        )
     if kind == "rf_excitation":
         return (
             header
@@ -513,10 +530,10 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
         elif arm.language == "julia":
             instructions += (
                 "Use `./bin/julia script.jl [args...]` or `./bin/julia -e 'Julia code'`.\n"
-                "These commands reuse one persistent Julia session, with Revise and the selected authoring libraries already loaded.\n"
+                "These commands reuse one persistent Julia session, with the selected authoring libraries already loaded.\n"
                 "Package loading and a fixed generic authoring warmup finish before your time budget starts; your code compilation/execution counts.\n"
-                "For edits: `./bin/julia -e 'includet(\"design.jl\"); build_sequence()'` once, then edit function definitions and run `./bin/julia -e 'build_sequence()'`.\n"
-                "Revise runs before each call. Put computations in functions and call them explicitly; edits to top-level data are not automatically rerun.\n"
+                "After each edit, run `./bin/julia -e 'include(\"design.jl\"); build_sequence()'` to reload the file and call its build function in the same session.\n"
+                "File edits are applied only when you include the file again. Put sequence construction in a function and call it explicitly.\n"
                 "Session variables persist. Script arguments replace ARGS on each call; stdout/stderr and failures are returned to your tool.\n"
                 "A direct `julia --startup-file=no --project=/opt/author` command starts a separate cold process.\n"
             )
@@ -527,12 +544,26 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
                 f"Simulator: {arm.simulator}, through `./bin/simulate [sequence.seq]`.\n"
                 "Simulates supplied Pulseq bytes against public inputs; artifacts: `simulation/`.\n"
                 "Simulation artifacts are diagnostics, not a benchmark verdict or an independent reference image.\n"
+                "Koma uses KomaMRI.reconstruct_with_labels; komamripy uses its matching reconstruct_with_labels API. MRzero uses MRzeroCore.reco_adjoint. Read simulation/reconstruction.json "
+                "for reconstruction status, label groups, axes and sequence definitions; reconstruction.h5 stores complex images "
+                "as image_001/image_real and image_imag (x, y, z, echo, coil, repetition), and *-magnitude.png previews show "
+                "the central partition with RSS over coils. Full complex images retain all partitions and coils.\n"
+                "For T1/T2 mapping, distinguish preparation/TI frames with REP or SET and echoes with ECO in your sequence. "
+                "Koma separates REP/SET/SLC and retains ECO as an image axis; MRzero reconstructs observed label groups separately. Missing labels cannot be recovered. "
+                "Keep REP/SET fixed across a frame's segments, with SEG for segment index and LIN for phase-encoding line. Supply Nx/Ny/Nz and FOV in sequence definitions. Inspect the reconstructed series, and rerun simulation "
+                "after changing the candidate; a signal range or successful replay alone does not establish image quality.\n"
                 "Simulator execution consumes agent time; waiting for a free simulator slot does not. A full replay can "
                 "exceed the remaining allowance, especially for long echo trains or 3D acquisitions; "
                 "check ./bin/status before and after simulation. Completing a replay does not check "
                 "waveform identity, SAR or all image acceptance conditions.\n"
                 "Simulator libraries are unavailable for authoring.\n"
             )
+            if arm.simulator in {"koma", "komamripy"}:
+                instructions += (
+                    "CardiacSignal resolves input triggers before both simulation and reconstruction. "
+                    "Its RR interval is the task's rr_interval_ms, or 1000 ms when unspecified; the first R peak is at 0 s. "
+                    "With no input triggers, no waits are inserted. simulation/simulation.json records the resolved duration and waits.\n"
+                )
     instructions += (
         "\n## Submissions\n\n`./bin/lint`: file/timing checks. `./bin/check`: also RF amplitude, gradients and slew.\n"
         "Both are unlimited; neither consumes submissions or scores SAR/images.\n"

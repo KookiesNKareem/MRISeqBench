@@ -4,15 +4,20 @@
 module MRISeqBenchJuliaSession
 
 using TOML
-using Revise
+import REPL  # Load Julia's docstring lookup and rendering support in this worker.
 using KomaMRIBase, KomaMRIFiles
 
 const directory = "/tmp/mriseqbench-julia"
 const collect_requests = Base.JLOptions().heap_size_hint > 0
 
+module IncludeWarmup
+value() = 0
+end
+
 Base.@noinline function warmup(pulse_designer, unitful)
     @assert isdefined(KomaMRIBase, :PulseDesigner) == pulse_designer
     @assert (Base.find_package("Unitful") !== nothing) == unitful
+    sprint(show, MIME("text/plain"), @doc ADC)
     sys = Scanner()
     rf = RF((π / 6) / (2π * γ * 1e-3), 1e-3, 0.0, sys.limits.RF_dead_time;
             use=Excitation())
@@ -31,33 +36,18 @@ Base.@noinline function warmup(pulse_designer, unitful)
         end)
     end
     seq = Sequence(sys)
-    addblock!(seq, rf, Duration(dur(rf, sys)))
-    addblock!(seq, adc, Duration(dur(adc, sys)))
+    @addblock seq += (rf, Duration(dur(rf, sys)))
+    @addblock seq += (adc, Duration(dur(adc, sys)))
+    get_kspace(seq)
+    check_timing(seq, sys)
+    check_hw_limits(seq, sys)
     # Also compile a generic low-level gradient constructor in every arm.
-    addblock!(seq, Duration(1.2e-3); x=Grad(1e-3, 1e-3, 1e-4, 1e-4, 0.0))
+    @addblock seq += (Duration(1.2e-3), x=Grad(1e-3, 1e-3, 1e-4, 1e-4, 0.0))
     mktempdir() do folder
         path = joinpath(folder, "warmup.seq")
         write_seq(seq, path; sys, verbose=false)
         read_seq(path)
     end
-    # Exercise Revise and the execution path before readiness, not on the first
-    # agent call. Warmup definitions live outside the agent's Main namespace.
-    path = joinpath(directory, "warmup.jl")
-    write(path, "module MRISeqBenchReviseWarmup; value() = 1; end\n")
-    Base.invokelatest(Revise.includet, @__MODULE__, path)
-    Revise.revise(; throw=true)
-    write(path, "module MRISeqBenchReviseWarmup; value() = 2; end\n")
-    revised = false
-    for _ in 1:40
-        sleep(0.05)
-        Revise.revise(; throw=true)
-        value = getfield(getfield(@__MODULE__, :MRISeqBenchReviseWarmup), :value)
-        if Base.invokelatest(value) == 2
-            revised = true
-            break
-        end
-    end
-    @assert revised "Revise warmup did not observe a method edit"
 end
 
 Base.@noinline function release_memory()
@@ -92,7 +82,6 @@ Base.@noinline function execute_request(folder)
                         empty!(ARGS)
                         append!(ARGS, request["args"])
                         cd(request["cwd"]) do
-                            Revise.revise(; throw=true)
                             if request["mode"] == "eval"
                                 # Match a REPL working directory rather than inheriting
                                 # this server script's SOURCE_PATH through serve().
@@ -123,36 +112,28 @@ Base.@noinline function execute_request(folder)
 end
 
 Base.@noinline function warm_main()
-    # Exercise the default Main includet path too, while keeping definitions
-    # inside the private warmup module. Its compilation must precede the timer.
+    # Verify immediate file edits through the same include/evaluation path used
+    # by agents. Definitions stay inside the private warmup module.
     main_path = joinpath(directory, "warmup-main.jl")
-    write(main_path, "MRISeqBenchJuliaSession.MRISeqBenchReviseWarmup.value() = 3\n")
-    mktempdir(directory) do folder
-        request = Dict("mode"=>"eval", "value"=>"includet($(repr(main_path)))", "cwd"=>pwd(), "args"=>String[])
-        open(joinpath(folder, "request.toml"), "w") do io
-            TOML.print(io, request)
-        end
-        execute_request(folder)
-        @assert read(joinpath(folder, "done"), String) == "0" read(joinpath(folder, "stderr"), String)
-    end
-    write(main_path, "MRISeqBenchJuliaSession.MRISeqBenchReviseWarmup.value() = 4\n")
-    revised = false
-    for _ in 1:40
-        sleep(0.05)
-        Revise.revise(; throw=true)
-        value = getfield(getfield(@__MODULE__, :MRISeqBenchReviseWarmup), :value)
-        if Base.invokelatest(value) == 4
-            revised = true
-            break
+    for expected in 1:2
+        write(main_path, "MRISeqBenchJuliaSession.IncludeWarmup.value() = $expected\n")
+        mktempdir(directory) do folder
+            code = "include($(repr(main_path))); print(MRISeqBenchJuliaSession.IncludeWarmup.value())"
+            request = Dict("mode"=>"eval", "value"=>code, "cwd"=>pwd(), "args"=>String[])
+            open(joinpath(folder, "request.toml"), "w") do io
+                TOML.print(io, request)
+            end
+            execute_request(folder)
+            @assert read(joinpath(folder, "done"), String) == "0" read(joinpath(folder, "stderr"), String)
+            @assert read(joinpath(folder, "stdout"), String) == string(expected) "Include warmup did not observe a method edit"
         end
     end
-    @assert revised "Main Revise warmup did not observe a method edit"
 end
 
 function serve()
     pulse_designer, unitful = ARGS .== "true"
     mkpath(directory)
-    Core.eval(Main, :(using Revise, KomaMRIBase, KomaMRIFiles))
+    Core.eval(Main, :(using KomaMRIBase, KomaMRIFiles))
     unitful && Core.eval(Main, :(using Unitful))
     warmup(pulse_designer, unitful)
     # Compile the same request handler used for agent work, then remove its
@@ -166,7 +147,7 @@ function serve()
     end
     warm_main()
     release_memory()
-    ready = "{\"mode\":\"persistent\",\"pid\":$(getpid()),\"julia_version\":\"$VERSION\",\"revise_version\":\"$(pkgversion(Revise))\",\"warmup\":[\"authoring\",\"pulseq_write_read\",\"revise\",\"revise_edit\"]}\n"
+    ready = "{\"mode\":\"persistent\",\"pid\":$(getpid()),\"julia_version\":\"$VERSION\",\"warmup\":[\"authoring\",\"pulseq_write_read\",\"include_edit\"]}\n"
     write(joinpath(directory, "ready.tmp"), ready)
     mv(joinpath(directory, "ready.tmp"), joinpath(directory, "ready.json"))
     while true

@@ -2,7 +2,7 @@
 schema_version: 1
 id: pi_j6_koma_base_julia_mcp
 version: 1
-suite: full@1
+suite: full@4
 arm: j6_koma_base_julia_mcp@1
 arm_runtime:
   author_image: mriseqbench/author-koma_base-mcp:local

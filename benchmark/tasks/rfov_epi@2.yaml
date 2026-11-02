@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T3.9
+id: rfov_epi
+version: 2
+objective: Use 2D-selective RF excitation followed by single-shot EPI to image the central 160 x
+  100 mm rectangle. Acquire 128 x 64 points with alternating readout polarity, retaining even ky
+  indices of the 128 x 128 grid. RF must overlap both in-plane gradients; no refocusing pulse. Diagnostic
+  water magnitude at RF end must be at least 0.20, measured by T2-normalizing the first, central and
+  last line centers. Maximum exterior / mean interior magnitude at each matching echo must be
+  at most 0.10.
+object: P1@1
+evaluation: s3@4
+sequence:
+  level: T3
+  capabilities: [rf_excitation_2d, epi, cartesian, reduced_fov]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  te_ms: {max: 160}
+  duration_s: 0.4
+  readout:
+    shots: 1
+    echo_train_length: 64
+  sampling:
+    reduced_fov_fraction: 0.5
+    pattern: reduced_fov

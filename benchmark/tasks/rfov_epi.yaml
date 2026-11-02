@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 # T3.9
 id: rfov_epi
-version: 2
+version: 4
 objective: Use 2D-selective RF excitation followed by single-shot EPI to image the central 160 x
   100 mm rectangle. Acquire 128 x 64 points with alternating readout polarity, retaining even ky
   indices of the 128 x 128 grid. RF must overlap both in-plane gradients; no refocusing pulse. Diagnostic
@@ -9,7 +9,7 @@ objective: Use 2D-selective RF excitation followed by single-shot EPI to image t
   last line centers. Maximum exterior / mean interior magnitude at each matching echo must be
   at most 0.10.
 object: P1@1
-evaluation: s3@4
+evaluation: s3@6
 sequence:
   level: T3
   capabilities: [rf_excitation_2d, epi, cartesian, reduced_fov]

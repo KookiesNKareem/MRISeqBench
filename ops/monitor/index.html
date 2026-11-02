@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>MRISeqBench · Campaign monitor</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #f3f5f8;
+      --surface: #fff;
+      --surface-2: #f8fafc;
+      --ink: #17212f;
+      --muted: #627084;
+      --line: #e2e8f0;
+      --accent: #2864dc;
+      --accent-soft: #eaf1ff;
+      --green: #168457;
+      --green-soft: #e8f6ee;
+      --amber: #9a5b00;
+      --amber-soft: #fff3d8;
+      --red: #b42335;
+      --red-soft: #ffebed;
+      --shadow: 0 12px 32px rgb(25 42 70 / 6%);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #0d121b;
+        --surface: #151d29;
+        --surface-2: #1a2432;
+        --ink: #e7edf5;
+        --muted: #9ba9bb;
+        --line: #2c394a;
+        --accent: #8db3ff;
+        --accent-soft: #1c3152;
+        --green: #7bd6a7;
+        --green-soft: #173b2b;
+        --amber: #ffc569;
+        --amber-soft: #493519;
+        --red: #ff9aa5;
+        --red-soft: #48232b;
+        --shadow: 0 12px 32px rgb(0 0 0 / 18%);
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--page); color: var(--ink); }
+    button, a { font: inherit; }
+    .shell { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 56px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 26px; }
+    .brandline { display: flex; align-items: center; gap: 12px; }
+    .mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; background: var(--accent-soft); color: var(--accent); font-weight: 800; letter-spacing: -.06em; }
+    .eyebrow { margin: 0 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 800; }
+    h1 { margin: 0; font-size: clamp(20px, 3vw, 27px); letter-spacing: -.04em; line-height: 1.1; }
+    .top-actions { display: flex; align-items: center; gap: 12px; }
+    .freshness { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+    .dot.stale { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+    .dot.error { background: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+    .button { border: 1px solid var(--line); color: var(--ink); background: var(--surface); border-radius: 10px; padding: 9px 13px; cursor: pointer; font-size: 12px; font-weight: 700; transition: border-color .15s, transform .15s; }
+    .button:hover { border-color: var(--accent); }
+    .button:active { transform: translateY(1px); }
+    .button:disabled { opacity: .6; cursor: wait; }
+    .notice { display: none; margin: -10px 0 18px; padding: 11px 14px; border: 1px solid var(--red); border-radius: 10px; background: var(--red-soft); color: var(--red); font-size: 12px; }
+    .notice.visible { display: block; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(260px, .8fr); gap: 28px; align-items: center; padding: 26px 28px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); }
+    .hero-copy { min-width: 0; }
+    .hero-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+    .hero h2 { margin: 0; font-size: clamp(19px, 2.3vw, 25px); letter-spacing: -.035em; }
+    .stage { display: inline-flex; align-items: center; min-height: 24px; padding: 4px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 10px; font-weight: 800; }
+    .subtitle { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .progress-wrap { margin-top: 24px; }
+    .progress-label { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 9px; font-size: 12px; }
+    .progress-label strong { font-size: 14px; }
+    .progress-label span { color: var(--muted); }
+    .track { height: 9px; overflow: hidden; border-radius: 99px; background: var(--surface-2); }
+    .fill { height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--accent), #55a1ee); transition: width .35s ease; }
+    .hero-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .hero-stat { padding: 14px 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); }
+    .hero-stat .value { display: block; margin-bottom: 4px; font-size: 22px; letter-spacing: -.04em; font-weight: 750; }
+    .hero-stat .label { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    .section { margin-top: 27px; }
+    .section-head { display: flex; justify-content: space-between; align-items: end; gap: 14px; margin-bottom: 12px; }
+    .section-head h2 { margin: 0; font-size: 15px; letter-spacing: -.02em; }
+    .section-head p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+    .count-tag { color: var(--muted); font-size: 11px; }
+    .phase-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+    .phase-card { display: flex; align-items: center; gap: 12px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+    .phase-icon { flex: 0 0 auto; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; background: var(--surface-2); color: var(--accent); font-size: 15px; font-weight: 800; }
+    .phase-card strong { display: block; font-size: 18px; letter-spacing: -.03em; }
+    .phase-card span { color: var(--muted); font-size: 11px; }
+    .panel { overflow: hidden; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); box-shadow: var(--shadow); }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { padding: 11px 14px; background: var(--surface-2); color: var(--muted); font-size: 10px; text-align: left; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+    td { padding: 12px 14px; border-top: 1px solid var(--line); vertical-align: middle; }
+    tbody tr:hover { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+    .primary-cell { font-weight: 700; }
+    .secondary { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 450; }
+    .number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .token-win { color: var(--green); font-weight: 750; }
+    .token-loss { color: var(--red); }
+    .token-tie { color: var(--muted); }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; font-size: 10px; font-weight: 750; white-space: nowrap; }
+    .badge.good { color: var(--green); background: var(--green-soft); }
+    .badge.warn { color: var(--amber); background: var(--amber-soft); }
+    .badge.bad { color: var(--red); background: var(--red-soft); }
+    .badge.neutral { color: var(--muted); background: var(--surface-2); }
+    .try-strip { display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
+    .try-strip .badge { border-radius:5px; padding:5px 7px; }
+    .trial-strip + .trial-strip { margin-top:8px; }
+    .event-arrow { color:var(--muted); font-size:11px; }
+    .judge-badge { border: 0; cursor: zoom-in; }
+    .judge-badge:hover, .judge-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .judge-preview { position: fixed; z-index: 100; width: min(660px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 18px 70px rgb(0 0 0 / 35%); }
+    .judge-preview header { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+    .judge-preview h3 { margin: 0 0 5px; font-size: 13px; }
+    .judge-preview p { margin: 6px 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .judge-preview img { display: block; width: 100%; margin-top: 12px; border-radius: 8px; }
+    .judge-preview img[hidden] { display: none; }
+    .judge-preview table { min-width: 0; margin-top: 10px; font-size: 10px; }
+    .judge-preview th, .judge-preview td { padding: 5px 7px; }
+    .judge-preview .criterion-pass { color: var(--green); }
+    .judge-preview .criterion-fail { color: var(--red); }
+    .judge-preview select { margin-top: 8px; padding: 5px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+    .inline-progress { width: 90px; height: 5px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+    .inline-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+    .active-meta { display: flex; flex-wrap: wrap; gap: 7px 13px; color: var(--muted); font-size: 10px; }
+    .active-meta b { color: var(--ink); font-weight: 650; }
+    .grade-detail { margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .resource-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
+    .resource { padding: 14px 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+    .resource span { display: block; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
+    .resource strong { display: block; margin-top: 7px; font-size: 18px; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+    .bottleneck { display: none; margin-top: 11px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--line)); border-radius: 11px; background: var(--amber-soft); color: var(--amber); font-size: 11px; line-height: 1.5; }
+    .bottleneck.visible { display: block; }
+    .lower-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 14px; }
+    .empty { padding: 24px 16px; color: var(--muted); text-align: center; font-size: 12px; }
+    .artifact-list { display: flex; flex-wrap: wrap; gap: 9px; padding: 14px; }
+    .artifact { display: inline-flex; align-items: center; gap: 8px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; color: var(--accent); text-decoration: none; font-size: 11px; font-weight: 700; background: var(--surface); }
+    .artifact:hover { border-color: var(--accent); }
+    .footer { margin-top: 28px; color: var(--muted); text-align: center; font-size: 10px; }
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; }
+      .hero-stats { grid-template-columns: repeat(4, 1fr); }
+      .lower-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .shell { width: min(100% - 24px, 1440px); padding-top: 20px; }
+      .topbar { align-items: flex-start; }
+      .freshness { display: none; }
+      .hero { padding: 19px; }
+      .hero-stats { grid-template-columns: 1fr 1fr; }
+      .phase-cards { grid-template-columns: 1fr; gap: 8px; }
+      .resource-grid { grid-template-columns: 1fr 1fr; }
+      .section { margin-top: 22px; }
+      th, td { padding: 10px 11px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brandline">
+        <div class="mark" aria-hidden="true">MR</div>
+        <div><p class="eyebrow">MRISeqBench · live run</p><h1>Campaign monitor</h1></div>
+      </div>
+      <div class="top-actions">
+        <div class="freshness" aria-live="polite"><span class="dot stale" id="fresh-dot"></span><span id="fresh-label">Waiting for first snapshot</span></div>
+        <button class="button" id="refresh" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <div class="notice" id="error" role="status"></div>
+
+    <section class="hero" aria-labelledby="campaign-title">
+      <div class="hero-copy">
+        <p class="eyebrow" id="campaign-model">Campaign</p>
+        <div class="hero-title-row"><h2 id="campaign-title">Loading campaign…</h2><span class="stage" id="campaign-stage">Waiting</span></div>
+        <p class="subtitle" id="backend-line">Backend details pending</p>
+        <div class="progress-wrap">
+          <div class="progress-label"><strong id="completion-label">— / — completed</strong><span id="completion-percent">—</span></div>
+          <div class="track" role="progressbar" aria-label="Campaign completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="fill" id="completion-fill"></div></div>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat"><span class="value" id="passed">—</span><span class="label">Passed</span></div>
+        <div class="hero-stat"><span class="value" id="failed">—</span><span class="label">Failed</span></div>
+        <div class="hero-stat"><span class="value" id="running">—</span><span class="label">Running</span></div>
+        <div class="hero-stat"><span class="value" id="queued">—</span><span class="label">Queued</span></div>
+        <div class="hero-stat"><span class="value" id="infra-retry">—</span><span class="label">Infrastructure retries</span></div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="progression-title">
+      <div class="section-head"><div><h2 id="progression-title">Trial progression</h2><p>Simulation checks and real submissions in call order for each arm and trial: S1.1 → S1.2 → Try 1 → S2.1 → Try 2. S = ungraded simulation; Try = judge submission [✗ failed · ✓ passed · ⏳ grading]. Hover or click for images and criteria. 🖼 J = judge image · 🖼 S = simulation image for the submitted file · ∅ = no image saved.</p></div></div>
+      <div class="panel table-scroll"><table><thead><tr><th>Arm / task</th><th>Case</th><th>Simulation → submission progression</th><th>Progress</th><th>Updated</th></tr></thead><tbody id="progression-rows"></tbody></table><div class="empty" id="progression-empty">No active trials yet.</div></div>
+    </section>
+
+    <section class="section" aria-labelledby="active-title">
+      <div class="section-head"><div><h2 id="active-title">Live work</h2><p>Agent authoring and grader activity are shown separately.</p></div><span class="count-tag" id="active-total">— active</span></div>
+      <div class="phase-cards">
+        <div class="phase-card"><div class="phase-icon">A</div><div><strong id="authoring-count">—</strong><span>Authoring / agent work</span></div></div>
+        <div class="phase-card"><div class="phase-icon">Q</div><div><strong id="grader-queue-count">—</strong><span>Queued for grading</span></div></div>
+        <div class="phase-card"><div class="phase-icon">G</div><div><strong id="grading-count">—</strong><span>Computing / grading now</span></div></div>
+      </div>
+      <div class="panel table-scroll"><table><thead><tr><th>Arm / task</th><th>Phase</th><th>Case</th><th>Elapsed</th><th>Requests · tokens</th><th>Last activity</th></tr></thead><tbody id="active-rows"></tbody></table><div class="empty" id="active-empty">No active task data yet.</div></div>
+    </section>
+
+    <section class="section" aria-labelledby="arms-title">
+      <div class="section-head"><div><h2 id="arms-title">Arms</h2><p>Completed-trial means; task mix differs between arms. Use matched comparisons below.</p></div></div>
+      <div class="panel table-scroll"><table><thead><tr><th>Arm</th><th>Simulator</th><th>Progress</th><th>Passed</th><th>Failed</th><th>Mean requests</th><th>Mean tokens</th></tr></thead><tbody id="arm-rows"></tbody></table><div class="empty" id="arms-empty">Arm data pending.</div></div>
+    </section>
+
+    <section class="section" aria-labelledby="baseline-title">
+      <div class="section-head"><div><h2 id="baseline-title">Compared with preserved previous run</h2><p>Matched completed trial pairs only; the previous campaign stopped at 14/64. Grading now uses a 10% ordinary image NRMSE limit after 2% numerical image precision, and simulator feedback includes images plus checks. Several changes moved together.</p></div></div>
+      <div class="panel table-scroll"><table><thead><tr><th>Arm</th><th>Clean pairs</th><th>Passed before → now</th><th>Mean tokens before → now</th><th>Token change</th><th>Mean responses before → now</th></tr></thead><tbody id="baseline-rows"></tbody></table><div class="empty" id="baseline-empty">Waiting for completed matched trials.</div></div>
+    </section>
+    <section class="section" aria-labelledby="language-title">
+      <div class="section-head"><div><h2 id="language-title">Julia / Python gap before → now</h2><p>Same clean cases completed by both arms in both campaigns. Positive = Julia uses more; negative = less. Ratios use summed tokens and responses, including cached input tokens.</p></div></div>
+      <div class="panel table-scroll"><table><thead><tr><th>Julia arm</th><th>Python counterpart</th><th>Clean pairs</th><th>Token gap before → now</th><th>Response gap before → now</th></tr></thead><tbody id="language-rows"></tbody></table><div class="empty" id="language-empty">Waiting for both matched arms.</div></div>
+    </section>
+    <section class="section" aria-labelledby="modes-title">
+      <div class="section-head"><div><h2 id="modes-title">Observed failure modes</h2><p>Number of affected matched trials before → now. Categories are heuristic; open the trace reports for root-cause review.</p></div></div>
+      <div class="panel table-scroll"><table><thead><tr><th>Category</th><th>Matched trials</th><th>Affected before</th><th>Affected now</th><th>Error events before → now</th></tr></thead><tbody id="mode-rows"></tbody></table><div class="empty" id="mode-empty">Waiting for completed matched trials.</div></div>
+    </section>
+    <section class="section" aria-labelledby="resources-title">
+      <div class="section-head"><div><h2 id="resources-title">Grading resources</h2><p>Current host load and grader queue.</p></div></div>
+      <div class="resource-grid">
+        <div class="resource"><span>Grading jobs</span><strong id="resource-jobs">—</strong></div>
+        <div class="resource"><span>Waiting for grader</span><strong id="resource-waiters">—</strong></div>
+        <div class="resource"><span>Host CPU · 100% per core</span><strong id="resource-cpu">—</strong></div>
+        <div class="resource"><span>Resident memory</span><strong id="resource-rss">—</strong></div>
+      </div>
+      <div class="bottleneck" id="bottleneck" role="status"></div>
+    </section>
+
+    <div class="lower-grid">
+      <section class="section" aria-labelledby="compare-title">
+      <div class="section-head"><div><h2 id="compare-title">Matched comparisons</h2><p>Julia and Python on the same task, scanner and repeat. Julia tokens: green = fewer, red = more, neutral = tied.</p></div></div>
+        <div class="panel table-scroll"><table><thead><tr><th>Task</th><th>Arms</th><th>Tokens</th><th>Responses</th><th>Outcome</th></tr></thead><tbody id="comparison-rows"></tbody></table><div class="empty" id="comparison-empty">Matched comparisons pending.</div></div>
+      </section>
+      <section class="section" aria-labelledby="recent-title">
+        <div class="section-head"><div><h2 id="recent-title">Recent results</h2><p>One row per arm/task/scanner; repeats are compact badges. Hover for images or click to keep a preview open. Token/request counts total the shown repeats.</p></div></div>
+        <div class="panel table-scroll"><table><thead><tr><th>Arm / task</th><th>Case</th><th>Result</th><th>Requests</th><th>Tokens</th></tr></thead><tbody id="recent-rows"></tbody></table><div class="empty" id="recent-empty">No completed results yet.</div></div>
+      </section>
+    </div>
+
+    <section class="section" aria-labelledby="files-title">
+      <div class="section-head"><div><h2 id="files-title">Campaign artifacts</h2><p>Available reports and result files.</p></div></div>
+      <div class="panel"><div class="artifact-list" id="file-list"><span class="count-tag">No artifacts listed.</span></div></div>
+    </section>
+    <footer class="footer" id="snapshot-footer">Dashboard refreshes every 10 seconds.</footer>
+  </main>
+  <aside class="judge-preview" id="judge-preview" role="dialog" aria-label="Judge image preview" hidden>
+    <header><div><h3 id="judge-title">Judge images</h3><p id="judge-detail"></p></div><button class="button" type="button" id="judge-close" aria-label="Close judge image preview">×</button></header>
+    <select id="judge-frame" aria-label="Judge image frame" hidden></select>
+    <p id="judge-message" role="status"></p>
+    <img id="judge-image" alt="Saved judge target, reconstruction, and magnitude error" hidden>
+    <div id="judge-criteria"></div>
+  </aside>
+
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const dash = (value) => value === null || value === undefined || value === '' ? '—' : value;
+    const number = (value, digits = 0) => value === null || value === undefined || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
+    const compact = (value) => value === null || value === undefined || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+    const safeText = (value) => value === null || value === undefined || value === '' ? '—' : String(value);
+    const escapeHTML = (value) => safeText(value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const elapsed = (seconds) => {
+      if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return '—';
+      const s = Math.max(0, Math.floor(Number(seconds)));
+      if (s < 60) return `${s}s`;
+      const m = Math.floor(s / 60), h = Math.floor(m / 60);
+      return h ? `${h}h ${m % 60}m` : `${m}m ${s % 60}s`;
+    };
+    const timeOf = (seconds) => {
+      if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return '—';
+      return new Date(Number(seconds) * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    };
+    const simulatorLabel = (value) => {
+      if (value === true) return 'Metal · Float32';
+      if (value === false) return 'None';
+      const s = safeText(value);
+      if (s === '—') return s;
+      if (/Float(?:32|64)/i.test(s)) return s;
+      if (/\bcpu\b/i.test(s)) return `${s} · Float64`;
+      if (/metal/i.test(s)) return `${s} · Float32`;
+      if (/cuda|gpu/i.test(s)) return `${s} · Float32`;
+      return s;
+    };
+    const phaseKind = (phase) => {
+      const p = String(phase || '').toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+      if (p.includes('prepar')) return 'preparing';
+      if (p.includes('queue') || p.includes('pending_grade')) return 'queued';
+      if (p.includes('grad') || p.includes('compute') || p.includes('replay')) return 'grading';
+      return 'authoring';
+    };
+    const resultBadge = (value, trial, attempt = null, compact = false, context = '') => {
+      const finalUnresolved = attempt == null && lastSnapshot?.recent?.some(r => r.trial_id === trial && r.passed === 'unresolved');
+      if (value === 'unresolved' || finalUnresolved) {
+        const label = compact ? `${attempt == null ? '' : 'Try '+attempt+' '}[?]` : 'Unresolved';
+        return `<button type="button" class="badge judge-badge warn" data-judge="${escapeHTML(trial)}" data-attempt="${attempt ?? ''}" title="Numerically unresolved; view saved evidence">${label}</button>`;
+      }
+      if (value === 'uncalibrated') {
+        return `<button type="button" class="badge judge-badge warn" data-judge="${escapeHTML(trial)}" data-attempt="${attempt ?? ''}" title="Disclosed criteria met; positive-control calibration pending">${compact ? 'Try '+attempt+' [C?]' : 'Uncalibrated'}</button>`;
+      }
+      if (typeof value === 'boolean') {
+        const submission = lastSnapshot?.submissions?.find(r => r.trial_id === trial && (attempt == null || Number(r.attempt) === Number(attempt)));
+        const hasImage = submission?.has_image === true;
+        const tag = hasImage ? `🖼 ${submission?.image_source === 'simulation' ? 'S' : 'J'}` : '∅';
+        const cls = value ? 'good' : 'bad', label = compact ? `${attempt == null ? '' : 'Try '+attempt+' '}[${value ? '✓' : '✗'}]${hasImage ? ' '+tag : ''}` : `${tag} ${value ? 'Passed' : 'Failed'}`;
+        const hint = (context ? context + ' · ' : '') + (value ? 'Passed' : 'Failed') + (hasImage ? `: ${submission?.image_source === 'simulation' ? 'simulator diagnostic for this submitted file' : 'judge image'}; view image and criteria` : ': no reconstructed image saved; view the rejection reason');
+        return trial ? `<button type="button" class="badge judge-badge ${cls}" data-judge="${escapeHTML(trial)}" data-attempt="${attempt ?? ''}" aria-haspopup="dialog" aria-controls="judge-preview" title="${hint}" aria-label="${hint}">${label}</button>` : `<span class="badge ${cls}">${label}</span>`;
+      }
+      const pending = lastSnapshot?.submissions?.find(r => r.trial_id === trial && (attempt == null || Number(r.attempt) === Number(attempt)));
+      const tag = pending?.has_image ? ` 🖼 ${pending.image_source === 'simulation' ? 'S' : 'J'}` : '';
+      return trial ? `<button type="button" class="badge judge-badge neutral" data-judge="${escapeHTML(trial)}" data-attempt="${attempt ?? ''}" title="${escapeHTML(context)} · grading in progress; view saved evidence">${compact?(attempt == null ? '' : 'Try '+attempt+' ')+'[⏳]':'Grading'}${tag}</button>` : '<span class="badge neutral">Pending</span>';
+    };
+    const emptyState = (tbodyId, emptyId, items, render) => {
+      const tbody = byId(tbodyId), empty = byId(emptyId);
+      tbody.innerHTML = (Array.isArray(items) ? items : []).map(render).join('');
+      empty.style.display = items && items.length ? 'none' : 'block';
+    };
+    let lastSuccess = 0, busy = false, lastSnapshot = null;
+
+    const groups = (rows, key) => {
+      const grouped = new Map();
+      for (const row of rows || []) { const k=key(row); if (!grouped.has(k)) grouped.set(k, []); grouped.get(k).push(row); }
+      return [...grouped.values()];
+    };
+    function render(data) {
+      lastSnapshot = data || {};
+      previewCache.clear();
+      const campaign = data?.campaign || {}, counts = { completed: 0, running: 0, queued: 0, infrastructure_retry: 0, ...data?.counts }, resources = data?.resources || {};
+      const completed = counts.completed, total = campaign.total;
+      const pct = Number.isFinite(Number(completed)) && Number(total) > 0 ? Math.min(100, Number(completed) / Number(total) * 100) : null;
+      byId('campaign-title').textContent = safeText(campaign.state || 'Campaign status unavailable');
+      byId('campaign-model').textContent = safeText(campaign.model || 'MRISeqBench campaign');
+      byId('campaign-stage').textContent = safeText(campaign.stage || 'Stage unknown');
+      byId('backend-line').textContent = `Grading: ${safeText(campaign.grading_backend)} · Simulator: ${simulatorLabel(campaign.simulation_backend)} · Grading slots: ${safeText(campaign.grading_concurrency)} · Acceptance limits: recorded in each submission${campaign.CPU_reference_completed ? ` · ${campaign.CPU_reference_completed} previous CPU results archived` : ''}`;
+      byId('completion-label').textContent = `${number(completed)} / ${number(total)} completed`;
+      byId('completion-percent').textContent = pct === null ? '—' : `${pct.toFixed(1)}%`;
+      byId('completion-fill').style.width = pct === null ? '0%' : `${pct}%`;
+      document.querySelector('[role="progressbar"]').setAttribute('aria-valuenow', pct === null ? '0' : pct.toFixed(2));
+      byId('passed').textContent = number(data?.passed);
+      byId('failed').textContent = number(data?.failed) + (data?.unresolved ? ` · ${number(data.unresolved)} unresolved` : '') + (data?.uncalibrated ? ` · ${number(data.uncalibrated)} uncalibrated` : '');
+      byId('running').textContent = number(counts.running);
+      byId('queued').textContent = number(counts.queued);
+      byId('infra-retry').textContent = number(counts.infrastructure_retry);
+
+      const active = Array.isArray(data?.active) ? data.active : [];
+      const phases = { authoring: 0, queued: 0, grading: 0, preparing: 0 };
+      active.forEach((a) => phases[phaseKind(a?.phase)]++);
+      byId('active-total').textContent = `${number(active.length)} active`;
+      byId('authoring-count').textContent = number(phases.authoring);
+      byId('grader-queue-count').textContent = number(phases.queued);
+      byId('grading-count').textContent = number(phases.grading);
+      emptyState('active-rows', 'active-empty', active, (a) => {
+        const kind = phaseKind(a?.phase), cls = kind === 'grading' ? 'good' : kind === 'queued' ? 'warn' : 'neutral';
+        const grade = a?.grade || {};
+        const phaseLabel = {grading: /metal/i.test(campaign.grading_backend || '') ? 'Metal grading' : 'CPU grading', queued: 'Waiting for grader', preparing: 'Preparing environment', authoring: 'Authoring'}[kind];
+        const gradeInfo = kind === 'grading'
+          ? `<div class="grade-detail">Submission ${escapeHTML(dash(grade.attempt))} · ${elapsed(grade.elapsed_s)} · Host CPU ${grade.cpu_percent == null ? '—' : `${number(grade.cpu_percent, 1)}%`} · ${number(grade.samples)} samples · ${number(grade.replay_files)} replay files</div>`
+          : kind === 'queued' ? `<div class="grade-detail">Submission ${escapeHTML(dash(grade.attempt))} · queued ${elapsed(grade.elapsed_s)}</div>` : '';
+        const caseText = [a?.task, a?.scanner == null ? null : `scanner ${a.scanner}`, a?.repeat == null ? null : `repeat ${a.repeat}`].filter(Boolean).map(escapeHTML).join(' · ');
+        return `<tr><td><span class="primary-cell">${escapeHTML(a?.label)}</span><span class="secondary">Luna PID ${escapeHTML(dash(a?.cli_pid))}</span></td><td><span class="badge ${cls}">${phaseLabel}</span>${gradeInfo}</td><td>${caseText || '—'}</td><td class="number">${elapsed(a?.elapsed_s)}</td><td class="number">${number(a?.requests)} · ${compact(a?.tokens)}</td><td>${escapeHTML(a?.last_message)}<span class="secondary">${kind !== 'grading' || a?.grade?.last_activity_s == null ? '' : `Last saved replay ${elapsed(a.grade.last_activity_s)} ago`}</span></td></tr>`;
+      });
+
+      const arms = Array.isArray(data?.arms) ? data.arms : [];
+      emptyState('arm-rows', 'arms-empty', arms, (a) => {
+        const progress = Number(a?.total) > 0 && Number.isFinite(Number(a?.completed)) ? Math.min(100, Number(a.completed) / Number(a.total) * 100) : null;
+        return `<tr><td><span class="primary-cell">${escapeHTML(a?.label)}</span><span class="secondary">${escapeHTML(a?.id)}</span></td><td>${escapeHTML(simulatorLabel(a?.simulation))}</td><td><div class="active-meta"><b>${number(a?.completed)} / ${number(a?.total)}</b><div class="inline-progress" aria-label="Arm completion"><span style="width:${progress === null ? 0 : progress}%"></span></div></div></td><td class="number">${number(a?.passed)}</td><td class="number">${number(a?.failed)}</td><td class="number">${number(a?.mean_requests, 1)}</td><td class="number">${compact(a?.mean_tokens)}</td></tr>`;
+      });
+
+      emptyState('baseline-rows','baseline-empty',data?.before_after,(r)=>`<tr><td>${escapeHTML(r.arm)}</td><td>${number(r.matched_trials)}</td><td>${r.matched_trials > 0 ? `${number(r.before_passed)} → ${number(r.after_passed)}` : '—'}</td><td>${compact(r.before_mean_tokens || null)} → ${compact(r.after_mean_tokens || null)}</td><td>${r.token_change_percent === '' ? '—' : `${number(r.token_change_percent,1)}%`}</td><td>${number(r.before_mean_responses || null,1)} → ${number(r.after_mean_responses || null,1)}</td></tr>`);
+      const gap = (value) => value == null || value === '' ? '—' : `${number(value,1)}%`;
+      emptyState('language-rows','language-empty',data?.relative_comparison,(r)=>`<tr><td>${escapeHTML(r.julia_arm)}</td><td>${escapeHTML(r.python_arm)}</td><td>${number(r.matched_trials)}</td><td>${gap(r.before_token_gap_percent)} → ${gap(r.after_token_gap_percent)}</td><td>${gap(r.before_response_gap_percent)} → ${gap(r.after_response_gap_percent)}</td></tr>`);
+      emptyState('mode-rows','mode-empty',data?.failure_modes,(r)=>`<tr><td>${escapeHTML(r.category.replaceAll('_',' '))}</td><td>${number(r.compared_trials)}</td><td>${number(r.before_trials)}</td><td>${number(r.after_trials)}</td><td>${number(r.before_events)} → ${number(r.after_events)}</td></tr>`);
+      byId('resource-jobs').textContent = number(resources.grading_jobs);
+      byId('resource-waiters').textContent = number(resources.grading_waiters);
+      byId('resource-cpu').textContent = resources.cpu_percent == null ? '—' : `${number(resources.cpu_percent, 1)}%`;
+      byId('resource-rss').textContent = resources.rss_gib == null ? '—' : `${number(resources.rss_gib, 2)} GiB`;
+      const concurrency = Number(campaign.grading_concurrency), waiters = Number(resources.grading_waiters);
+      const bottleneck = byId('bottleneck');
+      if (/metal/i.test(campaign.grading_backend || '')) {
+        bottleneck.textContent = `Metal judge · ${number(resources.grading_jobs)} active · ${number(resources.grading_waiters)} waiting. Grading tool calls block until a verdict returns.`;
+        bottleneck.classList.add('visible');
+      } else if (Number.isFinite(concurrency) && concurrency <= 1 && Number.isFinite(waiters) && waiters > 0) {
+        bottleneck.textContent = `Single CPU grader bottleneck: ${number(waiters)} ${waiters === 1 ? 'trial is' : 'trials are'} waiting while ${number(resources.grading_jobs)} grading ${Number(resources.grading_jobs) === 1 ? 'job is' : 'jobs are'} active. Grading concurrency is ${number(campaign.grading_concurrency)}.`;
+        bottleneck.classList.add('visible');
+      } else if (Number.isFinite(concurrency) && concurrency <= 1) {
+        bottleneck.textContent = 'Grading is limited to one CPU slot.';
+        bottleneck.classList.add('visible');
+      } else bottleneck.classList.remove('visible');
+
+      const comparisonGroups=groups(data?.comparisons,c=>[c.case_id,c.julia_arm,c.python_arm].join('|'));
+      emptyState('comparison-rows','comparison-empty',comparisonGroups,(items)=>{
+        const c=items[0],j=items.reduce((n,r)=>n+(Number(r.julia_tokens)||0),0),p=items.reduce((n,r)=>n+(Number(r.python_tokens)||0),0);
+        const tokensKnown=items.every(r=>r.julia_tokens!=null && r.python_tokens!=null);
+        const tokenClass=!tokensKnown?'':j<p?'token-win':j>p?'token-loss':'token-tie';
+        const ordered=[...items].sort((a,b)=>a.repeat-b.repeat);
+        const julia=ordered.map(r=>resultBadge(r.julia_passed,r.julia_trial_id,null,true,`Julia repeat ${r.repeat}`)).join('');
+        const python=ordered.map(r=>resultBadge(r.python_passed,r.python_trial_id,null,true,`Python repeat ${r.repeat}`)).join('');
+        return `<tr><td><span class="primary-cell">${escapeHTML(c.task)}</span><span class="secondary">${items.length} matched ${items.length===1?'repeat':'repeats'}</span></td><td>${escapeHTML(c.julia_arm)}<span class="secondary">vs ${escapeHTML(c.python_arm)}</span></td><td class="number"><span class="${tokenClass}">${compact(tokensKnown?j:null)}</span><span class="secondary">vs ${compact(tokensKnown?p:null)}</span></td><td class="number">${number(items.reduce((n,r)=>n+(Number(r.julia_responses)||0),0))}<span class="secondary">vs ${number(items.reduce((n,r)=>n+(Number(r.python_responses)||0),0))}</span></td><td><div class="try-strip">J ${julia}</div><div class="try-strip">P ${python}</div></td></tr>`;
+      });
+      const events=[...(data?.simulations || []).map(r=>({...r,kind:'simulation'})),...(data?.submissions || []).map(r=>({...r,kind:'submission'}))];
+      for (const a of active) if (!events.some(r=>r.trial_id===a.id)) events.push({...a,trial_id:a.id,kind:'waiting',started:data.now,finished:data.now});
+      const progressionGroups=groups(events,r=>[r.label,r.task,r.scanner].join('|')).sort((a,b)=>Math.max(...b.map(r=>r.finished))-Math.max(...a.map(r=>r.finished)));
+      emptyState('progression-rows','progression-empty',progressionGroups,(items)=>{
+        const r=items[0],ordered=[...items].sort((a,b)=>a.repeat-b.repeat || a.started-b.started);
+        const strips=groups(ordered,a=>a.trial_id).map(run=>{
+          const current=active.find(a=>a.id===run[0].trial_id),done=data?.recent?.find(a=>a.trial_id===run[0].trial_id);
+          const state=current?{authoring:'Authoring',queued:'Waiting for grader',grading:'Grading',preparing:'Preparing'}[phaseKind(current.phase)]:done?(done.passed === 'unresolved' ? 'Numerically unresolved' : done.passed === 'uncalibrated' ? 'Completed · uncalibrated' : done.passed?'Completed · passed':'Completed · failed'):'';
+          const badges=run.filter(a=>a.kind!=='waiting').map(a=>a.kind==='submission'
+            ? resultBadge(a.passed,a.trial_id,a.attempt,true,`Grading ${Number(a.repeat)+1}, try ${a.attempt} · ${timeOf(a.started)}`)
+            : `<button type="button" class="badge judge-badge neutral" data-judge="${escapeHTML(a.trial_id)}" data-simulation="${a.simulation}" aria-haspopup="dialog" aria-controls="judge-preview" title="${escapeHTML(a.simulation_label)} · ${timeOf(a.started)} · ${escapeHTML(a.status)} · SHA ${escapeHTML(a.sha256.slice(0,12))}">[${escapeHTML(a.simulation_label)} ${a.has_image?'🖼':'∅'}]</button>`).join('<span class="event-arrow" aria-hidden="true">→</span>');
+          return `<div class="trial-strip"><div class="try-strip"><span class="count-tag">Grading ${Number(run[0].repeat)+1}</span>${badges || '<span class="count-tag">No calls yet</span>'}</div>${state?`<span class="secondary">${state}</span>`:''}</div>`;
+        }).join('');
+        const sims=items.filter(a=>a.kind==='simulation').length,submitted=items.filter(a=>a.kind==='submission'),pending=submitted.filter(a=>a.status==='grading').length;
+        return `<tr><td><span class="primary-cell">${escapeHTML(r.label)}</span><span class="secondary">${escapeHTML(r.task)}</span></td><td>${escapeHTML(r.scanner)}</td><td>${strips}</td><td>${sims} sim · ${submitted.length} submitted${pending?` · ${pending} grading`:''}</td><td>${timeOf(Math.max(...items.map(a=>a.finished)))}</td></tr>`;
+      });
+      const recentGroups=groups(data?.recent,r=>[r.label,r.task,r.scanner].join('|'));
+      emptyState('recent-rows','recent-empty',recentGroups,(items)=>{
+        const r=items[0],ordered=[...items].sort((a,b)=>a.repeat-b.repeat);
+        const badges=ordered.map(a=>resultBadge(a.passed,a.trial_id,null,true,`Repeat ${a.repeat}`)).join('');
+        return `<tr><td><span class="primary-cell">${escapeHTML(r.label)}</span><span class="secondary">${escapeHTML(r.task)}</span></td><td>${escapeHTML(r.scanner)}<span class="secondary">${items.length} ${items.length===1?'repeat':'repeats'}</span></td><td><div class="try-strip">${badges}</div></td><td>${number(items.reduce((n,a)=>n+(Number(a.requests)||0),0))}</td><td>${compact(items.reduce((n,a)=>n+(Number(a.tokens)||0),0))}</td></tr>`;
+      });
+      const files = Array.isArray(data?.files) ? data.files : [];
+      byId('file-list').innerHTML = files.length ? files.map((file) => `<a class="artifact" href="${escapeHTML(file?.url)}" target="_blank" rel="noopener noreferrer">↗ ${escapeHTML(file?.label)}</a>`).join('') : '<span class="count-tag">No artifacts listed.</span>';
+      byId('snapshot-footer').textContent = `Snapshot ${timeOf(data?.now)} · Updated ${timeOf(data?.updated)} · Refreshes every 10 seconds.`;
+    }
+
+    async function refresh() {
+      if (busy) return;
+      busy = true;
+      const button = byId('refresh');
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/progress', { cache: 'no-store', headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error(`Progress endpoint returned HTTP ${response.status}`);
+        const data = await response.json();
+        render(data);
+        lastSuccess = Date.now();
+        byId('error').classList.remove('visible');
+        byId('fresh-dot').className = 'dot';
+        byId('fresh-label').textContent = `Live · ${timeOf(data?.now)}`;
+      } catch (error) {
+        byId('error').textContent = `Live update unavailable: ${error?.message || 'request failed'}. Retrying automatically.`;
+        byId('error').classList.add('visible');
+        byId('fresh-dot').className = 'dot error';
+        byId('fresh-label').textContent = 'Connection error';
+      } finally {
+        busy = false;
+        button.disabled = false;
+      }
+    }
+    const preview = byId('judge-preview'), previewCache = new Map();
+    let previewAnchor = null, previewPinned = false, previewRequest = 0, previewImageNote = '', hoverTimer, hideTimer;
+    function positionPreview() {
+      if (!previewAnchor || preview.hidden) return;
+      const box = previewAnchor.getBoundingClientRect();
+      preview.style.left = `${Math.max(12, Math.min(box.left, innerWidth - preview.offsetWidth - 12))}px`;
+      const below = box.bottom + 8;
+      preview.style.top = `${Math.max(12, below + preview.offsetHeight < innerHeight - 12 ? below : box.top - preview.offsetHeight - 8)}px`;
+    }
+    function hidePreview() {
+      clearTimeout(hoverTimer); clearTimeout(hideTimer);
+      preview.hidden = true; previewPinned = false; previewRequest++;
+      previewAnchor?.removeAttribute('aria-expanded'); previewAnchor = null;
+    }
+    function loadJudgeImage(trial, index, attempt = '', simulation = '') {
+      const img = byId('judge-image'), request = previewRequest;
+      byId('judge-message').textContent = 'Loading saved image…'; img.hidden = true;
+      img.onload = () => { if (request !== previewRequest || preview.hidden) return; img.hidden = false; byId('judge-message').textContent = previewImageNote; positionPreview(); };
+      img.onerror = () => { if (request !== previewRequest || preview.hidden) return; img.hidden = true; byId('judge-message').textContent = 'The saved image could not be displayed.'; positionPreview(); };
+      img.src = simulation ? `/simulator-image?trial=${encodeURIComponent(trial)}&simulation=${simulation}&image=${index}` : `/judge-image?trial=${encodeURIComponent(trial)}&image=${index}&attempt=${encodeURIComponent(attempt)}`;
+    }
+    async function showPreview(anchor, pin = false) {
+      clearTimeout(hideTimer);
+      if (previewPinned && !pin) return;
+      if (previewAnchor !== anchor) previewAnchor?.removeAttribute('aria-expanded');
+      previewAnchor = anchor; previewPinned = pin; preview.hidden = false;
+      anchor.setAttribute('aria-expanded', 'true');
+      const trial = anchor.dataset.judge, attempt = anchor.dataset.attempt || '', simulation = anchor.dataset.simulation || '', cacheKey = `${trial}:${attempt}:${simulation}`, request = ++previewRequest;
+      byId('judge-title').textContent = 'Judge images'; byId('judge-detail').textContent = pin ? 'Preview kept open' : 'Click the result badge to keep this open';
+      const oldImage = byId('judge-image'); oldImage.onload = oldImage.onerror = null; oldImage.removeAttribute('src'); oldImage.hidden = true;
+      byId('judge-criteria').innerHTML = '';
+      byId('judge-frame').hidden = true; byId('judge-message').textContent = 'Loading saved evidence…'; positionPreview();
+      try {
+        let data = previewCache.get(cacheKey);
+        if (!data) { const response = await fetch(simulation ? `/api/simulator-preview?trial=${encodeURIComponent(trial)}&simulation=${simulation}` : `/api/judge-preview?trial=${encodeURIComponent(trial)}${attempt ? `&attempt=${attempt}` : ''}`); if (!response.ok) throw new Error(); data = await response.json(); previewCache.set(cacheKey, data); }
+        if (request !== previewRequest || preview.hidden) return;
+        byId('judge-title').textContent = `${data.label} · ${data.task}`;
+        previewImageNote = (data.image_note || '') + (data.failed_checks?.length ? ' Failed checks: '+data.failed_checks.join(', ')+'.' : '');
+        byId('judge-detail').textContent = `${data.status} · ${simulation ? data.simulation_label : 'Grading '+data.grading_run+' · try '+(data.submission ?? '—')}${data.source === 'simulation' ? ' · ungraded simulator image' : ''}${data.check_status ? ' · check: '+data.check_status : ''}${pin ? ' · kept open' : ''}`;
+        const criteria = data.criteria || [];
+        byId('judge-criteria').innerHTML = criteria.length ? `<table aria-label="Judge measured scores and limits"><thead><tr><th>Criterion</th><th>Measured</th><th>Required</th></tr></thead><tbody>${criteria.map(c => `<tr class="${c.passed === true ? 'criterion-pass' : c.passed === false ? 'criterion-fail' : ''}"><td>${escapeHTML(c.name)}</td><td class="number">${number(c.value, 3)}</td><td class="number">${c.min == null ? '' : `≥ ${number(c.min, 3)}`}${c.min != null && c.max != null ? ' · ' : ''}${c.max == null ? '' : `≤ ${number(c.max, 3)}`}</td></tr>`).join('')}</tbody></table>` : '';
+        const frames = byId('judge-frame');
+        frames.innerHTML = data.images.map(image => `<option value="${image.index}">${escapeHTML(image.label)}</option>`).join(''); frames.hidden = data.images.length < 2;
+        frames.onchange = () => { previewPinned = true; loadJudgeImage(trial, frames.value, attempt, simulation); };
+        if (data.images.length) loadJudgeImage(trial, 0, attempt, simulation);
+        else byId('judge-message').textContent = `${data.reason}${data.failed_checks.length ? ' Failed checks: '+data.failed_checks.join(', ')+'.' : ''}`;
+        positionPreview();
+      } catch { if (request === previewRequest) { byId('judge-message').textContent = 'Saved image evidence is unavailable for this result.'; positionPreview(); } }
+    }
+    document.addEventListener('pointerover', event => { const anchor = event.target.closest('[data-judge]'); if (anchor && !anchor.contains(event.relatedTarget)) { clearTimeout(hoverTimer); hoverTimer = setTimeout(() => showPreview(anchor), 120); } });
+    document.addEventListener('pointerout', event => { const anchor = event.target.closest('[data-judge]'); if (anchor && !anchor.contains(event.relatedTarget)) { clearTimeout(hoverTimer); if (!previewPinned) hideTimer = setTimeout(hidePreview, 220); } });
+    document.addEventListener('focusin', event => { const anchor = event.target.closest('[data-judge]'); if (anchor) showPreview(anchor); });
+    document.addEventListener('click', event => { const anchor = event.target.closest('[data-judge]'); if (anchor) { clearTimeout(hoverTimer); showPreview(anchor, true); } else if (!preview.contains(event.target)) hidePreview(); });
+    preview.addEventListener('pointerenter', () => clearTimeout(hideTimer));
+    preview.addEventListener('pointerleave', () => { if (!previewPinned) hideTimer = setTimeout(hidePreview, 220); });
+    byId('judge-close').addEventListener('click', hidePreview);
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') hidePreview(); });
+    addEventListener('resize', positionPreview); addEventListener('scroll', positionPreview, true);
+    byId('refresh').addEventListener('click', refresh);
+    refresh();
+    setInterval(() => {
+      if (lastSuccess && Date.now() - lastSuccess > 25000) {
+        byId('fresh-dot').className = 'dot stale';
+        byId('fresh-label').textContent = 'Snapshot is stale';
+      }
+      refresh();
+    }, 10000);
+  </script>
+</body>
+</html>

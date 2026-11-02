@@ -76,7 +76,6 @@ def test_null_phase_oracle_is_unresolved_before_encoded_replay(monkeypatch, tmp_
         analytic_sampler=lambda *_: np.ones(1),
         reference_builder=lambda *_: np.ones((1, 1)),
         simulator=forbidden,
-        control_builder=forbidden,
     )
     assert report["sequence_valid"] is True
     assert report["status"] == "numerically_unresolved"

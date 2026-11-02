@@ -3,6 +3,9 @@
 Vendored from [aplavin/julia-mcp](https://github.com/aplavin/julia-mcp) at commit
 `06e83b1569a736f16a3c58f4b39e44fc33ad28bb`, under the included MIT license.
 
+Local benchmark patch: remove automatic Revise loading and evaluation hooks.
+Agents explicitly include edited scripts in the persistent session.
+
 The Julia MCP arm image copies `server.py` and `LICENSE`; its Python dependencies
 are pinned with hashes in `runtimes/arms/julia-mcp-requirements.txt`. The upstream
 project metadata and lockfile are retained here for dependency provenance.

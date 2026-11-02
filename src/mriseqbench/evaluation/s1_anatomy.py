@@ -15,6 +15,7 @@ from pathlib import Path
 import finufft
 import h5py
 import numpy as np
+from scipy.stats import qmc
 
 
 @dataclass(frozen=True)
@@ -161,11 +162,19 @@ def sampled_anatomy(case, root, samples, replicate, *, directory=None):
     anatomy = load_anatomy(str(root), case["object"]["phantom"])
     dims = anatomy.labels.ndim
     shape, lower = _geometry(anatomy)
+    spacing = anatomy.voxel_size_m
+    slab = case["evaluation"].get("phantom_slab_mm") if dims == 2 else None
+    if slab is not None:
+        slab = slab / 1000
+        shape = np.r_[shape, 1]
+        lower = np.r_[lower, -slab / 2]
+        spacing = np.r_[spacing, slab]
+        dims = 3
     seed = case["evaluation"].get("spatial_seed")
     seed = 1729 if seed is None else seed
     spec = case["task"]["sequence"]
     image_voxel = np.prod(np.asarray(spec["fov_mm"]) / 1000 / spec["matrix"])
-    cell_volume = np.prod(anatomy.voxel_size_m)
+    cell_volume = np.prod(spacing) / (slab if slab is not None else 1)
     flat = anatomy.labels.ravel()
     active = np.flatnonzero(flat > 0)
     if not len(active):
@@ -210,11 +219,37 @@ def sampled_anatomy(case, root, samples, replicate, *, directory=None):
             target = slice(start, start + count)
             positions[target] = 0
             positions[target, :dims] = (
-                lower + (cells + rng.random((count, dims))) * anatomy.voxel_size_m
+                lower + (cells + rng.random((count, dims))) * spacing
             )
             labels[target] = label
             weights[target] = cell_volume * len(cells_ids) / count / image_voxel
             start += count
+    elif case["evaluation"].get("spatial_mode") == "fixed":
+        # Each cell gets a fixed digitally shifted Sobol set. Its projections
+        # cover every physical axis evenly, including z, rather than clustering
+        # points at a few tensor-grid phase values in the spoiling direction.
+        power = max(0, int(np.floor(np.log2(samples / len(active)))))
+        per_cell = 2**power
+        sequence = qmc.Sobol(
+            d=dims, scramble=True, seed=int(rng.integers(2**32)), bits=32
+        )
+        pattern = (sequence.random_base2(power) * 2**32).astype(np.uint32)
+        positions, labels, weights = nodes(len(active) * per_cell)
+        chunk = max(1, 1048576 // per_cell)
+        for start in range(0, len(active), chunk):
+            cells_ids = active[start : start + chunk]
+            cells = np.column_stack(np.unravel_index(cells_ids, shape))
+            shifts = rng.integers(
+                0, 2**32, size=(len(cells_ids), 1, dims), dtype=np.uint32
+            )
+            unit = np.bitwise_xor(pattern[None], shifts).astype(float) / 2**32
+            target = slice(start * per_cell, (start + len(cells_ids)) * per_cell)
+            positions[target] = 0
+            positions[target, :dims] = (
+                lower + (cells[:, None, :] + unit) * spacing
+            ).reshape(-1, dims)
+            labels[target] = np.repeat(flat[cells_ids] - 1, per_cell)
+            weights[target] = cell_volume / per_cell / image_voxel
     else:
         strata = np.asarray(strata_per_cell(samples, len(active), dims))
         per_cell = int(np.prod(strata))
@@ -229,7 +264,7 @@ def sampled_anatomy(case, root, samples, replicate, *, directory=None):
             target = slice(start * per_cell, (start + len(cells_ids)) * per_cell)
             positions[target] = 0
             positions[target, :dims] = (
-                lower + (cells[:, None, :] + unit) * anatomy.voxel_size_m
+                lower + (cells[:, None, :] + unit) * spacing
             ).reshape(-1, dims)
             labels[target] = np.repeat(flat[cells_ids] - 1, per_cell)
             weights[target] = cell_volume / per_cell / image_voxel

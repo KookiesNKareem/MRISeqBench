@@ -1,8 +1,10 @@
 # Static cardiac phantom
 
 All sequence tiers use `cardiac_10xz_shortaxis_clean.phantom` anatomy: fat,
-myocardium and blood, with no motion. 2D uses its central short-axis slice;
-3D uses the complete volume. Coordinates are recentered without cropping or
+myocardium and blood, with no motion. Current 2D evaluators extrude its central short-axis slice over a 5 mm slab;
+3D uses the complete volume. Historical evaluator versions retain the original
+zero-thickness plane. Fixed subvoxel samples cover x, y and z for gradient spoiling;
+their weights preserve projected proton density. Coordinates are recentered without cropping or
 rescaling; nominal source spacing replaces floating-point coordinate roundoff.
 The supplied input manifest pins the exported anatomy and fields by SHA-256.
 

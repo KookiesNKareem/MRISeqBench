@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 # T3.5
 id: variable_density
-version: 2
+version: 4
 objective: Acquire the prescribed variable-density Cartesian mask at nominal acceleration three,
   including eight fully sampled central lines and mask seed 42. Retain zero-based ky indices [14,
   19, 25, 29, 31, 34, 38, 44, 47, 48, 50, 54, 55, 56, 57, 58, 60, 61, 62, 63, 64, 65, 66, 67, 71,
@@ -21,4 +21,4 @@ sequence:
     calibration_lines: 8
     mask_seed: 42
     pattern: variable_density
-evaluation: s3@4
+evaluation: s3@6
