@@ -2,7 +2,7 @@
 schema_version: 1
 id: pi_p2_pypulseq_koma
 version: 1
-suite: full@1
+suite: full@4
 arm: p2_pypulseq_koma@1
 arm_runtime:
   author_image: mriseqbench/author-pypulseq:local

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 # T2.8
 id: stack_of_stars
-version: 2
+version: 4
 objective: Acquire a 128 x 128 x 32 stack-of-stars volume with 32 Cartesian partitions and 202 full-diameter
   radial spokes through k=0 per partition, uniformly spaced over 180 degrees, one spoke per excitation.
 sequence:
@@ -14,4 +14,4 @@ sequence:
   readout:
     spokes: 202
 object: P1@1
-evaluation: s2@5
+evaluation: s2@7

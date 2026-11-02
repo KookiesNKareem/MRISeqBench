@@ -26,31 +26,54 @@ function read_pulseq_sequence(path)
 end
 
 const DEVICE = get(ENV, "MRISEQBENCH_KOMA_DEVICE", "cuda")
-DEVICE == "cuda" || error("MRISeqBench simulations require CUDA; CPU execution is disabled")
-using CUDA
-CUDA.functional() || error("A functional CUDA GPU is required for grading; no CPU fallback")
-CUDA.allowscalar(false)
+DEVICE in ("cuda", "metal", "cpu") || error("MRISEQBENCH_KOMA_DEVICE must be 'cuda', 'metal', or 'cpu'")
+const PRECISION = get(ENV, "MRISEQBENCH_KOMA_PRECISION", "f64")
+PRECISION in ("f32", "f64") || error("MRISEQBENCH_KOMA_PRECISION must be 'f32' or 'f64'")
+DEVICE == "metal" || PRECISION == "f64" || error("Float32 grading is supported only on Metal")
+const SIGNAL_TYPE = PRECISION == "f32" ? ComplexF32 : ComplexF64
+if DEVICE == "cuda"
+    @eval using CUDA
+    CUDA.functional() || error("A functional CUDA GPU is required for grading; no CPU fallback")
+    CUDA.allowscalar(false)
+elseif DEVICE == "metal"
+    Base.find_package("Metal") === nothing && error("Metal backend requested, but Metal.jl is not installed in the selected Julia project")
+    try
+        @eval using Metal
+    catch err
+        error("Metal backend could not load in the selected Julia project: " * sprint(showerror, err))
+    end
+    Metal.functional() || error("A functional Metal GPU is required for grading; no CPU fallback")
+end
 
 function simulation_backend()
-    backend = CoreMRI.get_backend(true)
-    backend isa CoreMRI.KA.GPU || error("CUDA grading cannot fall back to CPU")
-    CoreMRI.KA.supports_float64(backend) || error("Grading requires Float64 on the GPU")
+    backend = DEVICE == "cpu" ? CoreMRI.KA.CPU() : CoreMRI.get_backend(true)
+    DEVICE != "cpu" && !(backend isa CoreMRI.KA.GPU) && error("$DEVICE grading cannot fall back to CPU")
+    DEVICE == "metal" && !occursin("Metal", string(typeof(backend))) && error("Metal backend was requested but KomaMRI did not select Metal")
+    PRECISION == "f64" && !CoreMRI.KA.supports_float64(backend) &&
+        error("Float64 grading is unavailable on the selected backend; set MRISEQBENCH_KOMA_PRECISION=f32 only for Metal")
     return backend
 end
 
-on_device(x) = CoreMRI.gpu(x)
+simulation_precision(x) = PRECISION == "f32" ? CoreMRI.f32(x) : x
+simulation_scalar(x) = PRECISION == "f32" ? Float32(x) : Float64(x)
+on_device(x, backend) = DEVICE == "cpu" ? x : CoreMRI.gpu(simulation_precision(x), backend)
 
 function update_device_fields!(obj, host_obj, c, mid, offsets)
     case_field_update!(host_obj,c,mid,offsets)
-    copyto!(obj.ρ,host_obj.ρ)
-    copyto!(obj.Δw,host_obj.Δw)
+    copyto!(obj.ρ,simulation_precision(host_obj.ρ))
+    copyto!(obj.Δw,simulation_precision(host_obj.Δw))
 end
 
 function execution_device()
-    Dict("backend"=>DEVICE, "precision"=>"f64",
-         "device"=>CUDA.name(CUDA.device()),
-         "cuda_version"=>string(pkgversion(CUDA)),
-         "cpu_fallback"=>false)
+    DEVICE == "cpu" && return Dict("backend"=>DEVICE, "precision"=>PRECISION,
+        "device"=>"CPU()", "project"=>Base.active_project(), "cpu_fallback"=>false)
+    DEVICE == "metal" && return Dict("backend"=>DEVICE, "precision"=>PRECISION,
+        "device"=>CoreMRI.device_name(simulation_backend()),
+        "project"=>Base.active_project(), "cpu_fallback"=>false)
+    return Dict("backend"=>DEVICE, "precision"=>PRECISION,
+                "device"=>CUDA.name(CUDA.device()),
+                "cuda_version"=>string(pkgversion(CUDA)),
+                "project"=>Base.active_project(), "cpu_fallback"=>false)
 end
 
 function case_field_update!(obj, c, t, offsets)
@@ -200,14 +223,14 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
     state.z = copy(state.z) # Keep evolving Mz separate from equilibrium rho.
     backend = simulation_backend()
     host_obj, host_seqd = obj, seqd
-    obj, seqd, state = on_device(obj), on_device(seqd), on_device(state)
+    obj, seqd, state, sys = on_device(obj,backend), on_device(seqd,backend), on_device(state,backend), simulation_precision(sys)
     groupsize = CoreMRI.DEFAULT_PRECESSION_GROUPSIZE
     max_adc = maximum(r -> sum(@view host_seqd.ADC[(first(r)+1):last(r)]), ranges; init=0)
     prealloc = CoreMRI.prealloc(method,backend,obj,state,maximum(length.(ranges)),max_adc,groupsize,sys)
-    signal = on_device(individual ? zeros(ComplexF64,sum(seq.ADC.N),length(obj),1,1) : zeros(ComplexF64,sum(seq.ADC.N),1,1))
+    signal = on_device(individual ? zeros(SIGNAL_TYPE,sum(seq.ADC.N),length(obj),1,1) : zeros(SIGNAL_TYPE,sum(seq.ADC.N),1,1),backend)
     rf_method = CoreMRI.Bloch()
     rf_prealloc = fuse_rf ? CoreMRI.prealloc(rf_method,backend,obj,state,maximum(length.(ranges)),0,groupsize,sys) : nothing
-    rf_signal = fuse_rf ? on_device(zeros(ComplexF64,0,1,1)) : nothing
+    rf_signal = fuse_rf ? on_device(zeros(SIGNAL_TYPE,0,1,1),backend) : nothing
     sample = 1
     next_spoil = 1
     for (range,rf) in zip(ranges,rf_on)
@@ -225,7 +248,7 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
             end
         end
         has_dynamic && update_device_fields!(obj,host_obj,c,mid,offsets)
-        hasproperty(prealloc,:ΔBz) && (prealloc.ΔBz .= obj.Δw ./ (2π * γ))
+        hasproperty(prealloc,:ΔBz) && (prealloc.ΔBz .= obj.Δw ./ (simulation_scalar(2π) * simulation_scalar(γ)))
         slots = sample:(sample+count-1)
         if rf && fuse_rf && count == 0
             # Same discretized left-endpoint rotations/relaxation and shared state;
@@ -254,12 +277,12 @@ struct ExactStaticReceive{M} <: CoreMRI.KomaMRIBase.AbstractRFReceiveSystem
     weights::M
 end
 CoreMRI.KomaMRIBase.get_n_coils(r::ExactStaticReceive) = size(r.weights,2)
-CoreMRI.prealloc_receiver(r::ExactStaticReceive, obj, backend, ::NoMotion) = CoreMRI.gpu(r.weights,backend)
+CoreMRI.prealloc_receiver(r::ExactStaticReceive, obj, backend, ::NoMotion) = DEVICE == "cpu" ? r.weights : CoreMRI.gpu(simulation_precision(r.weights),backend)
 
 function simulate_receive_case(obj,seq,sys,c,offsets,params,receive)
     has_dynamic = has_dynamic_fields(c)
     case_field_update!(obj,c,0.0,offsets)
-    if !has_dynamic && obj.motion isa NoMotion
+    if !has_dynamic && obj.motion isa NoMotion && DEVICE != "cpu"
         size(receive,1)==length(obj) || error("Receive/spin dimension mismatch")
         simulation_backend() # Fail closed before native automatic fallback.
         scanner = Scanner(limits=sys.limits, gradient=sys.gradient,
@@ -281,20 +304,20 @@ function simulate_receive_case(obj,seq,sys,c,offsets,params,receive)
     state.z = copy(state.z)
     backend = simulation_backend()
     host_obj, host_seqd = obj, seqd
-    obj, seqd, state = on_device(obj), on_device(seqd), on_device(state)
+    obj, seqd, state, sys = on_device(obj,backend), on_device(seqd,backend), on_device(state,backend), simulation_precision(sys)
     groupsize = CoreMRI.DEFAULT_PRECESSION_GROUPSIZE
     max_adc = maximum(r -> sum(@view host_seqd.ADC[(first(r)+1):last(r)]), ranges; init=0)
     prealloc = CoreMRI.prealloc(method,backend,obj,state,maximum(length.(ranges)),max_adc,groupsize,sys)
     size(receive,1)==length(obj) || error("Receive/spin dimension mismatch")
-    signal = on_device(zeros(ComplexF64,sum(seq.ADC.N),size(receive,2)))
-    receive = on_device(receive)
+    signal = on_device(zeros(SIGNAL_TYPE,sum(seq.ADC.N),size(receive,2)),backend)
+    receive = on_device(receive,backend)
     sample = 1
     for (range,rf) in zip(ranges,rf_on)
         host_step = @view host_seqd[range]
         step = @view seqd[range]
         has_dynamic && update_device_fields!(obj,host_obj,c,(first(host_step.t)+last(host_step.t))/2,offsets)
         count = sum(host_step.ADC[2:end])
-        target = on_device(zeros(ComplexF64,count,length(obj),1,1))
+        target = on_device(zeros(SIGNAL_TYPE,count,length(obj),1,1),backend)
         if rf
             CoreMRI.run_spin_excitation_parallel!(obj,step,target,state,sys,method,groupsize,backend,prealloc;Nthreads=1)
         else
@@ -341,7 +364,7 @@ function simulate_request(req)
     integrator = get(req,"integration_method","bloch")
     integrator in ("bloch","magnus4") || error("Unsupported integration method: $integrator")
     params = CoreMRI.default_sim_params(Dict{String,Any}(
-        "gpu"=>true,"precision"=>"f64","return_type"=>"mat",
+        "gpu"=>true,"precision"=>PRECISION,"return_type"=>"mat",
         "sim_method"=>(integrator=="magnus4" ? CoreMRI.BlochMagnus4() : CoreMRI.Bloch()),
         "Δt"=>req["step_s"],"Δt_rf"=>req["rf_step_s"],
         "max_block_length"=>Inf,"max_rf_block_length"=>Inf,
@@ -376,11 +399,38 @@ function simulate_request(req)
     end
 end
 
-# Independent unitary inversion assay. One CUDA thread per detuning retains every
-# original RF interval, with no relaxation, encoding or CPU dynamics fallback.
+# Independent unitary inversion assay retains every original RF interval, with
+# no relaxation or encoding.
 function inversion_assay_kernel!(inverted, offsets, real_rf, imag_rf, widths)
     index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
     if index <= length(offsets)
+        mx, my, mz = 0.0, 0.0, 1.0
+        for j in eachindex(widths)
+            scale = 2π * widths[j]
+            ax, ay, az = scale * real_rf[j], scale * imag_rf[j], scale * offsets[index]
+            angle = sqrt(ax * ax + ay * ay + az * az)
+            denominator = max(angle, 1e-30)
+            ux, uy, uz = ax / denominator, ay / denominator, az / denominator
+            sine, cosine = sincos(angle)
+            dot = ux * mx + uy * my + uz * mz
+            nx = mx * cosine - (uy * mz - uz * my) * sine + ux * dot * (1 - cosine)
+            ny = my * cosine - (uz * mx - ux * mz) * sine + uy * dot * (1 - cosine)
+            nz = mz * cosine - (ux * my - uy * mx) * sine + uz * dot * (1 - cosine)
+            mx, my, mz = nx, ny, nz
+        end
+        inverted[index] = -mz
+    end
+    return nothing
+end
+if DEVICE == "cuda"
+    @eval function launch_inversion_assay!(inverted, offsets, real_rf, imag_rf, widths)
+        CUDA.@cuda threads=32 blocks=cld(length(offsets), 32) inversion_assay_kernel!(inverted, offsets, real_rf, imag_rf, widths)
+        CUDA.synchronize()
+    end
+end
+
+function inversion_assay_cpu!(inverted, offsets, real_rf, imag_rf, widths)
+    for index in eachindex(offsets)
         mx, my, mz = 0.0, 0.0, 1.0
         for j in eachindex(widths)
             scale = 2π * widths[j]
@@ -405,15 +455,21 @@ function inversion_assay_request(req)
     input = h5open(req["input"], "r") do f
         Dict(k => read(f[k]) for k in keys(f))
     end
-    offsets = CUDA.CuArray(Float64.(input["offset_hz"]))
-    real_rf = CUDA.CuArray(Float64.(input["rf_real_hz"]))
-    imag_rf = CUDA.CuArray(Float64.(input["rf_imag_hz"]))
-    widths = CUDA.CuArray(Float64.(input["width_s"]))
-    inverted = similar(offsets)
-    CUDA.@cuda threads=32 blocks=cld(length(offsets), 32) inversion_assay_kernel!(inverted, offsets, real_rf, imag_rf, widths)
-    CUDA.synchronize()
+    offsets = Float64.(input["offset_hz"])
+    real_rf = Float64.(input["rf_real_hz"])
+    imag_rf = Float64.(input["rf_imag_hz"])
+    widths = Float64.(input["width_s"])
+    if DEVICE == "cuda"
+        offsets, real_rf, imag_rf, widths = CUDA.CuArray(offsets), CUDA.CuArray(real_rf), CUDA.CuArray(imag_rf), CUDA.CuArray(widths)
+        inverted = similar(offsets)
+        launch_inversion_assay!(inverted, offsets, real_rf, imag_rf, widths)
+        inverted = Array(inverted)
+    else
+        inverted = similar(offsets)
+        inversion_assay_cpu!(inverted, offsets, real_rf, imag_rf, widths)
+    end
     h5open(req["output"], "w") do f
-        f["inverted_mz"] = Array(inverted)
+        f["inverted_mz"] = inverted
     end
 end
 
@@ -442,6 +498,10 @@ for line in eachline(stdin)
             Dict("ok"=>true,"versions"=>Dict("KomaMRICore"=>string(pkgversion(KomaMRICore)),
                 "KomaMRIBase"=>string(pkgversion(KomaMRIBase)),"KomaMRIFiles"=>string(pkgversion(KomaMRIFiles)),
                 "Julia"=>string(VERSION)),"execution"=>execution_device())
+        elseif req["operation"] == "clear_cache"
+            empty!(SEQUENCES)
+            GC.gc(false)
+            Dict("ok"=>true, "execution"=>execution_device())
         elseif req["operation"] == "resolve_physio"
             redirect_stdout(stderr) do
                 with_logger(NullLogger()) do

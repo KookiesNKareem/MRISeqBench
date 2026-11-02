@@ -1,13 +1,15 @@
 # yaml-language-server: $schema=../../schemas/evaluators.schema.json
 schema_version: 1
 id: rf_excitation
-version: 3
+version: 5
 scope: benchmark
-calibrated: true
-reconstruction: direct_magnetization@1
+calibrated: false
+reconstruction: bart_cartesian_fft@1
+phantom_slab_mm: 5.0
+phantom_z_samples: 32
 metrics:
 - name: excitation_magnitude_nrmse
-  max: 0.20
+  max: 0.15
 - name: inside_signal_fraction
   min: 0.80
   max: 1.20

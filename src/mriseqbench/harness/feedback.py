@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import threading
 import time
@@ -24,7 +25,7 @@ from .proxy import QuietHTTPServer
 
 
 def disclosed(result):
-    """Like a scanner: say whether SAR was exceeded, never the model or values."""
+    """Return public verdicts/diagnostics, without judge files or SAR internals."""
 
     def redact(checks):
         sar = [c for c in checks if str(c.get("name", "")).startswith("sar_")]
@@ -41,7 +42,39 @@ def disclosed(result):
             }
         ]
 
-    value = {**result}
+    # Private artifact dictionaries include reference images and host paths.
+    # Never send them to the author, including when nested in frame reports.
+    private = {"artifacts", "frame_artifacts", "execution", "versions", "provenance"}
+
+    def public(value):
+        if isinstance(value, dict):
+            return {
+                key: public(child)
+                for key, child in value.items()
+                if key not in private and not key.endswith(("_path", "_directory"))
+            }
+        if isinstance(value, list):
+            return [public(child) for child in value]
+        if isinstance(value, str):
+            return re.sub(
+                r"(?<![\w])/(?:[^\s,;\"'()<>{}\[\]:]+/)+[^\s,;\"'()<>{}\[\]:]*",
+                "[private path]",
+                value,
+            )
+        return value
+
+    allowed = {
+        "case_id",
+        "status",
+        "checks",
+        "image_checks",
+        "application_checks",
+        "metrics",
+        "reason",
+        "numerically_converged",
+        "reconstruction",
+    }
+    value = public({key: child for key, child in result.items() if key in allowed})
     for key in ("checks", "image_checks", "application_checks"):
         if isinstance(value.get(key), list):
             value[key] = redact(value[key])
@@ -279,7 +312,9 @@ class FeedbackServer:
             "status": "submitted",
             "attempt": attempt,
             "submissions_remaining": 0,
-            "reason": "Submission recorded. The run is finished; stop now.",
+            "evaluation": disclosed(result),
+            "evaluation_status": result["status"],
+            "reason": f"Submission {result['status']}. The run is finished; stop now.",
         }
 
     def handle(self, kind, token, body):
@@ -309,8 +344,7 @@ class FeedbackServer:
                 )
         code, value = self._handle(kind, body)
         value = {**value, "runtime": self.runtime_status()}
-        # Store only the response actually disclosed to the participant. The
-        # blind final-submission path never gains access to the private verdict.
+        # Store only the public response, never private grader artifacts.
         with self.lock:
             write_json(self.directory / "last-feedback.json", value)
             if kind == "submit":

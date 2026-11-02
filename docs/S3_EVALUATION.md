@@ -68,7 +68,7 @@ A water probe (PD=1, T1=0.8 s, T2=0.08 s) at the readout-centre sample of every
 line must give mean finite-RF central-echo signal ≥0.01 PD, and its Bloch replay over
 1021- and 2053-point Halton quadratures of one image voxel must have complex
 error ≤0.20 versus perfect spoiling. The voxel is fov/matrix on each axis:
-1.5625 × 1.5625 mm in 2D (no z extent) and 1.5625 × 1.5625 × 6.25 mm for the
+1.5625 × 1.5625 × 5 mm in current 2D contracts and 1.5625 × 1.5625 × 6.25 mm for the
 3D tasks, so spoiler moments on any axis count by their dephasing across that
 axis's voxel. The probe uses RF-derived receiver phase to isolate
 spoiling; achieved images retain the submitted ADC phase.
@@ -80,7 +80,7 @@ and last lines, without B0. Mean interior magnitude must be ≥0.01 PD and
 maximum exterior / mean interior magnitude ≤0.10 at each of those echoes.
 Probe voxels are centred at x=z=0: nine interior y positions span −35..35 mm;
 nine positions per exterior side span ±65..±96 mm. Each probe is one image
-voxel (1.5625 × 1.5625 mm in x, y; the 2D object has no z extent). Its complex
+voxel (1.5625 × 1.5625 mm in x, y and the declared 5 mm slab in z). Its complex
 signal is averaged over a uniform n × n isochromat grid after removing the
 nominal encoding phase of that sample, then scored by magnitude. Two coprime
 grids (24 and 31 points per axis) are evaluated; if their leakage ratios differ
@@ -139,25 +139,20 @@ Declared-physics image limits are set per task:
 
 | Task | Complex NRMSE ≤ | Magnitude NRMSE ≤ | Phase RMS ≤ (rad) | Tissue signal ≥ | Contrast retention ≥ | Outside energy ≤ |
 |---|---:|---:|---:|---:|---:|---:|
-| `sense_sampling` | 0.23 | 0.21 | 0.17 | 0.66 | 0.66 | 0.05 |
-| `grappa_sampling` | 0.23 | 0.21 | 0.18 | 0.66 | 0.66 | 0.05 |
-| `caipirinha` | 0.23 | 0.21 | 0.13 | 0.66 | 0.66 | 0.05 |
-| `compressed_sensing` | 0.23 | 0.20 | 0.17 | 0.66 | 0.66 | 0.05 |
-| `variable_density` | 0.23 | 0.21 | 0.17 | 0.66 | 0.66 | 0.05 |
-| `partial_fourier` | 0.23 | 0.20 | 0.16 | 0.66 | 0.66 | 0.05 |
-| `elliptical_kspace` | 0.35 | 0.30 | 0.21 | 0.62 | 0.71 | 0.05 |
-| `reduced_fov` | 0.34 | 0.33 | 0.25 | 0.59 | — | 0.05 |
-| `rfov_epi` | 0.37 | 0.35 | 0.27 | 0.63 | — | 0.05 |
+| `sense_sampling` | 0.15 | 0.15 | 0.17 | 0.66 | 0.66 | 0.05 |
+| `grappa_sampling` | 0.15 | 0.15 | 0.18 | 0.66 | 0.66 | 0.05 |
+| `caipirinha` | 0.15 | 0.15 | 0.13 | 0.66 | 0.66 | 0.05 |
+| `compressed_sensing` | 0.15 | 0.15 | 0.17 | 0.66 | 0.66 | 0.05 |
+| `variable_density` | 0.15 | 0.15 | 0.17 | 0.66 | 0.66 | 0.05 |
+| `partial_fourier` | 0.15 | 0.15 | 0.16 | 0.66 | 0.66 | 0.05 |
+| `elliptical_kspace` | 0.15 | 0.15 | 0.21 | 0.62 | 0.71 | 0.05 |
+| `reduced_fov` | 0.15 | 0.15 | 0.25 | 0.59 | — | 0.05 |
+| `rfov_epi` | 0.15 | 0.15 | 0.27 | 0.63 | — | 0.05 |
 
-Each limit is the larger of 1.5× the worst reference value and 1.2× the worst
-value of a held-out ensemble of valid alternative designs (readout bandwidth
-from the 500 Hz/pixel floor to about 1560 Hz/pixel, forward/reverse/centric
-ordering, block or sinc excitation, alternative RF/gradient spoiling, z
-spoiling in 3D, inner-volume reduced FOV) across the three hardware profiles,
-with a 0.05 floor for outside energy, and never looser than complex 0.45 /
-magnitude 0.35 / phase 0.35 rad / tissue 0.5 / contrast 0.5. A +0.6 rad receiver
-phase error, missing spoiling or missing calibration fail these limits. The
-exact sampling mask remains the primary sampling gate.
+Complex and magnitude NRMSE limits are uniformly 0.15. The other image
+limits retain their task-specific calibration. A receiver phase error,
+missing spoiling or missing calibration can fail these checks. The exact
+sampling mask remains the primary sampling gate.
 
 Spatial-selection tasks (`reduced_fov`, `rfov_epi`) assess selected-region signal
 and rejected exterior without requiring a particular fat/water contrast ordering.

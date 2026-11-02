@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 # T2.5
 id: radial_readout
-version: 2
+version: 4
 objective: Create a spoiled GRE acquisition of 202 full-diameter radial spokes through k=0, uniformly
   spaced over 180 degrees, with one spoke per excitation.
 object: P1@1
@@ -13,4 +13,4 @@ sequence:
   duration_s: 6
   readout:
     spokes: 202
-evaluation: s2@5
+evaluation: s2@7

@@ -7,4 +7,5 @@ ARG ENGINE
 ENV MRISEQBENCH_SIMULATOR=${ENGINE} JULIA_DEPOT_PATH=/opt/julia-depot JULIA_PKG_OFFLINE=true
 COPY runtimes/arms/simulate.py /opt/mriseqbench/simulate
 COPY runtimes/arms/simulate_koma.jl /opt/mriseqbench/simulate_koma.jl
+COPY runtimes/arms/reconstruct_koma.jl /opt/mriseqbench/reconstruct_koma.jl
 RUN chmod 755 /opt/mriseqbench/simulate

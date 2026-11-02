@@ -140,7 +140,7 @@ Readout transients, blur and displacement remain image errors.
 
 | Every achieved image must meet | Limit |
 |---|---:|
-| Complex / magnitude NRMSE | ≤0.45 / ≤0.35 |
+| Complex / magnitude NRMSE | ≤0.15 / ≤0.15 |
 | Wrapped phase RMS | ≤0.35 rad |
 | Minimum tissue signal / contrast retention | ≥0.5 / ≥0.5 |
 | Outside-object energy | ≤0.25 |

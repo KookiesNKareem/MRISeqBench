@@ -1,0 +1,203 @@
+{
+  "case_id": "gre_t1w-v4--static_b0-v1--hardware-high_performance-v1",
+  "sequence_level": "S1",
+  "image_policy": "static",
+  "task": {
+    "schema_version": 1,
+    "id": "gre_t1w",
+    "version": 4,
+    "objective": "Create a Cartesian spoiled GRE acquisition for T1-weighted imaging using the declared matrix, FOV and timing.",
+    "sequence": {
+      "level": "S1",
+      "capabilities": [
+        "spoiled_gre",
+        "cartesian"
+      ],
+      "matrix": [
+        128,
+        128
+      ],
+      "fov_mm": [
+        200.0,
+        200.0
+      ],
+      "te_ms": {
+        "target": 5.0,
+        "tolerance": 1.0,
+        "max": null
+      },
+      "tr_ms": {
+        "target": null,
+        "tolerance": null,
+        "max": 24.0
+      },
+      "duration_s": 8.0,
+      "flip_angle_deg": null,
+      "readout": null,
+      "sampling": null,
+      "temporal": null,
+      "application": null
+    },
+    "object": "cardiac_2d_3t@1",
+    "hardware": "high_performance@1",
+    "evaluation": "s1@7",
+    "submission": {
+      "format": "pulseq",
+      "file": "sequence.seq"
+    }
+  },
+  "seed": 42,
+  "object": {
+    "schema_version": 1,
+    "id": "cardiac_2d_3t",
+    "version": 1,
+    "description": "Static cardiac short-axis slice at 3 T with field-specific tissue relaxation and fat chemical shift.",
+    "phantom": "cardiac_2d_3t@1",
+    "field_strength_T": 3.0,
+    "tissue_properties": {
+      "fat": {
+        "proton_density": 0.10000000149011612,
+        "T1_s": 0.38199999928474426,
+        "T2_s": 0.06800000369548798,
+        "chemical_shift_hz": -434.29028191184335
+      },
+      "myocardium": {
+        "proton_density": 0.10000000149011612,
+        "T1_s": 1.121999979019165,
+        "T2_s": 0.052000001072883606,
+        "chemical_shift_hz": 0.0
+      },
+      "blood": {
+        "proton_density": 0.10000000149011612,
+        "T1_s": 1.9320000410079956,
+        "T2_s": 0.2750000059604645,
+        "chemical_shift_hz": 0.0
+      }
+    },
+    "source_sha256": "5ac67584cf307ac360a3952975ab0b72b09357dc08b7ab74c9c0228f32aca634",
+    "definition": {
+      "dimensions": 2,
+      "grid": [
+        90,
+        89
+      ],
+      "fov_mm": [
+        200.0,
+        200.0
+      ],
+      "bounds_mm": [
+        [
+          -67.5,
+          67.5
+        ],
+        [
+          -66.75,
+          66.75
+        ]
+      ],
+      "materials": [
+        "fat",
+        "myocardium",
+        "blood"
+      ]
+    }
+  },
+  "physics": {
+    "schema_version": 1,
+    "id": "static_b0",
+    "version": 1,
+    "description": "Static scanner-frame B0 variation at a 3 T reference field; Hz offsets scale linearly with the selected scanner B0. Intrinsic fat chemical shift is supplied separately by the cardiac phantom.",
+    "reference_field_strength_T": 3.0,
+    "effects": [
+      {
+        "kind": "b0",
+        "model": "linear",
+        "offset_hz": 0.0,
+        "gradient_hz_per_m": [
+          1000.0,
+          0.0
+        ]
+      }
+    ],
+    "field_strength_T": 3.0,
+    "field_scale": 1.0
+  },
+  "hardware": {
+    "schema_version": 1,
+    "id": "high_performance",
+    "version": 1,
+    "provenance": {
+      "system": "Siemens MAGNETOM Prisma, XR gradients",
+      "source_url": "https://www.siemens-healthineers.com/en-au/magnetic-resonance-imaging/3t-mri-scanner/magnetom-prisma",
+      "accessed_on": "2026-10-09",
+      "notes": "Published values: field_strength_T, max_gradient_mT_per_m and max_slew_T_per_m_per_s. Gradient limits are per axis, not vector sums. max_b1_uT, dead times and rasters are shared benchmark assumptions shared synthetic benchmark assumptions, not manufacturer specifications. This is a limit profile, not a complete scanner model."
+    },
+    "field_strength_T": 3.0,
+    "sar": {
+      "model": "homogeneous_sphere_v1",
+      "radius_m": 0.15,
+      "conductivity_S_per_m": 0.5,
+      "density_kg_per_m3": 1000.0,
+      "whole_body_limit_W_per_kg": 2.0
+    },
+    "max_gradient_mT_per_m": 80.0,
+    "max_slew_T_per_m_per_s": 200.0,
+    "max_b1_uT": 20.0,
+    "rf_dead_time_us": 100.0,
+    "rf_ringdown_time_us": 30.0,
+    "adc_dead_time_us": 10.0,
+    "gradient_raster_us": 10.0,
+    "rf_raster_us": 1.0,
+    "adc_raster_us": 0.1,
+    "block_raster_us": 10.0
+  },
+  "evaluation": {
+    "schema_version": 1,
+    "id": "s1",
+    "version": 7,
+    "scope": "benchmark",
+    "calibrated": false,
+    "reconstruction": "bart_cartesian_fft@1",
+    "metrics": [
+      {
+        "name": "ideal_complex_image_nrmse",
+        "min": null,
+        "max": 0.15
+      },
+      {
+        "name": "ideal_signal_fraction",
+        "min": 0.01,
+        "max": null
+      },
+      {
+        "name": "ideal_outside_object_energy_fraction",
+        "min": null,
+        "max": 0.4
+      }
+    ],
+    "spatial_samples": 2097152,
+    "spatial_replicates": 4,
+    "spatial_max_samples": 2097152,
+    "spatial_seed": 1729,
+    "image_precision": null,
+    "spatial_mode": "fixed",
+    "phantom_slab_mm": 5.0,
+    "phantom_z_samples": null,
+    "image_score_estimator": "mean_image",
+    "image_sampling_nrmse_max": null,
+    "temporal_refinement": null,
+    "case_image_criteria": {
+      "static": {
+        "complex_nrmse_max": 0.15,
+        "magnitude_nrmse_max": 0.15,
+        "phase_rms_rad_max": 0.35,
+        "tissue_signal_fraction_min": 0.5,
+        "contrast_retention_min": 0.5,
+        "outside_energy_fraction_max": 0.25
+      }
+    },
+    "preparation_effect_fraction_min": null,
+    "mapping_relative_error_max": null,
+    "mapping_relative_error_precision": null
+  }
+}

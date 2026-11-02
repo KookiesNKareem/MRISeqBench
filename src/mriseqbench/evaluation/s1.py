@@ -5,9 +5,7 @@ import importlib.metadata
 import json
 import os
 import time
-from concurrent.futures import CancelledError, ThreadPoolExecutor
 from pathlib import Path
-from threading import Event
 
 import numpy as np
 
@@ -23,13 +21,17 @@ from .s1_case import (
     contrast_required,
     uses_case_image,
 )
-from .s1_control import build_controls, corrected_raw
-from .s1_image import image_metrics, material_masks, nrmse, reference_signal
+from .s1_image import image_metrics, material_masks, nrmse
 from .s1_koma import NativeRejection, reconstruct, simulate, versions
 from .s1_numerics import ReplayCache
 from .s1_phantom import phantom
 from .s1_probes import mechanism_probes
-from .s1_sampling import analytic_reference, image_scores, sampled_phantom
+from .s1_sampling import (
+    analytic_reference,
+    image_scores,
+    sampled_phantom,
+    sampling_image_nrmse,
+)
 from .s1_sequence import MissingExcitation, check, family, inspect_sequence
 
 IMPLEMENTATION_SHA256 = hashlib.sha256(
@@ -194,7 +196,6 @@ def _evaluate_s1(
     inspector=None,
     probes=None,
     reconstructor=None,
-    sampler=None,
     reference_builder=None,
     phase_builder=None,
     encoded_integrator="magnus4",
@@ -203,7 +204,6 @@ def _evaluate_s1(
     region_builder=None,
     replay_shape=None,
     temporal_norm=None,
-    control_builder=build_controls,
 ):
     if encoded_integrator not in {"bloch", "magnus4"}:
         raise ValueError("Unsupported encoded integrator")
@@ -212,7 +212,6 @@ def _evaluate_s1(
     inspector = inspector or inspect_sequence
     probes = probes or mechanism_probes
     reconstructor = reconstructor or reconstruct
-    sampler = sampler or reference_signal
     if phase_builder is None:
         # S1 shares the S2 context selector: target and phase oracle replay
         # the same central echo.
@@ -283,6 +282,10 @@ def _evaluate_s1(
     samples = contract.get("spatial_samples") or 32768
     replicates = contract.get("spatial_replicates") or 8
     max_samples = contract.get("spatial_max_samples") or min(4 * samples, 1048576)
+    fixed_phantom = contract.get("spatial_mode") == "fixed"
+    mean_image_score = contract.get("image_score_estimator") == "mean_image"
+    sampling_limit = contract.get("image_sampling_nrmse_max")
+    score_options = {"bias_correct": False} if mean_image_score else {}
     tolerances = ImagePrecision.model_validate(
         contract.get("image_precision") or {}
     ).model_dump()
@@ -299,17 +302,27 @@ def _evaluate_s1(
         IMPLEMENTATION_SHA256
         + submission_sha256
         + json.dumps(
-            {"case": case, "encoded_integrator": encoded_integrator}, sort_keys=True
+            {
+                "case": case,
+                "encoded_integrator": encoded_integrator,
+                "simulation_device": os.environ.get("MRISEQBENCH_KOMA_DEVICE", "cuda"),
+                "simulation_precision": os.environ.get(
+                    "MRISEQBENCH_KOMA_PRECISION", "f64"
+                ),
+            },
+            sort_keys=True,
         ),
         lambda *args, **steps: simulator(
             *args, integration_method=encoded_integrator, **steps
         ),
-        chunk_size=min(max_samples, 32768),
+        chunk_size=min(
+            max_samples, 262144 if dims == 2 and replay_shape is None else 32768
+        ),
         signal_shape=replay_shape(acq) if replay_shape is not None else None,
         deadline=deadline,
     )
     robustness_bounds = [
-        {"name": "complex_image_nrmse", "min": None, "max": 0.2},
+        {"name": "complex_image_nrmse", "min": None, "max": 0.15},
         {"name": "signal_fraction", "min": 0.01, "max": None},
         {"name": "outside_object_energy_fraction", "min": None, "max": 0.4},
     ]
@@ -345,21 +358,7 @@ def _evaluate_s1(
                 case_phase_reference=phase_info,
             )
             return report
-    # The control's integral is separate from the independent target encoding.
-    check_deadline()
-    controls = control_builder(acq, case, root) if control_builder else None
-    check_deadline()
-    control_description = (
-        {
-            "method": "known_integral_fid_history@1",
-            "history": controls[0].history,
-            "independent_target_preserved": True,
-            "native_residual_preserved": True,
-        }
-        if controls
-        else {"method": "intended_fourier@1"}
-    )
-    report["spatial_control_variate"] = control_description
+    report["signal_processing"] = "native_koma"
     history = []
     temporal_history = []
     if checkpoint_path := os.environ.get("MRISEQBENCH_NUMERICAL_CHECKPOINT"):
@@ -383,190 +382,140 @@ def _evaluate_s1(
         check_deadline()
         ideal_runs, physical_runs = [], []
         ideal_raw_runs, physical_raw_runs = [], []
-        koma_ideal_runs, koma_physical_runs, sampled_reference_runs = [], [], []
-        ideal_control_runs, physical_control_runs = [], []
+        koma_ideal_runs, koma_physical_runs = [], []
         counts = []
-        pool, pending, spin_batch = None, [], None
-        cancelled = Event()
-
-        def control_check(cancelled=cancelled):
+        for replicate in range(replicates):
             check_deadline()
-            if cancelled.is_set():
-                raise CancelledError()
-
-        def control_samples(spins, check=control_check):
-            check()
-            ideal = controls[0].sampled(spins, check=check)
-            physical = (
-                controls[1].sampled(spins, check=check)
-                if controls[1] is not controls[0]
-                else ideal
+            spins = sampled_phantom(
+                case, root, samples, replicate, directory=workspace / ".sampling"
             )
-            return ideal, physical
-
-        try:
-            if controls and dims == 3:
-                pool = ThreadPoolExecutor(max_workers=4)
-                spin_batch = [
-                    sampled_phantom(
-                        case, root, samples, rep, directory=workspace / ".sampling"
+            chemical_shift = spins.properties.shape[1] > 3 and np.any(
+                spins.properties[:, 3]
+            )
+            ideal_sampled = replay(acq, spins, **base_steps)
+            physical_sampled = (
+                replay(acq, spins, effects, **base_steps)
+                if effects or chemical_shift
+                else ideal_sampled
+            )
+            if replicate == 0:
+                # Refine integration before accepting any spatial-stage scores.
+                # A single unsuccessful halving is a request for more work.
+                while True:
+                    refined_sampled = replay(
+                        acq,
+                        spins,
+                        effects,
+                        **{name: step / 2 for name, step in base_steps.items()},
                     )
-                    for rep in range(replicates)
-                ]
-                pending = [pool.submit(control_samples, spins) for spins in spin_batch]
-            for replicate in range(replicates):
-                check_deadline()
-                spins = (
-                    spin_batch[replicate]
-                    if pending
-                    else sampled_phantom(
-                        case,
-                        root,
-                        samples,
-                        replicate,
-                        directory=workspace / ".sampling",
+                    temporal_raw_error = nrmse(refined_sampled, physical_sampled)
+                    temporal_image_error = temporal_norm(
+                        refined_sampled - physical_sampled,
+                        acq,
+                        matrix,
+                        reference,
+                        coarse=physical_sampled,
                     )
-                )
-                sampled_reference = (
-                    None if controls else sampler(acq, spins, spec, response)
-                )
-                chemical_shift = spins.properties.shape[1] > 3 and np.any(
-                    spins.properties[:, 3]
-                )
-                ideal_sampled = replay(acq, spins, **base_steps)
-                physical_sampled = (
-                    replay(acq, spins, effects, **base_steps)
-                    if effects or chemical_shift
-                    else ideal_sampled
-                )
-                if replicate == 0:
-                    # Refine integration before accepting any spatial-stage scores.
-                    # A single unsuccessful halving is a request for more work.
-                    while True:
-                        refined_sampled = replay(
-                            acq,
-                            spins,
-                            effects,
-                            **{name: step / 2 for name, step in base_steps.items()},
-                        )
-                        temporal_raw_error = nrmse(refined_sampled, physical_sampled)
-                        temporal_image_error = temporal_norm(
-                            refined_sampled - physical_sampled,
-                            acq,
-                            matrix,
-                            reference,
-                            coarse=physical_sampled,
-                        )
-                        temporal_error = max(temporal_raw_error, temporal_image_error)
-                        temporal_history.append(
-                            {
-                                **base_steps,
-                                "nrmse": temporal_error,
-                                "raw_nrmse": temporal_raw_error,
-                                "image_nrmse": temporal_image_error,
-                            }
-                        )
-                        write_json(
-                            workspace / "progress.json",
-                            {
-                                "spatial_refinement": history,
-                                "temporal_refinement": temporal_history,
-                                "current_samples": samples,
-                                "cache_hits": replay.hits,
-                            },
-                        )
-                        if temporal_error <= 0.01:
-                            break
-                        halvings = round(
-                            float(
-                                np.log2(0.001 / temporal_scale / base_steps["step_s"])
-                            )
-                        )
-                        # The comparison just made used halving `halvings + 1`;
-                        # stop there, as the phase oracle does.
-                        if halvings + 1 >= MAX_TEMPORAL_HALVINGS:
-                            # Grading has no time limit, so a replay that never
-                            # converges must stop at a declared timestep cap.
-                            report.update(
-                                status="numerically_unresolved",
-                                numerically_converged=False,
-                                failure_kind="unresolved_at_timestep_cap",
-                                reason=(
-                                    "Temporal NRMSE stayed above 0.01 after "
-                                    f"{MAX_TEMPORAL_HALVINGS} timestep halvings"
-                                ),
-                                temporal_refinement=temporal_history,
-                                progress_checkpoint=str(workspace / "progress.json"),
-                            )
-                            return report
-                        base_steps = {
-                            name: step / 2 for name, step in base_steps.items()
+                    temporal_error = max(temporal_raw_error, temporal_image_error)
+                    temporal_history.append(
+                        {
+                            **base_steps,
+                            "nrmse": temporal_error,
+                            "raw_nrmse": temporal_raw_error,
+                            "image_nrmse": temporal_image_error,
                         }
-                        physical_sampled = refined_sampled
-                        ideal_sampled = (
-                            replay(acq, spins, **base_steps)
-                            if effects or chemical_shift
-                            else physical_sampled
-                        )
-                # A control variate, not substituted dynamics: only the known Fourier
-                # sampling error is removed. All finite-RF/coherence residuals survive.
-                if controls:
-                    ideal_control, physical_control = controls
-                    if pending:
-                        ideal_sampled_control, physical_sampled_control = pending[
-                            replicate
-                        ].result(
-                            timeout=None
-                            if deadline is None
-                            else max(0, deadline - time.monotonic())
-                        )
-                    else:
-                        ideal_sampled_control = ideal_control.sampled(spins)
-                        physical_sampled_control = (
-                            physical_control.sampled(spins)
-                            if physical_control is not ideal_control
-                            else ideal_sampled_control
-                        )
-                    ideal_raw = corrected_raw(
-                        ideal_sampled, ideal_sampled_control, ideal_control.known
                     )
-                    physical_raw = corrected_raw(
-                        physical_sampled,
-                        physical_sampled_control,
-                        physical_control.known,
+                    write_json(
+                        workspace / "progress.json",
+                        {
+                            "spatial_refinement": history,
+                            "temporal_refinement": temporal_history,
+                            "current_samples": samples,
+                            "cache_hits": replay.hits,
+                        },
                     )
-                    ideal_control_runs.append(ideal_sampled_control)
-                    physical_control_runs.append(physical_sampled_control)
-                else:
-                    ideal_raw = reference_raw + ideal_sampled - sampled_reference
-                    physical_raw = reference_raw + physical_sampled - sampled_reference
-                    sampled_reference_runs.append(sampled_reference)
-                koma_ideal_runs.append(ideal_sampled)
-                koma_physical_runs.append(physical_sampled)
-                ideal_raw_runs.append(ideal_raw)
-                physical_raw_runs.append(physical_raw)
-                ideal_runs.append(reconstructor(ideal_raw, acq, matrix))
-                physical_runs.append(reconstructor(physical_raw, acq, matrix))
-                counts.append(len(spins.positions))
-                # Do not retain the previous multi-million-node sample while the
-                # next independent scramble is generated.
-                del spins
-        finally:
-            cancelled.set()
-            if pool is not None:
-                pool.shutdown(wait=False, cancel_futures=True)
-            spin_batch = None
+                    if temporal_error <= 0.01:
+                        break
+                    halvings = round(
+                        float(np.log2(0.001 / temporal_scale / base_steps["step_s"]))
+                    )
+                    # The comparison just made used halving `halvings + 1`;
+                    # stop there, as the phase oracle does.
+                    if halvings + 1 >= MAX_TEMPORAL_HALVINGS:
+                        # Grading has no time limit, so a replay that never
+                        # converges must stop at a declared timestep cap.
+                        report.update(
+                            status="numerically_unresolved",
+                            numerically_converged=False,
+                            failure_kind="unresolved_at_timestep_cap",
+                            reason=(
+                                "Temporal NRMSE stayed above 0.01 after "
+                                f"{MAX_TEMPORAL_HALVINGS} timestep halvings"
+                            ),
+                            temporal_refinement=temporal_history,
+                            progress_checkpoint=str(workspace / "progress.json"),
+                        )
+                        return report
+                    base_steps = {name: step / 2 for name, step in base_steps.items()}
+                    physical_sampled = refined_sampled
+                    ideal_sampled = (
+                        replay(acq, spins, **base_steps)
+                        if effects or chemical_shift
+                        else physical_sampled
+                    )
+            # Reconstruct the native Koma signal without analytical corrections.
+            koma_ideal_runs.append(ideal_sampled)
+            koma_physical_runs.append(physical_sampled)
+            ideal_raw_runs.append(ideal_sampled)
+            physical_raw_runs.append(physical_sampled)
+            ideal_runs.append(reconstructor(ideal_sampled, acq, matrix))
+            physical_runs.append(reconstructor(physical_sampled, acq, matrix))
+            counts.append(len(spins.positions))
+            del spins
         ideal_runs, physical_runs = np.asarray(ideal_runs), np.asarray(physical_runs)
-        ideal_metrics, ideal_intervals = image_scores(ideal_runs, reference, support)
+        ideal_metrics, ideal_intervals = image_scores(
+            ideal_runs, reference, support, **score_options
+        )
         if case_acceptance:
             physical_metrics, physical_intervals, case_details = case_image_scores(
-                physical_runs, reference, support, phasor, phase_valid, masks
+                physical_runs,
+                reference,
+                support,
+                phasor,
+                phase_valid,
+                masks,
+                **score_options,
             )
         else:
             physical_metrics, physical_intervals = image_scores(
-                physical_runs, reference, support
+                physical_runs, reference, support, **score_options
             )
         bounds = list(contract["metrics"])
+        if fixed_phantom:
+            ideal_precise = case_precise = sampling_ok = True
+            ideal_errors, case_errors = {}, {}
+            ideal_ok = all(decision(b, ideal_metrics, "ideal_") for b in bounds)
+            case_ok = all(decision(b, physical_metrics) for b in robustness_bounds)
+            ideal_basis = case_basis = stop_reason = "fixed_phantom"
+            sampling_errors = None
+            history.append(
+                {
+                    "samples": samples,
+                    "replicates": replicates,
+                    "spins": counts,
+                    "mode": "fixed",
+                    "phantom_slab_mm": contract.get("phantom_slab_mm"),
+                }
+            )
+            write_json(
+                workspace / "progress.json",
+                {
+                    "fixed_phantom": history[-1],
+                    "temporal_refinement": temporal_history,
+                    "cache_hits": replay.hits,
+                },
+            )
+            break
         ideal_precise, ideal_errors = score_precision(
             ideal_metrics, ideal_intervals, tolerances
         )
@@ -579,8 +528,19 @@ def _evaluate_s1(
         case_ok, case_basis = resolve_decision(
             robustness_bounds, physical_metrics, physical_intervals, case_precise
         )
+        sampling_errors = {
+            "ideal_nrmse": sampling_image_nrmse(ideal_runs, reference),
+            "case_nrmse": sampling_image_nrmse(physical_runs, reference),
+            "maximum_nrmse": sampling_limit,
+        }
+        sampling_ok = sampling_limit is None or (
+            sampling_errors["case_nrmse"] <= sampling_limit
+            and (case_acceptance or sampling_errors["ideal_nrmse"] <= sampling_limit)
+        )
+        sampling_errors["passed"] = sampling_ok
         history.append(
             {
+                "image_sampling_precision": sampling_errors,
                 "samples": samples,
                 "replicates": len(ideal_runs),
                 "spins": counts,
@@ -599,7 +559,11 @@ def _evaluate_s1(
                 "cache_hits": replay.hits,
             },
         )
-        if case_ok is not None and (case_acceptance or ideal_ok is not None):
+        if (
+            sampling_ok
+            and case_ok is not None
+            and (case_acceptance or ideal_ok is not None)
+        ):
             stop_reason = (
                 "precision_target"
                 if case_precise and (case_acceptance or ideal_precise)
@@ -622,12 +586,15 @@ def _evaluate_s1(
                 status="numerically_unresolved",
                 numerically_converged=False,
                 failure_kind="numerical_precision_not_reached",
+                image_score_estimator="mean_image" if mean_image_score else "debiased",
+                image_sampling_precision=sampling_errors,
                 progress_checkpoint=str(workspace / "progress.json"),
             )
             return report
         samples = min(samples * 2, max_samples)
     converged = (
         temporal_error <= 0.01
+        and sampling_ok
         and case_ok is not None
         and (case_acceptance or ideal_ok is not None)
         and (phase_info is None or phase_info["converged"])
@@ -643,8 +610,8 @@ def _evaluate_s1(
             f"case_{k}": v
             for k, v in image_metrics(physical, reference, mask_spins, spec).items()
         },
-        # Complex error uses unbiased cross-products; nonlinear case scores use
-        # bias-corrected jackknife estimates, not the displayed mean-image score.
+        # Fixed profiles use ordinary scores of the saved native mean image.
+        # Historical contracts retain their explicitly selected estimator.
         **{f"ideal_{k}": float(v) for k, v in ideal_metrics.items()},
         **{f"case_{k}": float(v) for k, v in physical_metrics.items()},
         "temporal_nrmse": temporal_error,
@@ -657,6 +624,8 @@ def _evaluate_s1(
     }
     report.update(
         metrics=metrics,
+        image_score_estimator="mean_image" if mean_image_score else "debiased",
+        image_sampling_precision=sampling_errors,
         numerical_intervals={"ideal": ideal_intervals, "case": physical_intervals},
         numerically_converged=converged,
         numerical_precision={
@@ -688,6 +657,13 @@ def _evaluate_s1(
             else "image_score_precision_or_temporal_error_not_resolved"
         ],
     )
+    if fixed_phantom:
+        report["numerical_intervals"] = None
+        report["numerical_precision"] = None
+        report["score_precision_met"] = None
+        report["spatial_sampling"].update(
+            mode="fixed", phantom_slab_mm=contract.get("phantom_slab_mm")
+        )
     report["ideal_image_checks"] = [
         {
             "name": bound["name"],
@@ -698,9 +674,9 @@ def _evaluate_s1(
             else None,
             "detail": {
                 "value": metrics[bound["name"]],
-                "numerical_interval": ideal_intervals[
-                    bound["name"].removeprefix("ideal_")
-                ],
+                "numerical_interval": None
+                if fixed_phantom
+                else ideal_intervals[bound["name"].removeprefix("ideal_")],
                 "numerically_resolved": temporal_error <= 0.01 and ideal_ok is not None,
                 **bound,
             },
@@ -717,7 +693,9 @@ def _evaluate_s1(
             else None,
             "detail": {
                 "value": physical_metrics[bound["name"]],
-                "numerical_interval": physical_intervals[bound["name"]],
+                "numerical_interval": None
+                if fixed_phantom
+                else physical_intervals[bound["name"]],
                 "numerically_resolved": converged,
                 **bound,
             },
@@ -769,18 +747,6 @@ def _evaluate_s1(
         k_cycles_per_m=acq.k,
         matrix=np.asarray(matrix),
         fov_mm=np.asarray(spec["fov_mm"]),
-        **(
-            {
-                "known_control_raw": controls[1].known,
-                "ideal_known_control_raw": controls[0].known,
-                "sampled_control_raw_replicates": np.asarray(physical_control_runs),
-                "ideal_sampled_control_raw_replicates": np.asarray(ideal_control_runs),
-            }
-            if controls
-            else {
-                "sampled_reference_raw_replicates": np.asarray(sampled_reference_runs)
-            }
-        ),
     )
     write_json(
         workspace / "provenance.json",
@@ -803,8 +769,12 @@ def _evaluate_s1(
             "phantom": case["object"]["phantom"],
             "shapes_sha256": mask_spins.source_sha256,
             "koma_versions": versions(),
-            "spatial_integration": "material-stratified native-cell CDF below the cell count, otherwise jittered strata within every cell; independent replicates, exact tissue volumes and Fourier control variate; full Bloch residual retained",
-            "spatial_control_variate": control_description,
+            "spatial_integration": (
+                "Fixed material-stratified cell sampling with reproducible scrambled Sobol subvoxels; exact tissue volumes; unmodified native Koma signal"
+                if fixed_phantom
+                else "material-stratified native-cell CDF below the cell count, otherwise jittered strata within every cell; independent replicates, exact tissue volumes; unmodified native Koma signal"
+            ),
+            "signal_processing": "native_koma",
             "encoded_integrator": "KomaMRICore.Bloch"
             if encoded_integrator == "bloch"
             else "KomaMRICore.BlochMagnus4",
@@ -815,7 +785,15 @@ def _evaluate_s1(
             "refinement_history": history,
             "temporal_refinement_history": temporal_history,
             "replay_cache_hits": replay.hits,
-            "score_intervals": "Approximate 99% Student-t delete-one jackknife intervals; complex/energy scores use quadratic cross-products, nonlinear case scores use leading-bias correction; numerical uncertainty, not task uncertainty",
+            "score_intervals": (
+                "Ordinary scores of the saved mean image on a fixed phantom; no spatial confidence gate, noise subtraction or bias correction"
+                if fixed_phantom
+                else "Ordinary scores of the saved mean image; approximate 99% delete-one jackknife intervals; no noise subtraction or bias correction"
+                if mean_image_score
+                else "Approximate 99% Student-t delete-one jackknife intervals; complex/energy scores use quadratic cross-products, nonlinear case scores use leading-bias correction; numerical uncertainty, not task uncertainty"
+            ),
+            "image_score_estimator": "mean_image" if mean_image_score else "debiased",
+            "image_sampling_precision": sampling_errors,
             "rf_step_s": [base_steps["rf_step_s"], base_steps["rf_step_s"] / 2],
             "dynamic_step_s": [base_steps["step_s"], base_steps["step_s"] / 2],
             "convergence_limits": {
@@ -825,8 +803,10 @@ def _evaluate_s1(
                 "initial_spatial_budget": max_samples,
             },
             "numerically_converged": converged,
-            "image_precision_targets": tolerances,
-            "decision_rule": "interval-certified verdict where possible; otherwise point estimate at published cutoff after numerical precision target is met",
+            "image_precision_targets": None if fixed_phantom else tolerances,
+            "decision_rule": "ordinary mean-image scores on the fixed phantom; density qualified offline"
+            if fixed_phantom
+            else "interval-certified verdict where possible; otherwise point estimate at published cutoff after numerical precision target is met",
             "effects": effects,
             "reference": "analytic Fourier transforms of registered shapes with independent ideal family response; no fitted gain or registration",
             "case_phase_reference": phase_info,

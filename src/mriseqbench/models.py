@@ -266,9 +266,15 @@ class Task(Document):
     def cardiac_application_contract(self):
         if self.id == "rf_excitation_2d" and (
             self.sequence.level != "S4"
-            or self.evaluation != "rf_excitation@3"
+            or self.evaluation
+            not in {"rf_excitation@3", "rf_excitation@4", "rf_excitation@5"}
             or self.object != "uniform_disc@1"
-            or self.sequence.capabilities != ["rf_excitation_2d"]
+            or self.sequence.capabilities
+            != (
+                ["rf_excitation_2d", "cartesian"]
+                if self.evaluation in {"rf_excitation@4", "rf_excitation@5"}
+                else ["rf_excitation_2d"]
+            )
             or self.sequence.matrix != (128, 128)
             or self.sequence.fov_mm != (200, 200)
             or any(
@@ -285,7 +291,7 @@ class Task(Document):
             )
         ):
             raise ValueError(
-                "AI excitation requires the fixed S4 excitation-only water-disc contract"
+                "AI excitation requires the fixed S4 water-disc excitation/readout contract"
             )
         if self.sequence.level == "S4" and self.id != "rf_excitation_2d":
             if not {"triggering", "gating"} <= set(self.sequence.capabilities):
@@ -589,11 +595,16 @@ class Evaluation(Document):
         "none",
     ]
     metrics: list[Metric]
-    spatial_samples: Annotated[int, Field(ge=4096, le=1048576)] | None = None
+    spatial_samples: Annotated[int, Field(ge=4096, le=4194304)] | None = None
     spatial_replicates: Annotated[int, Field(ge=4, le=32)] | None = None
-    spatial_max_samples: Annotated[int, Field(ge=4096, le=1048576)] | None = None
+    spatial_max_samples: Annotated[int, Field(ge=4096, le=4194304)] | None = None
     spatial_seed: Annotated[int, Field(ge=0, le=2147483616)] | None = None
     image_precision: ImagePrecision | None = None
+    spatial_mode: Literal["fixed"] | None = None
+    phantom_slab_mm: Annotated[float, Field(gt=0, le=100)] | None = None
+    phantom_z_samples: Annotated[int, Field(ge=2, le=512)] | None = None
+    image_score_estimator: Literal["mean_image"] | None = None
+    image_sampling_nrmse_max: Annotated[float, Field(gt=0, lt=1)] | None = None
     temporal_refinement: Literal[0, 1] | None = None
     case_image_criteria: dict[Literal["static"], CaseImageCriteria] | None = None
     # Optional per-task (family) overrides of the static case image criteria.
@@ -610,7 +621,9 @@ class Evaluation(Document):
             "s2": "bart_readout@1",
             "s3": "bart_sampling_sense@1",
             "s4": "bart_cartesian_fft@1",
-            "rf_excitation": "direct_magnetization@1",
+            "rf_excitation": "bart_cartesian_fft@1"
+            if self.version >= 4
+            else "direct_magnetization@1",
         }
         if self.id in expected and self.reconstruction != expected[self.id]:
             raise ValueError(f"{self.id} requires {expected[self.id]}")
@@ -621,15 +634,31 @@ class Evaluation(Document):
         if not imaging and any(
             value is not None
             for value in (
+                self.spatial_mode,
                 self.spatial_samples,
                 self.spatial_replicates,
                 self.spatial_max_samples,
                 self.spatial_seed,
                 self.image_precision,
+                self.image_score_estimator,
+                self.image_sampling_nrmse_max,
                 self.temporal_refinement,
             )
         ):
             raise ValueError("spatial/numerical settings require s1-s4")
+        if (
+            self.image_sampling_nrmse_max is not None
+            and self.image_score_estimator is None
+        ):
+            raise ValueError("a sampling precision limit requires mean-image scoring")
+        if self.spatial_mode == "fixed" and (
+            self.image_score_estimator != "mean_image"
+            or self.image_sampling_nrmse_max is not None
+            or self.spatial_samples != self.spatial_max_samples
+        ):
+            raise ValueError(
+                "fixed phantoms require ordinary mean-image scores, equal fixed budgets and no per-trial spatial convergence limit"
+            )
         for value in (self.spatial_samples, self.spatial_max_samples):
             if value is not None and value & (value - 1):
                 raise ValueError("spatial sample counts must be powers of two")

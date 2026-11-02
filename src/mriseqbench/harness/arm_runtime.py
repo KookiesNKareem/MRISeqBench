@@ -482,7 +482,9 @@ def launch_arm(runtime, command, workspace, control, env):
                 timeout=timeout + 5,
             )
             session = json.loads(ready)
-            if session.get("mode") != "persistent" or not session.get("revise_version"):
+            if session.get("mode") != "persistent" or "include_edit" not in session.get(
+                "warmup", []
+            ):
                 raise ValueError("Julia session did not confirm warm readiness")
             session["setup_elapsed_s"] = time.monotonic() - started
             metadata["julia_session"] = session

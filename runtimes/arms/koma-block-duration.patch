@@ -1,0 +1,64 @@
+--- a/src/datatypes/Sequence.jl
++++ b/src/datatypes/Sequence.jl
+@@ -431,7 +431,8 @@
+     return isnothing(T) ? U : T
+ end
+ function _set_block_duration!(seq, events...)
+-    block_duration = _block_duration(seq.DUR[1], events...)
++    sys = _sequence_scanner_from_def(seq.DEF)
++    block_duration = _block_duration(dur(seq, sys), events...)
+     T = _block_duration_constraint(events...)
+     if isnothing(T)
+         seq.DUR[1] = block_duration
+@@ -446,7 +447,7 @@
+ _axis_grad(::Nothing, ref::Grad) = 0.0 * ref
+ _axis_grad(gr::Grad, ref) = gr
+ 
+-function _block_sequence(events; x=nothing, y=nothing, z=nothing)
++function _block_sequence(events; x=nothing, y=nothing, z=nothing, def=DEFAULT_SEQUENCE_DEFINITIONS)
+     foreach(_check_block_event, events)
+     grads = (x, y, z)
+     for (axis, gr) in zip((:x, :y, :z), grads)
+@@ -469,6 +470,7 @@
+     rf = isempty(rfs) ? reshape([RF(0.0, 0.0)], 1, 1) : _event_column(rfs)
+     adc = isempty(adcs) ? [ADC(0, 0.0)] : length(adcs) == 1 ? _event_vector(adcs) : error("Only one ADC event can be added per block.")
+     seq = Sequence(_event_column(grs), rf, adc)
++    seq.DEF = deepcopy(def)
+     _set_block_duration!(seq, events...)
+     seq.EXT[1] = Extension[exts...]
+     return seq
+@@ -481,10 +483,10 @@
+ `x=`, `y=`, or `z=`.
+ """
+ function addblock!(seq::Sequence, events::_BlockEventTuple; x=nothing, y=nothing, z=nothing)
+-    return append!(seq, _block_sequence(events; x, y, z))
++    return append!(seq, _block_sequence(events; x, y, z, def=seq.DEF))
+ end
+ function addblock!(seq::Sequence, events...; x=nothing, y=nothing, z=nothing)
+-    return append!(seq, _block_sequence(events; x, y, z))
++    return append!(seq, _block_sequence(events; x, y, z, def=seq.DEF))
+ end
+ Base.push!(seq::Sequence, events...) = addblock!(seq, events...)
+ 
+@@ -499,8 +501,8 @@
+     return Sequence(GR, _copy_events(x.RF), _copy_events(x.ADC), copy(x.DUR), _copy_block_metadata(x.EXT), deepcopy(x.DEF))
+ end
+ /(x::Sequence, α::Real) = Sequence(Matrix{Grad}(x.GR / α), _copy_events(x.RF), _copy_events(x.ADC), copy(x.DUR), _copy_block_metadata(x.EXT), deepcopy(x.DEF))
+-+(s::Sequence, events::_BlockEventTuple) = s + _block_sequence(events)
+-+(events::_BlockEventTuple, s::Sequence) = _block_sequence(events) + s
+++(s::Sequence, events::_BlockEventTuple) = s + _block_sequence(events; def=s.DEF)
+++(events::_BlockEventTuple, s::Sequence) = _block_sequence(events; def=s.DEF) + s
+ #Grad operations
+ +(s::Sequence, g::Grad) = s + (g,)
+ +(g::Grad, s::Sequence) = (g,) + s
+--- a/src/datatypes/sequence/AddBlockMacro.jl
++++ b/src/datatypes/sequence/AddBlockMacro.jl
+@@ -7,7 +7,7 @@
+ _addblock_fresh_term!(seq::Sequence, event) = _addblock_term!(seq, event)
+ 
+ function _addblock_transformed_term!(seq::Sequence, op, events...; x=nothing, y=nothing, z=nothing)
+-    return _append_owned!(seq, op * _block_sequence(events; x, y, z))
++    return _append_owned!(seq, op * _block_sequence(events; x, y, z, def=seq.DEF))
+ end
+ 
+ function _addblock_check!(seq::Sequence, ctx)

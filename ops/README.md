@@ -164,3 +164,86 @@ worker logs are never overwritten by scratch copies. Verified outputs return to
 the campaign host before remote scratch files are deleted. Preserve failed
 transfers for recovery; do not treat them as agent failures. Manage cloud lease
 deadlines independently of job execution and drain admission before retiring a host.
+
+## Native macOS author isolation
+
+Native pilots must wrap both the agent subprocess and its persistent Julia author
+with `mriseqbench.harness.native_boundary.isolate_judge`. The private checkout,
+controls, reference arrays and transient native-worker files are unreadable;
+only the author workspace and declared public libraries are exceptions. Public
+libraries are read-only. Among local services, only that trial's authenticated
+feedback/simulation port is reachable; dashboard and grader IPC access is denied.
+The trusted judge remains outside this boundary. The wrapper fails closed when
+the required macOS sandbox is unavailable. Never replace it with prompt-only rules.
+
+
+## Native agent simulation feedback
+
+For new native campaigns, copy `ops/grading_mcp.py` into the campaign's frozen
+runtime and allow the `simulate` MCP tool in simulator-enabled arms. It is
+advertised only when the workspace has `bin/simulate`. The matching source
+`arm_simulation_client.py` must also be frozen into that campaign.
+
+`grading.simulate` returns actual PNG image content together with the existing
+public file/timing/hardware check, the candidate SHA-256 and reconstruction
+status. Complete complex images, labels and coordinate arrays stay in
+`simulation/`; stdout contains a compact summary. The tool consumes no graded
+submission and exposes no private targets, image scores or SAR result. Image
+content is returned for every reconstructed label group, including ECO/REP
+previews. A candidate edit requires another simulation. Existing frozen campaigns
+keep their original adapter and client.
+
+## Native campaign monitor and author sysimages
+
+The relocatable [campaign monitor](monitor/README.md) displays existing trial
+progress, simulator previews and judge submissions; it does not schedule work.
+The [author sysimage recipe](build_author_sysimage.jl) builds one isolated Julia
+author profile at a time and records its source/manifest hashes. The native
+pilot's queue manager was process orchestration (launch, recovery, collection),
+not an additional model agent. Campaign-specific launchers remain separate from
+the reusable monitor.
+
+Persistent grading transport (`mriseqbench.evaluation.warm_service`) and static
+GPU batching share the Koma worker implementation. The currently wired backends
+are CPU, CUDA/Float64 and Metal/Float32. Linux Docker cannot expose Apple Metal.
+Dynamic-field work keeps its conservative integration ranges. The measured
+performance gain was qualified on Metal; it is not a CUDA or AMD performance
+claim. AMDGPU and oneAPI are not wired into this harness.
+
+## Qualify fixed phantom density before trials
+
+Select a known reference sequence and a resolved case using the new fixed-slab
+contract. Keep the backend and precision identical between the two densities:
+
+```sh
+MRISEQBENCH_KOMA_DEVICE=metal MRISEQBENCH_KOMA_PRECISION=f32 \
+MRISEQBENCH_KOMA_PROJECT=/absolute/path/to/metal-project \
+  uv run python ops/qualify_phantom_density.py --case /absolute/path/to/case.json \
+  --sequence /absolute/path/to/control.seq --output /absolute/path/to/new-qualification
+```
+
+Use CUDA/Float64 or CPU/Float64 on those backends. Put the Julia binary matching
+the selected project Manifest.toml first on PATH; do not rely on juliaup's current
+default version. This tool starts no agents,
+changes no acceptance limits and leaves the evaluator's calibrated flag alone.
+Review native image quality as well as density agreement for each task/scanner
+profile before marking it calibrated. A stable but wrong sequence is not a
+positive control. New fixed profiles are intentionally uncalibrated meanwhile.
+
+## Polling token accounting
+
+Keep polling-only responses visible as a separate category, including their input
+and output usage. Cached input is already part of input tokens and is not added
+again. An audited response map labels only wholly polling responses; mixed
+productive/status responses stay in the other category. This classifies complete
+provider responses, not the causal origin of each context token.
+
+```sh
+uv run python ops/report_polling_tokens.py --campaign /absolute/path/to/campaign \
+  --audit /absolute/path/to/polling-response-audit.csv \
+  --output /absolute/path/to/token-categories.csv
+```
+
+The audit must cover the same unique trial/response pairs and token totals as
+`response-usage.csv`; the command rejects missing or inconsistent rows. It reads
+results without changing trials or provider accounting.

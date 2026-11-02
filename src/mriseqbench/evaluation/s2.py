@@ -273,7 +273,7 @@ def mechanism_probes(acq, case, materials, properties):
 
 def evaluate_s2(submission, case, root, workspace, *, deadline=None):
     # The default temporal gate projects timestep error through `reconstruct`.
-    encoding = {"reconstructor": reconstruct, "sampler": reference_signal}
+    encoding = {"reconstructor": reconstruct}
     if (
         family(case) == "epi_single_shot"
         and ((case["task"]["sequence"].get("sampling") or {}).get("acceleration") or 1)
@@ -283,7 +283,6 @@ def evaluate_s2(submission, case, root, workspace, *, deadline=None):
 
         encoding.update(
             reconstructor=s3.reconstruct,
-            sampler=s3.reference_channels,
             analytic_sampler=s3.analytic_channels,
             simulator=s3.simulate_channels,
             replay_shape=s3.signal_shape,

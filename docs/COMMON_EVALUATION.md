@@ -215,9 +215,9 @@ contain any phantom material.
   so neither implies the other. The phase oracle halves its steps
   until the |R|²-weighted RMS chord |P_step − P_half| is ≤ 0.01; a voxel whose
   validity changes counts as chord 2.
-- **Spatial.** Each image uses `spatial_replicates` independent randomized
+- **Spatial, historical adaptive contracts.** Each image uses `spatial_replicates` independent randomized
   quadratures of `spatial_samples` spins. Scores carry approximate 99%
-  Student-t delete-one jackknife intervals. If the interval decides the
+  Student-t delete-one jackknife intervals (historical adaptive contracts only). If the interval decides the
   verdict, it is final: pass if the whole interval is inside the limit, fail if
   the whole interval is outside. Otherwise, once every interval half-width is
   within `image_precision` (`case.json`), the point estimate is compared with
@@ -225,3 +225,14 @@ contain any phantom material.
   intervals of their squared statistics, and a negative bias-corrected squared
   estimate never passes on its point value. Otherwise the sample count doubles
   up to `spatial_max_samples`; still unresolved there fails.
+
+## Current fixed-phantom contracts
+
+Current fixed profiles score the saved native mean image with ordinary NRMSE,
+with a common 15% image cutoff including spatial RF excitation. Their 2D object
+is a 5 mm slab; actual spins span x, y and z. No signal correction or sampling-
+noise subtraction is applied. Spin density is qualified before trials with
+known sequences and denser phantoms; this is not a per-submission spatial
+convergence gate. The adaptive intervals described above apply only to older
+contracts. New fixed contracts remain uncalibrated until their task/scanner
+controls have qualified. Native file and timestep correctness checks remain.

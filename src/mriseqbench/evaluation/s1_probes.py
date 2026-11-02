@@ -138,12 +138,12 @@ def mechanism_probes(acq, case, materials, properties):
             / max(0.1 * abs(ideal[contrast_id]), 1e-15)
         )
     if fam not in {"bssfp", "spin_echo_t2w"}:
-        # Per-axis voxel widths; like the image replay, a 2D plane has no z extent.
+        # Through-plane dephasing uses the same public slab as image replay.
         width = np.r_[
             np.asarray(case["task"]["sequence"]["fov_mm"])
             / np.asarray(case["task"]["sequence"]["matrix"])
             / 1000,
-            0.0,
+            (case["evaluation"].get("phantom_slab_mm") or 0) / 1000,
         ][:3]
         errors = []
         for count in (1021, 2053):
@@ -183,7 +183,7 @@ def mechanism_probes(acq, case, materials, properties):
                 {
                     "relative_errors": errors,
                     "max": 0.2,
-                    "ensemble": "1021/2053 Halton isochromats across one voxel, no z extent in 2D; encoding phase removed",
+                    "ensemble": "1021/2053 Halton isochromats across one voxel and the declared slice slab; encoding phase removed",
                 },
             )
         )
@@ -231,7 +231,15 @@ def mechanism_probes(acq, case, materials, properties):
                 metrics["diagnostic_wm_gm_ratio"] >= 1.15
                 and metrics["diagnostic_t1_sensitivity"]
                 > metrics["diagnostic_t2_sensitivity"],
-                {k: v for k, v in metrics.items() if "diagnostic" in k},
+                {
+                    **{k: v for k, v in metrics.items() if "diagnostic" in k},
+                    "requirements": {
+                        "diagnostic_wm_gm_ratio": {"min": 1.15},
+                        "diagnostic_t1_sensitivity": {
+                            "greater_than": "diagnostic_t2_sensitivity"
+                        },
+                    },
+                },
             )
         )
     return checks, metrics, diagnostic

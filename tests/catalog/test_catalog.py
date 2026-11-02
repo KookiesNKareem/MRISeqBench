@@ -50,7 +50,7 @@ def test_active_catalog_and_full_suite():
         dimensions = len(case["task"]["sequence"]["matrix"])
         if case["evaluation"]["id"] == "rf_excitation":
             assert case["object"]["phantom"] == "uniform_disc@1"
-            assert case["evaluation"]["reconstruction"] == "direct_magnetization@1"
+            assert case["evaluation"]["reconstruction"] == "bart_cartesian_fft@1"
             continue
         assert case["image_policy"] == "static" and "object_level" not in case
         assert case["object"]["id"].startswith(f"cardiac_{dimensions}d_")
@@ -72,7 +72,8 @@ def test_core_smoke_and_default_hardware():
     low = catalog.resolve(task, hardware_ref="low_field")
     assert task.hardware == "high_performance@1"
     assert (
-        default["case_id"] == "gre_t1w-v2--static_b0-v1--hardware-high_performance-v1"
+        default["case_id"]
+        == f"gre_t1w-v{task.version}--static_b0-v1--hardware-high_performance-v1"
     )
     assert low["case_id"].endswith("--hardware-low_field-v1")
     assert low["task"]["hardware"] == "low_field@1"

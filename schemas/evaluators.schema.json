@@ -198,7 +198,7 @@
     "spatial_samples": {
       "anyOf": [
         {
-          "maximum": 1048576,
+          "maximum": 4194304,
           "minimum": 4096,
           "type": "integer"
         },
@@ -226,7 +226,7 @@
     "spatial_max_samples": {
       "anyOf": [
         {
-          "maximum": 1048576,
+          "maximum": 4194304,
           "minimum": 4096,
           "type": "integer"
         },
@@ -261,6 +261,74 @@
         }
       ],
       "default": null
+    },
+    "spatial_mode": {
+      "anyOf": [
+        {
+          "const": "fixed",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spatial Mode"
+    },
+    "phantom_slab_mm": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Phantom Slab Mm"
+    },
+    "phantom_z_samples": {
+      "anyOf": [
+        {
+          "maximum": 512,
+          "minimum": 2,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Phantom Z Samples"
+    },
+    "image_score_estimator": {
+      "anyOf": [
+        {
+          "const": "mean_image",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Image Score Estimator"
+    },
+    "image_sampling_nrmse_max": {
+      "anyOf": [
+        {
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Image Sampling Nrmse Max"
     },
     "temporal_refinement": {
       "anyOf": [

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.5
+id: rf_excitation_2d
+version: 3
+objective: Acquire an image of upright AI in the supplied uniform water disc, matching
+  target.npz (magnitude 0.5 inside, zero outside, 1.25 mm edge smoothing). Repeat
+  spatial excitation (at most 40 ms) followed by one 128-sample Cartesian x-readout
+  line, then at least 2 seconds of recovery, for all 128 phase-encoding lines.
+  Acquire every Cartesian sample exactly once over the existing 200 by 200 mm FOV.
+  Complete each readout within 5 ms after its last RF sample; include recovery after
+  the last readout too. Label LIN and set Nx=128, Ny=128, Nz=1 and FOV for reconstruction.
+  The magnitude image is compared directly to the target, with relaxation and declared
+  B0, no fitted gain or registration. Finish the full acquisition within 262 seconds.
+object: uniform_disc@1
+evaluation: rf_excitation@4
+sequence:
+  level: T4
+  capabilities: [rf_excitation_2d, cartesian]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  duration_s: 262

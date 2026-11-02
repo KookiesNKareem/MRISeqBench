@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 # T1.3
 id: spin_echo_t2w
-version: 2
+version: 4
 objective: Create a Cartesian spin-echo acquisition with one 90-degree excitation and one 180-degree
   refocusing pulse per k-space line. Use TE 80 ms and TR 1000 ms for T2 weighting.
 object: P1@1
@@ -13,4 +13,4 @@ sequence:
   duration_s: 135
   te_ms: {target: 80, tolerance: 8.0}
   tr_ms: {target: 1000, tolerance: 50.0}
-evaluation: s1@5
+evaluation: s1@7

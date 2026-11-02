@@ -72,11 +72,16 @@ def worker_error(message):
 
 class KomaWorker:
     def __init__(self):
-        if os.environ.get("MRISEQBENCH_KOMA_DEVICE", "cuda") != "cuda":
-            raise RuntimeError(
-                "MRISeqBench simulations require CUDA; CPU execution is disabled"
-            )
+        device = os.environ.get("MRISEQBENCH_KOMA_DEVICE", "cuda")
+        if device not in {"cuda", "cpu", "metal"}:
+            raise ValueError("MRISEQBENCH_KOMA_DEVICE must be 'cuda', 'metal', or 'cpu'")
+        precision = os.environ.get("MRISEQBENCH_KOMA_PRECISION", "f64")
+        if precision not in {"f32", "f64"}:
+            raise ValueError("MRISEQBENCH_KOMA_PRECISION must be 'f32' or 'f64'")
+        if device != "metal" and precision != "f64":
+            raise ValueError("Float32 grading is supported only on Metal")
         self.root = Path(__file__).resolve().parents[3]
+        project = os.environ.get("MRISEQBENCH_KOMA_PROJECT", str(self.root))
         self.directory = tempfile.TemporaryDirectory(prefix="mriseqbench-koma-")
         self.path = Path(self.directory.name)
         self.lock = threading.Lock()
@@ -95,7 +100,7 @@ class KomaWorker:
                 "--startup-file=no",
                 "--compiled-modules=existing",
                 "--threads=4",
-                f"--project={self.root}",
+                f"--project={project}",
                 str(Path(__file__).with_suffix(".jl")),
             ],
             stdin=subprocess.PIPE,
@@ -292,7 +297,8 @@ def versions():
         "SimulationBackend": execution["backend"],
         "SimulationDevice": execution["device"],
         "SimulationPrecision": execution["precision"],
-        **({"CUDA": execution["cuda_version"]} if execution["cuda_version"] else {}),
+        "SimulationProject": execution["project"],
+        **({"CUDA": execution["cuda_version"]} if execution.get("cuda_version") else {}),
     }
 
 
@@ -403,7 +409,7 @@ def simulate(
 
 
 def inversion_assay(pulse, offsets_hz):
-    """Exact finite-waveform unitary RF assay, evaluated on the CUDA device."""
+    """Exact finite-waveform unitary RF assay, retained at Float64 precision."""
     offsets = np.asarray(offsets_hz, dtype=float) - pulse.frequency
     signal = np.asarray(pulse.signal) * np.exp(1j * pulse.phase)
     widths = np.diff(pulse.edges)

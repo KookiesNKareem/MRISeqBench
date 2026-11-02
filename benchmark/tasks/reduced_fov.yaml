@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/tasks.schema.json
 # T3.8
 id: reduced_fov
-version: 2
+version: 4
 objective: Use an inner-volume excitation/refocusing pair to select the central 100 mm phase FOV.
   Acquire even zero-based ky indices with full 128-point readouts and suppress signal outside the selected
   region at the echo, either by y-selective excitation or by a y-selective refocuser whose unrefocused
@@ -16,4 +16,4 @@ sequence:
   sampling:
     reduced_fov_fraction: 0.5
     pattern: reduced_fov
-evaluation: s3@4
+evaluation: s3@6

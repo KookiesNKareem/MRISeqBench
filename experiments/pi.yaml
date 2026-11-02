@@ -2,7 +2,7 @@
 schema_version: 1
 id: pi
 version: 1
-suite: full@1
+suite: full@4
 repeats: 1
 submission_mode: submit
 max_submissions: 3

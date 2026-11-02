@@ -714,7 +714,6 @@ def evaluate_s3(submission, case, root, workspace, *, deadline=None):
         inspector=inspect_sequence,
         probes=mechanism_probes,
         reconstructor=reconstruct,
-        sampler=reference_channels,
         analytic_sampler=analytic_channels,
         reference_builder=reference_image,
         phase_builder=phase_reference,

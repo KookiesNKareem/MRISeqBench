@@ -2,7 +2,7 @@
 schema_version: 1
 id: pi_j4_pulseq_julia_koma
 version: 1
-suite: full@1
+suite: full@4
 arm: j4_pulseq_julia_koma@1
 arm_runtime:
   author_image: mriseqbench/author-pulseq_julia:local

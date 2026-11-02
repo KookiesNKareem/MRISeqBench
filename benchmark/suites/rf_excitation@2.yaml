@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../../schemas/suites.schema.json
+schema_version: 1
+id: rf_excitation
+version: 2
+cases:
+- task: T3.9@3
+  hardware: [H1@1, H2@1, H3@1]
+  physics: [static_b0@1]
+- task: T4.5@3
+  hardware: [H1@1, H2@1, H3@1]
+  physics: [static_b0@1]

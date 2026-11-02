@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.5
+id: rf_excitation_2d
+version: 2
+objective: Excite the upright letters AI in the supplied uniform water disc, matching target.npz
+  (magnitude 0.5 inside, zero outside, 1.25 mm edge smoothing). Use in-plane RF encoding and no ADC;
+  the response is measured 1 microsecond after sequence end, with relaxation and declared B0. Finish
+  within 40 ms.
+object: uniform_disc@1
+evaluation: rf_excitation@3
+sequence:
+  level: T4
+  capabilities: [rf_excitation_2d]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  duration_s: 0.04

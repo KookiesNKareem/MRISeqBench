@@ -12,6 +12,62 @@ import h5py
 import numpy as np
 
 ENGINE = os.environ["MRISEQBENCH_SIMULATOR"]
+DEVICE = os.environ.get("MRISEQBENCH_SIMULATOR_DEVICE", "cuda")
+if DEVICE not in {"cuda", "metal", "cpu"}:
+    raise ValueError("MRISEQBENCH_SIMULATOR_DEVICE must be 'cuda', 'metal', or 'cpu'")
+SIMULATOR_PROJECT = os.environ.get("MRISEQBENCH_SIMULATOR_PROJECT", "/opt/simulator")
+
+
+def reconstruct_mrzero(signal, seq, source, output):
+    import MRzeroCore as mr0
+    import pypulseq as pp
+    import torch
+
+    metadata = {"api": "MRzeroCore.reco_adjoint", "method": "adjoint", "diagnostic": True}
+    try:
+        public_seq = pp.Sequence()
+        public_seq.read(str(source / "sequence.seq"))
+        definitions = public_seq.definitions
+        if not all(key in definitions for key in ("Nx", "Ny", "FOV")):
+            raise ValueError("Add Nx/Ny/Nz and FOV to the .seq file's [DEFINITIONS] section")
+        matrix = tuple(int(definitions.get(key, 1)) for key in ("Nx", "Ny", "Nz"))
+        fov = tuple(float(value) for value in np.atleast_1d(definitions["FOV"]))
+        if len(fov) != 3 or min(matrix) < 1 or min(fov) <= 0:
+            raise ValueError("Expected positive Nx/Ny/Nz and three positive FOV values")
+        names = ("SLC", "SET", "REP", "AVG", "PHS", "ECO")
+        labels = np.stack([seq.get_adc_labels(name.lower()).cpu().numpy() for name in names], axis=1)
+        trajectory = seq.get_kspace().to(signal.device)
+        images = []
+        # The native adjoint forms a sample-by-voxel matrix. Accumulate its
+        # linear contributions in bounded chunks instead of allocating it whole.
+        chunk_size = max(1, min(512, 2**20 // int(np.prod(matrix))))
+        with h5py.File(output / "reconstruction.h5", "w") as file:
+            for index, values in enumerate(np.unique(labels, axis=0), 1):
+                indices = np.flatnonzero(np.all(labels == values, axis=1))
+                image = None
+                for start in range(0, len(indices), chunk_size):
+                    selected = torch.as_tensor(indices[start:start + chunk_size], device=signal.device)
+                    part = mr0.reco_adjoint(
+                        signal[selected], trajectory[selected], resolution=matrix,
+                        FOV=fov, return_multicoil=True,
+                    )
+                    image = part if image is None else image + part
+                data = np.moveaxis(image.detach().cpu().numpy(), 0, -1)[:, :, :, None, :, None]
+                name = f"image_{index:03d}"
+                group = file.create_group(name)
+                group.create_dataset("image_real", data=data.real, compression="gzip")
+                group.create_dataset("image_imag", data=data.imag, compression="gzip")
+                acquisition = dict(zip(names, (int(value) for value in values)))
+                images.append({
+                    "group": name, "shape": list(data.shape),
+                    "axes": ["x", "y", "z", "echo", "coil", "repetition"],
+                    "labels": {"ROLE": "imaging", **acquisition},
+                    "source": {key: [value] for key, value in acquisition.items()},
+                })
+        metadata.update(status="completed", images=images, matrix=list(matrix), fov_m=list(fov))
+    except Exception as exc:
+        metadata.update(status="failed", error=f"{type(exc).__name__}: {exc}")
+    (output / "reconstruction.json").write_text(json.dumps(metadata, indent=2))
 
 
 def simulate(source, output):
@@ -34,8 +90,8 @@ def simulate(source, output):
                 "--startup-file=no",
                 "--heap-size-hint=1G",
                 "--compiled-modules=existing",
-                "--project=/opt/simulator",
-                "/opt/mriseqbench/simulate_koma.jl",
+                f"--project={SIMULATOR_PROJECT}",
+                str(Path(__file__).with_name("simulate_koma.jl")),
                 str(source),
                 str(output),
             ],
@@ -43,45 +99,96 @@ def simulate(source, output):
         )
         return
     if ENGINE == "komamripy":
+        os.environ["MRISEQBENCH_SIMULATOR_DEVICE"] = DEVICE
         import komamripy as km
         from juliacall import Main as jl
 
-        device = str(
+        backend_info = str(
             jl.seval("""begin
-            using CUDA, KomaMRICore, SimWarm
-            SimWarm.WARM || error("Simulator image was not prewarmed on a GPU")
-            CUDA.functional() || error("CUDA is required; no CPU fallback")
-            CUDA.allowscalar(false)
-            KomaMRICore.get_backend(true) isa KomaMRICore.KA.GPU ||
-                error("KomaMRI simulation cannot fall back to CPU")
-            CUDA.name(CUDA.device())
+            using KomaMRICore
+            device = ENV["MRISEQBENCH_SIMULATOR_DEVICE"]
+            if device == "cuda"
+                @eval using CUDA
+                @eval using SimWarm
+                SimWarm.WARM || error("Simulator image was not prewarmed on a GPU")
+                CUDA.functional() || error("CUDA is required; no CPU fallback")
+                CUDA.allowscalar(false)
+            elseif device == "metal"
+                Base.find_package("Metal") === nothing &&
+                    error("Metal backend requested, but Metal.jl is not installed in the selected Julia project")
+                @eval using Metal
+                Metal.functional() || error("A functional Metal GPU is required; no CPU fallback")
+            end
+            backend = KomaMRICore.get_backend(device != "cpu"; verbose=false)
+            expected = device == "cpu" ? "CPU" : device == "cuda" ? "CUDA" : "Metal"
+            KomaMRICore.name(backend) == expected ||
+                error("Requested $device simulator, but KomaMRI selected $(KomaMRICore.name(backend))")
+            if device != "cpu"
+                backend isa KomaMRICore.KA.GPU ||
+                    error("Requested $device simulator, but KomaMRI selected $(typeof(backend))")
+                matches = device == "cuda" ? occursin("CUDA", string(typeof(backend))) :
+                    occursin("Metal", string(typeof(backend)))
+                matches || error("Requested $device simulator, but KomaMRI selected $(typeof(backend))")
+            end
+            device_name = if device == "cpu"
+                "CPU"
+            elseif device == "cuda"
+                CUDA.name(CUDA.device())
+            else
+                KomaMRICore.device_name(backend)
+            end
+            string(KomaMRICore.name(backend), "|", device_name)
         end""")
         )
+        _, device = backend_info.split("|", 1)
+        backend = DEVICE
 
         obj = km.files.read_phantom(str(source / "phantom.phantom"))
         seq = km.files.read_seq(str(source / "sequence.seq"))
         sim_params = km.core.default_sim_params()
         sim_params["return_type"] = "mat"
-        sim_params["gpu"] = True
-        signal = np.asarray(
-            km.simulate(
-                obj,
-                seq,
-                km.Scanner(
-                    limits=km.HardwareLimits(B0=case["hardware"]["field_strength_T"])
-                ),
-                sim_params=sim_params,
-            )
+        sim_params["gpu"] = DEVICE != "cpu"
+        scanner = km.Scanner(
+            limits=km.HardwareLimits(B0=case["hardware"]["field_strength_T"])
         )
+        jl.include(str(Path(__file__).with_name("reconstruct_koma.jl")))
+        rr_ms = (case["task"]["sequence"].get("temporal") or {}).get("rr_interval_ms")
+        rr_interval_s = 1.0 if rr_ms is None else float(rr_ms) / 1000
+        seq, physio = jl.resolve_simulation_physio(seq, rr_interval_s)
+        physio = json.loads(str(jl.JSON.json(physio)))
+        julia_signal = km.simulate(obj, seq, scanner, sim_params=sim_params)
+        signal = np.asarray(julia_signal)
+        jl.reconstruct_files(
+            julia_signal, seq, scanner, str(output), reconstruct=km.reconstruct_with_labels
+        )
+        after = str(
+            jl.seval("""begin
+            device = ENV["MRISEQBENCH_SIMULATOR_DEVICE"]
+            backend = KomaMRICore.get_backend(device != "cpu"; verbose=false)
+            device_name = if device == "cpu"
+                "CPU"
+            elseif device == "cuda"
+                CUDA.name(CUDA.device())
+            else
+                KomaMRICore.device_name(backend)
+            end
+            string(KomaMRICore.name(backend), "|", device_name)
+        end""")
+        )
+        if after != backend_info:
+            raise RuntimeError("KomaMRI simulation changed backend during execution")
     elif ENGINE == "mrzero":
+        if DEVICE not in {"cuda", "cpu"}:
+            raise ValueError(
+                "MRzero simulation supports CUDA or CPU; set MRISEQBENCH_SIMULATOR_DEVICE=cuda or cpu"
+            )
         import MRzeroCore as mr0
         import torch
 
-        if not torch.cuda.is_available():
-            raise RuntimeError(
-                "CUDA is required for MRzero simulation; no CPU fallback"
-            )
-        device = torch.cuda.get_device_name()
+        if DEVICE == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested for MRzero but is unavailable; no CPU fallback")
+        device = torch.cuda.get_device_name() if DEVICE == "cuda" else "CPU"
+        backend = DEVICE
 
         if any(
             e["kind"] in {"motion", "time_variation"}
@@ -113,18 +220,21 @@ def simulate(source, output):
             obj = phantom.build()
         seq = mr0.Sequence.import_file(str(source / "sequence.seq"))
         graph = mr0.compute_graph(seq, obj, 200, 1e-5)
-        cuda_obj = obj.cuda()
-        # MRzeroCore 1.1.1's SimData.cuda() retains the CPU dephasing closure.
-        # Rebuild the same box-voxel function with its size on the CUDA device.
-        from MRzeroCore.phantom.custom_voxel_phantom import build_dephasing_func
+        sim_seq, sim_obj = seq, obj
+        if DEVICE == "cuda":
+            sim_seq, sim_obj = seq.cuda(), obj.cuda()
+            # MRzeroCore 1.1.1's SimData.cuda() retains the CPU dephasing closure.
+            # Rebuild the same box-voxel function on the requested device.
+            from MRzeroCore.phantom.custom_voxel_phantom import build_dephasing_func
 
-        cuda_obj.dephasing_func = build_dephasing_func(
-            phantom.voxel_shape, phantom.voxel_size.to(cuda_obj.PD.device)
-        )
-        result = mr0.execute_graph(graph, seq.cuda(), cuda_obj)
-        if result.device.type != "cuda":
-            raise RuntimeError("MRzero simulation returned a CPU signal")
+            sim_obj.dephasing_func = build_dephasing_func(
+                phantom.voxel_shape, phantom.voxel_size.to(sim_obj.PD.device)
+            )
+        result = mr0.execute_graph(graph, sim_seq, sim_obj)
+        if result.device.type != DEVICE:
+            raise RuntimeError(f"MRzero returned a {result.device.type} signal; expected {DEVICE}")
         signal = result.detach().cpu().numpy()
+        reconstruct_mrzero(result, seq, source, output)
     else:
         raise ValueError("unsupported engine: " + ENGINE)
     with h5py.File(output / "signal.h5", "w") as f:
@@ -137,9 +247,14 @@ def simulate(source, output):
                 "diagnostic": True,
                 "phantom": "public materialized spin centres",
                 "signal_shape": list(signal.shape),
-                "backend": "cuda",
+                "backend": backend,
                 "device": device,
                 "cpu_fallback": False,
+                **({"physio": physio} if ENGINE == "komamripy" else {}),
+                **(
+                    {"reconstruction": json.loads((output / "reconstruction.json").read_text())}
+                    if ENGINE in {"komamripy", "mrzero"} else {}
+                ),
             }
         )
     )
@@ -204,7 +319,7 @@ def probe():
                 )
                 if relative_error > 1e-3:
                     raise ValueError(
-                        f"CUDA RF self-test disagrees with closed form: {relative_error}"
+                        f"RF self-test disagrees with closed form: {relative_error}"
                     )
         execution = json.loads((output / "simulation.json").read_text())
     print(
@@ -213,7 +328,7 @@ def probe():
                 "engine": ENGINE,
                 "pulseq_input": True,
                 "self_test": True,
-                "backend": "cuda",
+                "backend": execution["backend"],
                 "device": execution["device"],
                 "cpu_fallback": False,
                 **(

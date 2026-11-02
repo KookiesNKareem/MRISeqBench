@@ -1,0 +1,21 @@
+{
+  "signals": {
+    "plane": 0.988498866558075,
+    "slab_5mm": 1.8812716007232666e-06
+  },
+  "slab_to_plane_ratio": 1.9031600989830177e-06,
+  "slab_mm": 5,
+  "spoiler_cycles_across_slab": 4,
+  "native_versions": {
+    "KomaMRIFiles": "0.12.0",
+    "KomaMRIBase": "0.15.1",
+    "Julia": "1.12.7",
+    "KomaMRICore": "0.14.0",
+    "SimulationBackend": "metal",
+    "SimulationDevice": "Apple M4 Max",
+    "SimulationPrecision": "f32",
+    "SimulationProjectSHA256": "db719ee5a57e4e6c2338a5e9fe4fa9006db54e7f3e520bf69e89173ab0f64558",
+    "SimulationManifestSHA256": "4c160c53d5a0947b2e090c3f1c7824218fe263f5731a5e972995500fdae10100"
+  },
+  "environment_note": "Machine-local project paths omitted; project/manifest hashes and package versions identify the qualification environment."
+}

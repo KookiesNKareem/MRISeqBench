@@ -22,6 +22,12 @@ def main():
     p.add_argument("--workspace", required=True, type=Path)
     p.add_argument("--backend", type=Path)
     args = p.parse_args()
+    service = args.root.parent / "metal-grader-service" / "ENABLED.json"
+    shared = args.mode == "evaluation" and service.is_file()
+    if shared:
+        from . import s1_koma
+        from .warm_service import SharedKomaWorker
+        s1_koma._WORKER = SharedKomaWorker(service)
     case = json.loads(args.case.read_text())
     if args.mode in ("lint", "preflight"):
         # Like a scanner's file loader, parsing is bounded; only the submitted
@@ -60,6 +66,12 @@ def main():
         result = evaluate(
             args.submission, case, args.root, args.workspace / "physical", backend
         )
+        if shared:
+            result["grading_execution"] = {
+                **s1_koma.worker().execution,
+                "persistent_worker": True,
+                "worker_pid": s1_koma.worker().service["worker_pid"],
+            }
     write_json(args.workspace / "result.json", result)
 
 

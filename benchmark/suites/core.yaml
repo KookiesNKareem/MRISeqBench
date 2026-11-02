@@ -1,11 +1,11 @@
 # yaml-language-server: $schema=../../schemas/suites.schema.json
 schema_version: 1
 id: core
-version: 1
+version: 2
 cases:
-- task: T1.1@2
+- task: T1.1@4
   physics:
   - static_b0@1
-- task: T2.1@2
+- task: T2.1@4
   physics:
   - static_b0@1

@@ -252,6 +252,10 @@ def _evaluate(submission, case, root, workspace, backend, *, feedback, time_budg
     if backend is None and contract["id"] == "rf_excitation":
         from .excitation import evaluate_excitation
 
+        if contract["version"] >= 4:
+            from .excitation_image import evaluate_excitation_image
+
+            evaluate_excitation = evaluate_excitation_image
         physical = evaluate_excitation(
             submission, case, root, workspace / "rf_excitation", deadline=deadline
         )
@@ -342,7 +346,8 @@ def _evaluate(submission, case, root, workspace, backend, *, feedback, time_budg
             if case["task"]["sequence"][field] is not None:
                 required.add(field)
         if contract["id"] == "rf_excitation":
-            required |= {"no_adc", "numerical_convergence", "ai_target"}
+            required |= {"numerical_convergence", "ai_target"}
+            required |= {"cartesian_readout", "recovery_time"} if contract["version"] >= 4 else {"no_adc"}
         if contract["id"] == "s4":
             cardiac_requirements, cardiac_bounds = s4_backend_contract(case)
             required |= cardiac_requirements

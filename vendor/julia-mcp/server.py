@@ -99,12 +99,6 @@ class JuliaSession:
             timeout=120.0,  # generous startup timeout
         )
 
-        # Auto-load Revise so code changes are picked up without restarting
-        await self._execute_raw(
-            "try; using Revise; catch; end",
-            timeout=120.0,
-        )
-
         if self.init_code:
             marker = "__JULIA_MCP_INIT_ERROR__"
             wrapped = f'try; {self.init_code}; catch __e; print("{marker}"); showerror(stdout, __e); end'
@@ -126,7 +120,6 @@ class JuliaSession:
             # hex-encode to avoid string escaping issues; include_string for sequential parse-eval (macros work)
             hex_encoded = code.encode().hex()
             wrapped = (
-                f'try; Revise.revise(); catch; end;'
                 f'include_string(Main, String(hex2bytes("{hex_encoded}")));'
                 f'nothing'
             )
@@ -351,9 +344,8 @@ async def julia_restart(env_path: str | None = None) -> str:
     """Restart a Julia session, clearing all state.
 
     IMPORTANT: Restarting is slow and loses all session state. Very rarely needed.
-    Revise.jl is loaded automatically in every session, so code changes to loaded packages are picked up without restarting.
-    Only restart as a last resort when the session is truly broken, or code changes that Revise cannot fix.
-    Do NOT restart just because source files were edited between script or test runs — Revise picks up those changes automatically.
+    Reload edited scripts with include(...) in the existing session.
+    Only restart as a last resort when the session is truly broken.
 
     Args:
         env_path: Environment to restart. If omitted, restarts the temporary session

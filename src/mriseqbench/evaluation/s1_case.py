@@ -257,13 +257,13 @@ def converge_phase(replay, reference, temporal_scale, case):
     )
 
 
-def jackknife_stat(images, function):
+def jackknife_stat(images, function, *, bias_correct=True):
     """Leading-bias-corrected nonlinear score with numerical jackknife interval."""
     n = len(images)
     total = images.sum(axis=0)
     full = float(function(total / n))
     loo = np.array([function((total - image) / (n - 1)) for image in images])
-    estimate = float(n * full - (n - 1) * loo.mean())
+    estimate = float(n * full - (n - 1) * loo.mean()) if bias_correct else full
     return estimate, list(interval(estimate, loo))
 
 
@@ -275,7 +275,9 @@ COMPLEX_NRMSE_RULE = (
 )
 
 
-def case_image_scores(images, reference, support, phasor, valid, masks):
+def case_image_scores(
+    images, reference, support, phasor, valid, masks, *, bias_correct=True
+):
     """Complex and phase fidelity use only the precomputed physics phase target.
 
     Magnitude/dropout/contrast keep the nominal reference. Phase validity depends
@@ -290,10 +292,14 @@ def case_image_scores(images, reference, support, phasor, valid, masks):
     # nor shrink the normalisation.
     scored = valid | ~support
     unphased = ~scored
-    values, intervals = image_scores(images[:, scored], target[scored], support[scored])
+    values, intervals = image_scores(
+        images[:, scored], target[scored], support[scored], bias_correct=bias_correct
+    )
     magnitude = np.abs(reference)
     denom = max(float(np.sum(magnitude**2)), 1e-30)
-    error, error_loo = quadratic(images[:, scored] - target[scored])
+    error, error_loo = quadratic(
+        images[:, scored] - target[scored], bias_correct=bias_correct
+    )
     if unphased.any():
         n = len(images)
         total = images.sum(axis=0)
@@ -302,7 +308,11 @@ def case_image_scores(images, reference, support, phasor, valid, masks):
             return float(np.sum((np.abs(im[unphased]) - magnitude[unphased]) ** 2))
 
         loo = np.array([unphased_error((total - im) / (n - 1)) for im in images])
-        error += n * unphased_error(total / n) - (n - 1) * loo.mean()
+        error += (
+            n * unphased_error(total / n) - (n - 1) * loo.mean()
+            if bias_correct
+            else unphased_error(total / n)
+        )
         error_loo = error_loo + loo
 
     def squared_and_root(squared, root, value, ci):
@@ -320,7 +330,9 @@ def case_image_scores(images, reference, support, phasor, valid, masks):
         "normalized_squared_magnitude_error",
         "magnitude_image_nrmse",
         *jackknife_stat(
-            images, lambda im: np.sum((np.abs(im) - magnitude) ** 2) / denom
+            images,
+            lambda im: np.sum((np.abs(im) - magnitude) ** 2) / denom,
+            bias_correct=bias_correct,
         ),
     )
     weights = magnitude[phase_support] ** 2
@@ -337,6 +349,7 @@ def case_image_scores(images, reference, support, phasor, valid, masks):
                 )
                 / weight
             ),
+            bias_correct=bias_correct,
         ),
     )
     rois = {
@@ -376,9 +389,13 @@ def case_image_scores(images, reference, support, phasor, valid, masks):
         ("min_tissue_signal_fraction", tissue_signal),
         ("contrast_retention", contrast),
     ):
-        values[name], intervals[name] = jackknife_stat(images, function)
+        values[name], intervals[name] = jackknife_stat(
+            images, function, bias_correct=bias_correct
+        )
     # Full-domain leakage/signal must not shrink when reference phase is undefined.
-    full_values, full_intervals = image_scores(images, reference, support)
+    full_values, full_intervals = image_scores(
+        images, reference, support, bias_correct=bias_correct
+    )
     for name in ("outside_object_energy_fraction", "signal_fraction"):
         values[name], intervals[name] = full_values[name], full_intervals[name]
     return (

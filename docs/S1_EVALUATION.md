@@ -40,7 +40,7 @@ echo of a Cartesian grid), which is where the image takes its contrast.
 |---|---|---|
 | Echo formation | all | KomaMRI replay of the first line (257 isochromats along the readout across the FOV, 10 µs steps) peaks inside the ADC window within max(20 µs, half the dwell) of the predicted TE; at least 20 µs of ADC on each side of the echo |
 | Usable echo signal | all | Mean echo magnitude ≥ 0.01 of PD, perfect-spoiling reference for GRE |
-| Spoiling | `gre_t1w`, `gre_t2star` | Relative complex error ‖actual − ideal‖/‖ideal‖ ≤ 0.2 between the actual echoes and perfect spoiling, for 1021 and 2053 Halton isochromats spread over one voxel (FOV/matrix per in-plane axis; the 2D object has no thickness, so through-plane spoilers/crushers have no effect). Encoding phase removed; receiver phase taken from RF |
+| Spoiling | `gre_t1w`, `gre_t2star` | Relative complex error ‖actual − ideal‖/‖ideal‖ ≤ 0.2 between the actual echoes and perfect spoiling, for 1021 and 2053 Halton isochromats spread over one voxel (FOV/matrix per in-plane axis and the declared 5 mm slab in z; through-plane spoilers/crushers dephase spins). Encoding phase removed; receiver phase taken from RF |
 | Refocusing | `spin_echo_t2w` | First echo with gradients off over 65 offsets uniformly spanning −50…+50 Hz retains ≥ 0.90 of the on-resonance magnitude |
 | T1 weighting | `gre_t1w` | Central-echo magnitude ratio WM/GM ≥ 1.15 (WM: PD 0.7, T1 800 ms, T2 80 ms; GM: PD 0.8, T1 1300 ms, T2 100 ms, perfect spoiling), and the probe material's central-echo change for +10% T1 exceeds that for +10% T2. Lines acquired before the central echo set its magnetisation history; dummy scans are not required if that history already gives T1 weighting |
 
@@ -63,8 +63,8 @@ Image limits under the declared physics (these decide the verdict):
 
 | Metric | Limit |
 |---|---:|
-| Complex NRMSE | ≤ 0.45 |
-| Magnitude NRMSE | ≤ 0.35 |
+| Complex NRMSE | ≤ 0.15 |
+| Magnitude NRMSE | ≤ 0.15 |
 | Wrapped phase RMS | ≤ 0.35 rad |
 | Minimum tissue signal fraction | ≥ 0.5 |
 | Contrast retention | ≥ 0.5 |
@@ -77,3 +77,30 @@ Metric definitions and numerical acceptance: [COMMON_EVALUATION.md](COMMON_EVALU
 
 Artifacts contain submitted-byte hashes, waveform checks, image arrays,
 metrics and numerical provenance.
+
+
+## Fixed phantom and ordinary image scoring
+
+Current evaluator versions use a fixed spin profile and ordinary scores of the
+saved native Koma mean image. Four fixed spin sets, with their physical volume
+weights, represent the same object; averaging their signals is equivalent to
+simulating their combined weighted phantom. There is no analytical signal
+correction, sampling-noise subtraction or spatial convergence gate per trial.
+The NRMSE acceptance limit is 15% for cardiac images and RF excitation images.
+
+2D anatomy represents a 5 mm slab, not a plane at z=0. Subvoxel positions cover
+all three directions using fixed per-cell low-discrepancy sets with evenly
+covered projections on x, y and z.
+Weights preserve projected proton density. The spoiling probe and simulator
+inputs use the same physical slab. 3D tasks retain their full registered volume.
+
+Spin density is qualified offline using known task/scanner sequences at the
+fixed density and at twice the density. `ops/qualify_phantom_density.py` records
+unmodified native reconstructions and their difference. Its 2% default is a
+qualification tolerance, not an agent pass/fail criterion. The new contracts
+remain explicitly uncalibrated until their controls qualify; a copied older
+corrected-signal result does not qualify them. Temporal integration and native
+file consistency still have their independent correctness checks.
+
+Historical evaluator versions retain their declared plane geometry, estimator
+and adaptive-sampling policy so saved studies remain reproducible.

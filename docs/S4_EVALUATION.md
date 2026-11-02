@@ -93,7 +93,7 @@ Readout transients, blur, displacement and B0 magnitude loss remain image errors
 
 | Every frame must meet | Limit |
 |---|---:|
-| Complex / magnitude NRMSE | ≤0.45 / ≤0.35 |
+| Complex / magnitude NRMSE | ≤0.15 / ≤0.15 |
 | Phase RMS | ≤0.35 rad |
 | Minimum tissue signal | ≥0.5 |
 | Contrast retention (non-mapping tasks) | ≥0.5 |

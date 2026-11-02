@@ -1,4 +1,4 @@
-"""Container-local bridge to the pinned, unmodified aplavin/julia-mcp stdio server.
+"""Container-local bridge to the pinned aplavin/julia-mcp stdio server.
 
 `--serve` starts one warmed author session per trial and listens on a Unix
 socket; each tool call (`arm_mcp_bridge.py '<json>'`) is validated, forwarded
@@ -66,7 +66,7 @@ def warmup_code(session_source, workspace, pulse_designer):
         raise ValueError("unexpected Julia session source")
     return (
         session_source[: -len(ending)]
-        + "\nmkpath(MRISeqBenchJuliaSession.directory); using Revise,KomaMRIBase,KomaMRIFiles; "
+        + "\nmkpath(MRISeqBenchJuliaSession.directory); using KomaMRIBase,KomaMRIFiles; "
         + f"MRISeqBenchJuliaSession.warmup({str(pulse_designer).lower()},false); "
         + "MRISeqBenchJuliaSession.warm_main(); MRISeqBenchJuliaSession.release_memory(); "
         + f"cd({json.dumps(str(workspace))}); "

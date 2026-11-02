@@ -16,6 +16,19 @@ include(joinpath(@__DIR__, "..", "..", "..", "benchmark", "physics", "effects.jl
 function load_case(source::Dict)
     field = get(get(source,"hardware",Dict()),"field_strength_T",nothing)
     obj,labels=build_phantom(source["object"]["phantom"]; field_strength_T=field)
+    slab = get(get(source, "evaluation", Dict()), "phantom_slab_mm", nothing)
+    if !isnothing(slab) && length(source["task"]["sequence"]["matrix"]) == 2
+        layers = get(source["evaluation"], "phantom_z_samples", nothing)
+        layers = isnothing(layers) ? 32 : layers
+        z = ((collect(0:layers-1) .+ 0.5) ./ layers .- 0.5) .* (slab / 1000)
+        spin_count = length(obj)
+        obj = Phantom(name=obj.name, x=repeat(obj.x; inner=layers),
+            y=repeat(obj.y; inner=layers), z=repeat(z; outer=spin_count),
+            ρ=repeat(obj.ρ; inner=layers) ./ layers,
+            T1=repeat(obj.T1; inner=layers), T2=repeat(obj.T2; inner=layers),
+            Δw=repeat(obj.Δw; inner=layers))
+        labels = repeat(labels; inner=layers)
+    end
     effects=get(source["physics"],"effects",Any[])
     for e in effects
         kind=e["kind"]; model=e["model"]
