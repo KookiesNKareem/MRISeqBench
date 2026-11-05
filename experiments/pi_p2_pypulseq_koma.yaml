@@ -3,7 +3,8 @@ schema_version: 1
 id: pi_p2_pypulseq_koma
 version: 1
 suite: full@1
-arm: p2_pypulseq_koma@1
+# Public arm: P0 S3; filename and experiment ID retain historical naming.
+arm: P0 S3@1
 arm_runtime:
   author_image: mriseqbench/author-pypulseq:local
   simulator_image: mriseqbench/sim-komamripy:local

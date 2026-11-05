@@ -14,4 +14,27 @@ sequence:
   readout:
     spokes: 202
 object: P1@1
-evaluation: s2@5
+evaluation: s2@6
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    - 200
+- id: parameter
+  request: Set TR to 13.5 ms (tolerance 0.3 ms). Retain the larger FOV and all other
+    requirements.
+  patch:
+    tr_ms:
+      target: 13.5
+      tolerance: 0.3
+- id: readout
+  request: Increase the stack-of-stars readout to 224 radial spokes per partition
+    with a 105 s duration budget, while retaining the 220 x 220 x 200 mm FOV and 13.5
+    ms TR.
+  patch:
+    readout.spokes: 224
+    duration_s: 105

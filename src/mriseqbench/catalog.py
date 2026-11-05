@@ -123,18 +123,11 @@ class Catalog:
                     f"{task.id}: evaluator must match sequence tier {task.sequence.level}"
                 )
             self.validate_geometry(task)
-        from .workflows import compile_workflow
+        from .workflows import workflow_for
 
-        for workflow in self.documents["workflows"].values():
-            task = self.get("tasks", workflow.task)
-            for hardware in self.documents["hardware"].values():
-                compile_workflow(
-                    self,
-                    self.resolve(
-                        task, hardware_ref=f"{hardware.id}@{hardware.version}"
-                    ),
-                    workflow,
-                )
+        for task in self.documents["tasks"].values():
+            if task.followups:
+                workflow_for(self, self.resolve(task))
         for suite in self.documents["suites"].values():
             self.cases(suite)
         for experiment in self.documents["experiments"].values():
@@ -171,7 +164,19 @@ class Catalog:
         hardware_ref=None,
     ):
         if physics is None:
-            profile = "static_b0_3d" if len(task.sequence.matrix) == 3 else "static_b0"
+            if task.id == "cardiac_respiratory_bssfp":
+                profile = "cardiac_respiratory_b0"
+            elif task.id in {
+                "t1_mapping",
+                "t2_mapping",
+                "t2_prepared",
+                "adiabatic_inversion",
+            }:
+                profile = "cardiac_b0"
+            else:
+                profile = (
+                    "static_b0_3d" if len(task.sequence.matrix) == 3 else "static_b0"
+                )
             physics = self.get("physics", profile)
         obj = self.get("objects", object_ref or task.object)
         hardware = self.get("hardware", hardware_ref or task.hardware)
@@ -194,11 +199,16 @@ class Catalog:
         self.validate_geometry(task, f"{obj.id}@{obj.version}")
         evaluator = self.get("evaluators", task.evaluation)
         for effect in physics.effects:
-            gradient = getattr(effect, "gradient_hz_per_m", None)
-            if gradient is not None and len(gradient) != len(task.sequence.fov_mm):
-                raise ValueError(
-                    f"{task.id}/{physics.id}: effect dimensions do not match FOV"
-                )
+            for attr in (
+                "gradient_hz_per_m",
+                "cardiac_translation_mm",
+                "respiratory_translation_mm",
+            ):
+                vec = getattr(effect, attr, None)
+                if vec is not None and len(vec) != len(task.sequence.fov_mm):
+                    raise ValueError(
+                        f"{task.id}/{physics.id}: effect dimensions do not match FOV"
+                    )
         case_id = f"{task.id}-v{task.version}--{physics.id}-v{physics.version}"
         if object_ref and object_ref != task.object:
             case_id += f"--object-{obj.id}-v{obj.version}"
@@ -223,13 +233,15 @@ class Catalog:
                 )
             }
             object_contract["source_sha256"] = anatomy.source_sha256
-        task_contract = task.model_dump(mode="json")
+        task_contract = task.model_dump(mode="json", exclude={"followups"})
         task_contract["object"] = f"{obj.id}@{obj.version}"
         task_contract["hardware"] = f"{hardware.id}@{hardware.version}"
         physics_contract = physics.model_dump(mode="json", exclude_none=True)
         if physics.reference_field_strength_T is not None:
             scale = hardware.field_strength_T / physics.reference_field_strength_T
             for effect in physics_contract["effects"]:
+                if effect["kind"] == "motion":
+                    continue
                 if effect["kind"] != "b0" or effect["model"] not in {
                     "linear",
                     "gaussian",
@@ -273,7 +285,21 @@ class Catalog:
         for entry in suite.cases:
             task = self.get("tasks", entry.task)
             expected = (
-                "static_b0_3d@1" if len(task.sequence.matrix) == 3 else "static_b0@1"
+                "cardiac_respiratory_b0@1"
+                if task.id == "cardiac_respiratory_bssfp"
+                else "cardiac_b0@1"
+                if task.id
+                in {
+                    "t1_mapping",
+                    "t2_mapping",
+                    "t2_prepared",
+                    "adiabatic_inversion",
+                }
+                else (
+                    "static_b0_3d@1"
+                    if len(task.sequence.matrix) == 3
+                    else "static_b0@1"
+                )
             )
             rf_task = task.id == "rf_excitation_2d" and task.object == "uniform_disc@1"
             if entry.objects is not None or (
@@ -297,18 +323,6 @@ class Catalog:
         return cases
 
     def find_case(self, case_id):
-        from .workflows import compile_workflow
-
-        for workflow in self.documents["workflows"].values():
-            task = self.get("tasks", workflow.task)
-            for hardware in self.documents["hardware"].values():
-                compile_workflow(
-                    self,
-                    self.resolve(
-                        task, hardware_ref=f"{hardware.id}@{hardware.version}"
-                    ),
-                    workflow,
-                )
         for suite in self.documents["suites"].values():
             for case in self.cases(suite):
                 if case["case_id"] == case_id:

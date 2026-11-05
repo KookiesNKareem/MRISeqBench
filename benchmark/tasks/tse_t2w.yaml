@@ -17,4 +17,26 @@ sequence:
     shots: 16
     echo_train_length: 8
     echo_spacing_ms: 10
-evaluation: s2@5
+evaluation: s2@6
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: parameter
+  request: Set TR to 1400 ms (tolerance 40 ms). Retain the larger FOV and all other
+    requirements.
+  patch:
+    tr_ms:
+      target: 1400
+      tolerance: 40
+- id: readout
+  request: Reconfigure the TSE readout to 32 shots with echo train length 4 and a
+    48 s duration budget, while retaining the 220 x 220 mm FOV and 1400 ms TR.
+  patch:
+    readout.shots: 32
+    readout.echo_train_length: 4
+    duration_s: 48

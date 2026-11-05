@@ -3,12 +3,13 @@
 import json
 import sys
 from copy import deepcopy
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from mriseqbench.catalog import Catalog, load_yaml
+from mriseqbench.catalog import Catalog
 from mriseqbench.evaluation.excitation_target import (
     excitation_metrics,
     target_arrays,
@@ -16,10 +17,10 @@ from mriseqbench.evaluation.excitation_target import (
 )
 from mriseqbench.harness import feedback, workflow_rpc
 from mriseqbench.harness.grading import EvaluationIncomplete
-from mriseqbench.harness.runner import recover, run
+from mriseqbench.harness.runner import recover
 from mriseqbench.harness.workflow import WorkflowServer
 from mriseqbench.models import Experiment, FeedbackConfig
-from mriseqbench.workflows import compile_workflow, summarize_workflows, workflow_for
+from mriseqbench.workflows import summarize_workflows, workflow_for
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,7 +55,6 @@ def server(catalog, tmp_path, monkeypatch, verdicts=None, name="gre_t1w"):
         ROOT,
         tmp_path / "control",
         workflow=workflow,
-        stage_timeout_s=10,
     )
 
 
@@ -69,39 +69,113 @@ def advance(s, after):
 def test_all_27_tasks_all_hardware_and_cumulative_undo(catalog):
     original = deepcopy(catalog.documents["tasks"])
     cases = catalog.cases(catalog.get("suites", "full"))
-    assert len(cases) == 81
-    assert len(catalog.documents["workflows"]) == 27
+    assert len(cases) == 93
+    assert (
+        sum(bool(task.followups) for task in catalog.documents["tasks"].values()) == 31
+    )
     for case in cases:
         w = workflow_for(catalog, case)
-        assert w["qualification"] == "draft" and len(w["stages"]) == 4
+        assert len(w["stages"]) == 4
+        assert w["stages"][0]["case"] == case
+        assert all("followups" not in stage["case"]["task"] for stage in w["stages"])
         seq = [s["case"]["task"]["sequence"] for s in w["stages"]]
         assert len({json.dumps(v, sort_keys=True) for v in seq}) == 4
+        if case["task"]["id"] == "ute_radial":
+            assert all(s["te_ms"]["target"] + s["te_ms"]["tolerance"] <= 1 for s in seq)
         if case["task"]["id"] == "rf_excitation_2d":
             assert seq[3]["excitation_target"] == {
-                "amplitude": 0.5,
-                "offset_mm": [10.0, 0.0],
+                "amplitude": 0.45,
+                "offset_mm": [10.0, -10.0],
             }
+        elif case["task"]["id"] in {"ute_radial", "spiral_gre"}:
+            assert seq[1]["flip_angle_deg"] == seq[2]["flip_angle_deg"] == 10
+            assert all(s["fov_mm"] == seq[0]["fov_mm"] for s in seq)
         else:
-            assert seq[3]["fov_mm"] == seq[0]["fov_mm"]
-            assert {k: v for k, v in seq[3].items() if k != "fov_mm"} == {
-                k: v for k, v in seq[2].items() if k != "fov_mm"
-            }
+            # Stage 3 preserves the Stage 1/2 edited FOV while applying a real
+            # slice-selection, readout, sampling, or timing follow-up edit.
+            assert seq[3]["fov_mm"] == seq[2]["fov_mm"] != seq[0]["fov_mm"]
         assert all(s["case"]["evaluation"] == case["evaluation"] for s in w["stages"])
     assert original == catalog.documents["tasks"]
 
 
-def test_judge_changes_and_unknown_fields_are_rejected(catalog):
+def test_judge_changes_and_unknown_fields_are_rejected(catalog, monkeypatch):
     base = catalog.resolve(catalog.get("tasks", "gre_t1w"))
-    definition = catalog.get("workflows", "gre_t1w").model_copy(deep=True)
+    task = catalog.get("tasks", "gre_t1w")
     for patch in (
         {"evaluation.metrics": []},
         {"matrix": [64, 64]},
         {"fov_mm": [50, 50]},
         {"tr_ms": {"typo": 20}},
     ):
-        definition.stages[0].patch = patch
+        monkeypatch.setattr(task.followups[0], "patch", patch)
         with pytest.raises(ValueError):
-            compile_workflow(catalog, base, definition)
+            workflow_for(catalog, base)
+
+
+def test_followups_require_a_change_even_at_previous_tolerance_edges(catalog):
+    # The physical timing inspectors allow 0.001 ms of numerical slack.
+    def bounds(value):
+        lower, upper = 0, value.get("max") or float("inf")
+        if value.get("target") is not None:
+            lower = value["target"] - value["tolerance"]
+            upper = min(upper, value["target"] + value["tolerance"])
+        return lower - 0.001, upper + 0.001
+
+    for case in catalog.cases(catalog.get("suites", "full")):
+        stages = workflow_for(catalog, case)["stages"]
+        for before, after in pairwise(stages):
+            a, b = (s["case"]["task"]["sequence"] for s in (before, after))
+            forced = a["fov_mm"] != b["fov_mm"]
+            if a.get("flip_angle_deg") and b.get("flip_angle_deg"):
+                forced |= abs(a["flip_angle_deg"] - b["flip_angle_deg"]) > 2
+            for field in ("te_ms", "tr_ms"):
+                if a.get(field) and b.get(field):
+                    lo, hi = bounds(a[field])
+                    other_lo, other_hi = bounds(b[field])
+                    forced |= hi < other_lo or other_hi < lo
+            forced |= a.get("application") != b.get("application")
+            forced |= a.get("excitation_target") != b.get("excitation_target")
+            forced |= a.get("slice_thickness_mm") != b.get("slice_thickness_mm")
+            forced |= a.get("readout") != b.get("readout")
+            forced |= a.get("sampling") != b.get("sampling")
+            forced |= a.get("temporal") != b.get("temporal")
+            assert forced, (case["case_id"], after["id"])
+
+
+def test_followup_prompts_use_current_values_without_stale_objectives(catalog):
+    from mriseqbench.harness.prepare import prompt
+
+    for task in catalog.documents["tasks"].values():
+        if not task.followups:
+            continue
+        for step, stage in zip(task.followups, plan(catalog, task.id)["stages"][1:]):
+            message = prompt(stage["case"])
+            assert step.request in message
+            assert task.objective.strip() not in message
+            assert "{'target'" not in message
+            assert "Original family requirements" not in message
+    changed = plan(catalog, "t1_mapping")["stages"][2]["case"]
+    assert "150, 500, 1300" in changed["task"]["objective"]
+    assert "TI 100, 400 and 1200" not in prompt(changed)
+
+
+@pytest.mark.parametrize("hardware", ["low_field", "standard_1_5t", "high_performance"])
+@pytest.mark.parametrize("name", ["ute_radial", "spiral_gre"])
+def test_noncartesian_first_edit_has_feasible_physical_timing(
+    catalog, tmp_path, hardware, name
+):
+    from mriseqbench.evaluation.preflight import preflight
+    from mriseqbench.evaluation.s2_sequence import inspect_sequence
+    from tests.fixtures.reference128_readouts import build
+
+    base = catalog.resolve(catalog.get("tasks", name), hardware_ref=hardware)
+    case = workflow_for(catalog, base)["stages"][1]["case"]
+    path = tmp_path / "sequence.seq"
+    build(case).write(str(path))
+    checks = preflight(path, case)
+    assert all(c["passed"] for c in checks), [c for c in checks if not c["passed"]]
+    checks = inspect_sequence(path, case).checks
+    assert all(c["passed"] for c in checks), [c for c in checks if not c["passed"]]
 
 
 def test_stage_gating_preserves_context_and_hides_future(
@@ -117,10 +191,8 @@ def test_stage_gating_preserves_context_and_hides_future(
             frozen = tmp_path / "control/submissions" / f"attempt-{i + 1:03d}"
             assert json.loads((frozen / "receipt.json").read_text())["stage_index"] == i
             assert (
-                json.loads((frozen / "case.json").read_text())["workflow_stage"][
-                    "index"
-                ]
-                == i
+                json.loads((frozen / "case.json").read_text())
+                == s.workflow["stages"][i]["case"]
             )
             if i < 3:
                 assert submit(s)["status"] == "awaiting_next_turn"
@@ -129,7 +201,8 @@ def test_stage_gating_preserves_context_and_hides_future(
                 assert code == 200 and response["stage_index"] == i + 1
                 public = json.loads(response["files"]["case.json"])
                 assert "sar" not in public["hardware"] and "stages" not in public
-                assert public["workflow_stage"]["index"] == i + 1
+                assert public["case_id"].endswith(f"--stage-{i + 1}")
+                assert "followups" not in public["task"]
                 assert advance(s, i) == (code, response)  # Idempotent delivery.
         report = s.report()
         assert report["status"] == "passed"
@@ -152,7 +225,12 @@ def test_per_stage_retries_and_not_reached(catalog, tmp_path, monkeypatch):
         assert s.runtime_status()["submissions_remaining"] == 3
         assert submit(s)["submissions_remaining"] == 2
         submit(s)
-        assert submit(s)["status"] == "submitted"
+        final = submit(s)
+        assert final["status"] == "submitted"
+        assert final["evaluation"]["status"] == "failed"
+        assert final["evaluation"]["checks"] == [
+            {"name": "sar", "passed": True, "detail": "within the scanner SAR limit"}
+        ]
         assert [r["status"] for r in s.report()["workflow"]["stages"]] == [
             "passed",
             "failed",
@@ -184,16 +262,16 @@ def test_infrastructure_never_becomes_workflow_failure(catalog, tmp_path, monkey
         assert recover(tmp_path, 3) is None
 
 
-def test_stage_deadline_and_grading_credit(catalog, tmp_path, monkeypatch):
+def test_shared_deadline_and_grading_credit(catalog, tmp_path, monkeypatch):
     with server(catalog, tmp_path, monkeypatch) as s:
         s.start_agent_clock(40)
         s.agent_started -= 11
-        assert s.stage_expired()
+        assert s.runtime_status()["remaining_s"] == pytest.approx(29, abs=0.1)
         s.excluded_seconds = 6
-        assert not s.stage_expired()
+        assert s.runtime_status()["remaining_s"] == pytest.approx(35, abs=0.1)
         submit(s)
         advance(s, 0)
-        assert s.runtime_status()["stage_remaining_s"] > 9
+        assert s.runtime_status()["remaining_s"] == pytest.approx(35, abs=0.1)
         assert s.runtime_status()["charged_wall_s"] >= 5
 
 
@@ -221,21 +299,19 @@ def test_rf_target_uses_amplitude_and_offset_without_fitted_gain():
         > 0.2
     )
     final = target_at(points, {"amplitude": 0.5, "offset_mm": [10, 0]})
+    # Correct translation with the old amplitude must still fail stage 2.
+    assert (
+        excitation_metrics(final[mask], translated[mask], 0.35)[
+            "excitation_magnitude_nrmse"
+        ]
+        > 0.2
+    )
     assert (
         excitation_metrics(arrays["target_mxy_magnitude"][mask], final[mask])[
             "excitation_magnitude_nrmse"
         ]
         > 0.2
     )
-
-
-def test_draft_run_requires_explicit_development_override(catalog, tmp_path):
-    experiment = Experiment.model_validate(
-        load_yaml(ROOT / "experiments/pi_agentic.yaml")
-    )
-    with pytest.raises(ValueError, match="draft"):
-        run(catalog, experiment, tmp_path / "campaign")
-    assert not (tmp_path / "campaign").exists()
 
 
 def test_rpc_conversion_preserves_other_arguments():
@@ -259,49 +335,6 @@ def test_rpc_conversion_preserves_other_arguments():
         "--mode",
         "rpc",
     ]
-
-
-def test_rpc_waits_for_settled_and_sends_real_user_turns(tmp_path, monkeypatch):
-    # A subprocess protocol double deliberately emits agent_end before settled.
-    script = tmp_path / "fake_pi.py"
-    script.write_text("""import json, sys
-for line in sys.stdin:
-    command=json.loads(line)
-    with open("commands.jsonl","a") as f: f.write(line)
-    print(json.dumps({"type":"response","success":True}),flush=True)
-    print(json.dumps({"type":"agent_end","willRetry":True,"messages":[]}),flush=True)
-    print(json.dumps({"type":"agent_settled"}),flush=True)
-""")
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "PROMPT.md").write_text("initial user request")
-    (tmp_path / ".harness.json").write_text("{}")
-    count = 0
-
-    def request(config, kind, payload=None):
-        nonlocal count
-        if kind == "status":
-            return {"awaiting_next_turn": count < 3, "stage_index": count}
-        count += 1
-        return {
-            "status": "next_stage",
-            "stage_index": count,
-            "message": f"edit {count}",
-            "files": {"task.yaml": f"stage: {count}"},
-        }
-
-    monkeypatch.setattr(workflow_rpc, "request", request)
-    assert workflow_rpc.drive([sys.executable, str(script)], tmp_path) == 0
-    commands = [
-        json.loads(line)
-        for line in (tmp_path / "commands.jsonl").read_text().splitlines()
-    ]
-    assert [c["message"] for c in commands] == [
-        "initial user request",
-        "edit 1",
-        "edit 2",
-        "edit 3",
-    ]
-    assert all(c["type"] == "prompt" for c in commands)
 
 
 def test_waveform_controls_reject_unchanged_metadata_only_and_full_rollback(
@@ -339,14 +372,44 @@ def test_waveform_controls_reject_unchanged_metadata_only_and_full_rollback(
     rollback = {
         c["name"]: c["passed"] for c in inspect_sequence(paths[0], cases[3]).checks
     }
-    assert rollback["fov_mm"] and not rollback["tr_ms"]
+    assert (
+        not rollback["fov_mm"]
+        and not rollback["tr_ms"]
+        and not rollback["slice_thickness_mm"]
+    )
+
+    # Implement the new TR, but accidentally revert the previous FOV edit.
+    lost_fov = deepcopy(cases[2])
+    lost_fov["task"]["sequence"]["fov_mm"] = cases[0]["task"]["sequence"]["fov_mm"]
+    path = tmp_path / "lost-fov.seq"
+    make_sequence(lost_fov, preparations=0, readout_flat=0.00128).write(str(path))
+    checks = {c["name"]: c["passed"] for c in inspect_sequence(path, cases[2]).checks}
+    assert checks["tr_ms"] and not checks["fov_mm"]
+
+    # Requested edits cannot excuse a regression in the unchanged TE.
+    path = tmp_path / "wrong-te.seq"
+    make_sequence(
+        cases[2], preparations=0, readout_flat=0.00128, echo_time=0.009
+    ).write(str(path))
+    checks = {c["name"]: c["passed"] for c in inspect_sequence(path, cases[2]).checks}
+    assert checks["tr_ms"] and checks["fov_mm"] and not checks["te_ms"]
 
 
-@pytest.mark.parametrize(
-    "mode,expected", [("generate_edit", 4), ("supplied_edit", 4), ("final_spec", 1)]
-)
+def test_new_flip_does_not_excuse_losing_the_sampling_mask(catalog, tmp_path):
+    from mriseqbench.evaluation.s3_sequence import inspect_sequence
+    from tests.fixtures.s3_sequences import make_sequence
+
+    case = plan(catalog, "compressed_sensing")["stages"][2]["case"]
+    for mutation in (None, "full_sampling"):
+        path = tmp_path / f"{mutation}.seq"
+        make_sequence(case, mutation, preparations=0).write(str(path))
+        checks = {c["name"]: c["passed"] for c in inspect_sequence(path, case).checks}
+        assert checks["flip_angle_deg"]
+        assert checks["sampling_pattern"] == (mutation is None)
+
+
 def test_runner_completes_chain_and_preserves_intermediate_artifacts(
-    catalog, tmp_path, monkeypatch, mode, expected
+    catalog, tmp_path, monkeypatch
 ):
     from mriseqbench.harness.runner import run_one
 
@@ -377,44 +440,13 @@ for i in range(4):
  assert response['stage_index']==previous+1
 """)
     base = catalog.resolve(catalog.get("tasks", "gre_t1w"))
-    options = {"allow_unqualified": True, "stage_timeout_s": 30, "mode": mode}
-    if mode == "supplied_edit":
-        import hashlib
-
-        seq = tmp_path / "seed.seq"
-        seq.write_bytes(b"known seed")
-        src = tmp_path / "design.py"
-        src.write_text("# editable seed source")
-
-        def entry(path):
-            return {
-                "path": str(path),
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            }
-
-        manifest = tmp_path / "seeds.json"
-        manifest.write_text(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "arm": None,
-                    "cases": {
-                        base["case_id"]: {
-                            "sequence": entry(seq),
-                            "sources": {"design.py": entry(src)},
-                        }
-                    },
-                }
-            )
-        )
-        options["seed_manifest"] = str(manifest)
     experiment = Experiment.model_validate(
         {
             "schema_version": 1,
             "id": "test_workflow",
             "version": 1,
             "suite": "full@1",
-            "workflow": options,
+            "agentic": True,
             "agent": {
                 "uses_model": False,
                 "command": [sys.executable, str(script)],
@@ -426,17 +458,11 @@ for i in range(4):
     base = catalog.resolve(catalog.get("tasks", "gre_t1w"))
     report = run_one(catalog, experiment, base, tmp_path / "run", 0)
     assert report["status"] == "passed"
-    assert len(report["submissions"]) == expected
-    assert report["feedback"]["submissions_used"] == expected
-    assert report["workflow"]["mode"] == mode
-    if mode == "supplied_edit":
-        assert report["workflow"]["stages"][0]["origin"] == "supplied"
-        assert (
-            tmp_path / "run/agent/design.py"
-        ).read_text() == "# editable seed source"
+    assert len(report["submissions"]) == 4
+    assert report["feedback"]["submissions_used"] == 4
     assert json.loads((tmp_path / "run/evaluation/case.json").read_text())[
-        "workflow_stage"
-    ]["index"] == (0 if mode == "final_spec" else 3)
+        "case_id"
+    ].endswith("--stage-3")
 
 
 def test_rpc_real_http_updates_contract_before_next_user_turn(
@@ -457,7 +483,7 @@ for i,line in enumerate(sys.stdin):
  user=json.loads(line)
  assert user["type"]=="prompt"
  case=json.loads(Path("case.json").read_text())
- assert case["workflow_stage"]["index"]==i
+ if i: assert case["case_id"].endswith(f"--stage-{i}")
  req=urllib.request.Request(f"http://127.0.0.1:{config['port']}/submit",data=f"stage-{i}".encode(),headers={"X-MRISeqBench-Token":config["token"]})
  result=json.loads(urllib.request.urlopen(req).read())
  assert result["status"]==("submitted" if i==3 else "stage_passed")
@@ -467,7 +493,65 @@ for i,line in enumerate(sys.stdin):
         assert workflow_rpc.drive([sys.executable, str(script)], tmp_path) == 0
         assert s.report()["status"] == "passed"
         final = json.loads((tmp_path / "case.json").read_text())["task"]["sequence"]
-        assert final["tr_ms"]["target"] == 20 and final["fov_mm"] == [200, 200]
+        assert (
+            final["tr_ms"]["target"] == 20
+            and final["fov_mm"] == [220, 220]
+            and final["slice_thickness_mm"] == 5
+        )
+
+
+def test_slice_selection_and_new_s4_application_tasks(catalog, tmp_path):
+    from mriseqbench.evaluation.s1_sequence import inspect_sequence as inspect_s1
+    from mriseqbench.evaluation.s4_sequence import inspect_sequence as inspect_s4
+    from tests.fixtures import (
+        reference128_advanced,
+        reference128_readouts,
+        s4_sequences,
+    )
+
+    # 1. Slice-profile & through-plane excitation fidelity on Stage 3 of gre_t1w
+    gre_stages = plan(catalog, "gre_t1w")["stages"]
+    stage2_case = gre_stages[2]["case"]
+    stage3_case = gre_stages[3]["case"]
+    stage2_path = tmp_path / "gre_stage2.seq"
+    stage3_path = tmp_path / "gre_stage3.seq"
+    reference128_readouts.build(stage2_case).write(str(stage2_path))
+    reference128_readouts.build(stage3_case).write(str(stage3_path))
+    checks_good = {
+        c["name"]: c["passed"] for c in inspect_s1(stage3_path, stage3_case).checks
+    }
+    assert checks_good["slice_thickness_mm"]
+    # Non-selective excitation from stage 2 must fail slice_thickness_mm on stage 3
+    checks_nonselective = {
+        c["name"]: c["passed"] for c in inspect_s1(stage2_path, stage3_case).checks
+    }
+    assert not checks_nonselective["slice_thickness_mm"]
+
+    # 2. New S4 tasks: positive and negative controls for water_selective_gre, dwi_epi, venc_flow_2d, cardiac_respiratory_bssfp
+    for task_id, check_name, bad_mutation in (
+        ("water_selective_gre", "water_selective_suppression", "non_selective"),
+        ("dwi_epi", "diffusion_b_value", "wrong_b_value"),
+        ("venc_flow_2d", "flow_encoding_venc", "wrong_venc"),
+        (
+            "cardiac_respiratory_bssfp",
+            "frame_0_respiratory_gating",
+            "ungated_respiratory",
+        ),
+    ):
+        case = catalog.resolve(catalog.get("tasks", task_id))
+        good_path = tmp_path / f"{task_id}_good.seq"
+        bad_path = tmp_path / f"{task_id}_bad.seq"
+        reference128_advanced.build(case).write(str(good_path))
+        s4_sequences.make_sequence(case, mutation=bad_mutation).write(str(bad_path))
+        good_checks = {
+            c["name"]: c["passed"] for c in inspect_s4(good_path, case).checks
+        }
+        bad_checks = {
+            c["name"]: c["passed"] for c in inspect_s4(bad_path, case).checks
+        }
+        assert all(good_checks.values()), (task_id, good_checks)
+        assert good_checks[check_name]
+        assert not bad_checks[check_name]
 
 
 def test_rf_public_target_refresh_and_redaction(catalog, tmp_path, monkeypatch):
@@ -486,34 +570,61 @@ def test_rf_public_target_refresh_and_redaction(catalog, tmp_path, monkeypatch):
         assert '"sar"' not in response["files"]["case.json"]
 
 
-def test_seed_library_rejects_hash_changes_and_harness_destinations(tmp_path):
-    import hashlib
+def test_followup_count_is_not_fixed(catalog, monkeypatch):
+    task = catalog.get("tasks", "gre_t1w")
+    monkeypatch.setattr(task, "followups", task.followups[:1])
+    assert len(plan(catalog)["stages"]) == 2
 
-    from mriseqbench.harness.workflow_seed import load_seed
 
-    source = tmp_path / "source.py"
-    source.write_bytes(b"source")
-    entry = {"path": str(source), "sha256": hashlib.sha256(b"source").hexdigest()}
-    document = {
-        "schema_version": 1,
-        "arm": None,
-        "cases": {"case": {"sequence": entry, "sources": {"design.py": entry}}},
-    }
-    manifest = tmp_path / "seeds.json"
-    manifest.write_text(json.dumps(document))
-    assert load_seed(manifest, tmp_path, "case", None)[1] == {"design.py": b"source"}
-    for name in [
-        "../design.py",
-        ".harness_client.py",
-        "bin/design.py",
-        "/tmp/design.py",
-    ]:
-        document["cases"]["case"]["sources"] = {name: entry}
-        manifest.write_text(json.dumps(document))
-        with pytest.raises(ValueError, match="destination"):
-            load_seed(manifest, tmp_path, "case", None)
-    document["cases"]["case"]["sources"] = {"design.py": entry}
-    manifest.write_text(json.dumps(document))
-    source.write_bytes(b"changed")
-    with pytest.raises(ValueError, match="SHA-256"):
-        load_seed(manifest, tmp_path, "case", None)
+def test_stage_usage_reuses_api_log_and_handles_late_or_missing_usage(
+    catalog, tmp_path, monkeypatch
+):
+    from mriseqbench.harness.accounting import summarize_api
+
+    path = tmp_path / "api.jsonl"
+
+    def record(request_id, **fields):
+        with path.open("a") as stream:
+            stream.write(
+                json.dumps(
+                    {"request_id": request_id, "route": "/chat/completions", **fields}
+                )
+                + "\n"
+            )
+
+    def finish(request_id, inputs, cost):
+        record(
+            request_id,
+            event="finished",
+            response_complete=True,
+            usage={
+                "input_tokens": inputs,
+                "output_tokens": 10,
+                "total_tokens": inputs + 10,
+                "cost_credits": cost,
+            },
+        )
+
+    with server(catalog, tmp_path, monkeypatch) as s:
+        record("a", event="started")
+        submit(s)
+        advance(s, 0)
+        # Usage can arrive after a turn boundary. Attribute by request, not arrival.
+        finish("a", 100, 0.02)
+        finish("b", 200, 0.03)
+        report = s.report()
+        first, second = report["workflow"]["stages"][:2]
+        assert first["usage"]["totals"]["cost_credits"] == 0.02
+        assert second["usage"]["totals"]["cost_credits"] == 0.03
+        for key in ["input_tokens", "output_tokens", "total_tokens", "cost_credits"]:
+            assert sum(
+                row["usage"]["totals"][key] for row in [first, second]
+            ) == pytest.approx(summarize_api(path)["totals"][key])
+        record("c", event="finished", response_complete=True)
+        second = s.report()["workflow"]["stages"][1]
+        assert second["usage"]["totals"]["cost_credits"] is None
+        assert second["usage"]["observed_totals"]["cost_credits"] == 0.03
+        assert second["usage"]["requests_missing_usage"] == 1
+        (tmp_path / "session.json").write_text('{"ended":"completed"}')
+        _, recovered = recover(tmp_path, 3)
+        assert recovered["workflow"]["stages"][1]["usage"] == second["usage"]

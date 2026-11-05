@@ -3,7 +3,8 @@ schema_version: 1
 id: pi_p1_pypulseq_mrzero
 version: 1
 suite: full@1
-arm: p1_pypulseq_mrzero@1
+# Public arm: P0 S1; filename and experiment ID retain historical naming.
+arm: P0 S1@1
 arm_runtime:
   author_image: mriseqbench/author-pypulseq:local
   simulator_image: mriseqbench/sim-mrzero:local

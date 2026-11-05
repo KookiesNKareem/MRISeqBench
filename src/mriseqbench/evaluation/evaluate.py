@@ -68,6 +68,55 @@ def s4_backend_contract(case):
 
     spec, contract = case["task"]["sequence"], case["evaluation"]
     fam = family(case)
+    image_bounds = case_bounds(case_policy(case), contrast=contrast_required(case))
+    if fam in {"water_selective_gre", "dwi_epi", "venc_flow_2d"}:
+        n_frames = (spec.get("temporal") or {}).get("frames", 1)
+        requirements = {"numerical_convergence"}
+        if fam == "water_selective_gre":
+            requirements.add("water_selective_suppression")
+        elif fam == "dwi_epi":
+            requirements |= {"diffusion_b_value", "epi", "spin_echo"}
+        elif fam == "venc_flow_2d":
+            requirements |= {"flow_encoding_venc", "cardiac_frame_count"}
+        bounds = []
+        for frame in range(n_frames):
+            requirements.add(f"frame_{frame}_full_cartesian_grid")
+            bounds.extend(
+                {**bound, "name": f"frame_{frame}_case_" + bound["name"]}
+                for bound in image_bounds
+            )
+            bounds.append(
+                {
+                    "name": f"frame_{frame}_diagnostic_signal_fraction",
+                    "min": 0.01,
+                    "max": None,
+                }
+            )
+            if fam in {"water_selective_gre", "venc_flow_2d"}:
+                bounds.append(
+                    {
+                        "name": f"frame_{frame}_spoiling_relative_error",
+                        "min": None,
+                        "max": 0.2,
+                    }
+                )
+            if fam == "water_selective_gre":
+                bounds.append(
+                    {
+                        "name": f"frame_{frame}_fat_to_water_excitation_ratio",
+                        "min": None,
+                        "max": spec["application"]["fat_suppression_max_ratio"],
+                    }
+                )
+            if fam == "dwi_epi":
+                bounds.append(
+                    {
+                        "name": f"frame_{frame}_min_refocusing_retention",
+                        "min": 0.9,
+                        "max": None,
+                    }
+                )
+        return requirements, bounds
     requirements = {
         "physio_trigger_resolution",
         "ecg_trigger_events",
@@ -81,18 +130,22 @@ def s4_backend_contract(case):
     if fam == "adiabatic_inversion":
         requirements.add("adiabatic_hyperbolic_secant")
     preparation = (
-        "inversion"
+        None
+        if fam == "cardiac_respiratory_bssfp"
+        else "inversion"
         if fam in {"adiabatic_inversion", "t1_mapping"}
         else "t2_preparation"
     )
-    image_bounds = case_bounds(case_policy(case), contrast=contrast_required(case))
     bounds = []
     for frame in range(spec["temporal"]["frames"]):
         requirements |= {
             f"frame_{frame}_full_cartesian_grid",
             f"frame_{frame}_balanced_bssfp",
-            f"frame_{frame}_{preparation}",
         }
+        if preparation is not None:
+            requirements.add(f"frame_{frame}_{preparation}")
+        if fam == "cardiac_respiratory_bssfp":
+            requirements.add(f"frame_{frame}_respiratory_gating")
         bounds.extend(
             {**bound, "name": f"frame_{frame}_case_" + bound["name"]}
             for bound in image_bounds
@@ -104,7 +157,7 @@ def s4_backend_contract(case):
                 "max": None,
             }
         )
-        prepared = (
+        prepared = fam != "cardiac_respiratory_bssfp" and (
             fam != "t2_mapping"
             or spec["application"]["preparation_durations_ms"][frame] > 0
         )
@@ -217,6 +270,8 @@ def _evaluate(submission, case, root, workspace, backend, *, feedback, time_budg
         backend is None
         and case["sequence_level"] == "S4"
         and case["evaluation"]["id"] == "s4"
+        and (case["task"]["sequence"].get("temporal") or {}).get("trigger_source")
+        == "ecg"
     ):
         from .s4_physio import InvalidPhysioSequence, resolve_sequence
 

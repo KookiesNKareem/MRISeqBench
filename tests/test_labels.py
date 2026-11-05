@@ -9,6 +9,7 @@ from mriseqbench.catalog import Catalog, load_yaml
 from mriseqbench.cli import main
 from mriseqbench.harness.prepare import prompt, task_brief
 from mriseqbench.labels import (
+    ARM_REFERENCES,
     HARDWARE_LABELS,
     PHANTOM_LABELS,
     SIMULATOR_LABELS,
@@ -17,7 +18,7 @@ from mriseqbench.labels import (
     arm_label,
     case_labels,
 )
-from mriseqbench.models import Arm, SuiteEntry, Task
+from mriseqbench.models import Arm, Experiment, SuiteEntry, Task
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,17 +27,21 @@ def test_labels_cover_catalog_and_preserve_abstract_numbering():
     catalog = Catalog(ROOT)
     cases = catalog.cases(catalog.get("suites", "full"))
     assert set(TASK_LABELS) == {case["task"]["id"] for case in cases}
-    assert len(set(TASK_LABELS.values())) == 27
+    assert len(set(TASK_LABELS.values())) == 31
     assert {level: len(tasks) for level, tasks in TASK_GROUPS.items()} == {
         "T1": 4,
         "T2": 9,
         "T3": 9,
-        "T4": 5,
+        "T4": 9,
     }
     assert TASK_LABELS["epi_multishot"] == "T2.2"
     assert TASK_LABELS["spiral_gre"] == "T2.6"
     assert TASK_LABELS["propeller_tse"] == "T2.7"
     assert TASK_LABELS["rf_excitation_2d"] == "T4.5"
+    assert TASK_LABELS["water_selective_gre"] == "T4.6"
+    assert TASK_LABELS["dwi_epi"] == "T4.7"
+    assert TASK_LABELS["venc_flow_2d"] == "T4.8"
+    assert TASK_LABELS["cardiac_respiratory_bssfp"] == "T4.9"
     combinations = set()
     for case in cases:
         labels = case_labels(case)
@@ -50,7 +55,7 @@ def test_labels_cover_catalog_and_preserve_abstract_numbering():
             None if case["task"]["id"] == "rf_excitation_2d" else "P1"
         )
         combinations.add((labels["task"], labels["hardware"]))
-    assert len(combinations) == 81
+    assert len(combinations) == 93
     assert set(HARDWARE_LABELS) == {case["hardware"]["id"] for case in cases}
     assert set(PHANTOM_LABELS) == {
         obj.id
@@ -77,11 +82,28 @@ def test_public_aliases_resolve_the_same_versioned_contracts():
 def test_simulator_modifiers_are_independent_of_authoring_and_phantom():
     catalog = Catalog(ROOT)
     assert SIMULATOR_LABELS == {"mrzero": "S1", "koma": "S2", "komamripy": "S3"}
-    assert arm_label(catalog.get("arms", "p1_pypulseq_mrzero")) == "P1 S1"
-    assert arm_label(catalog.get("arms", "p2_pypulseq_koma")) == "P2 S3"
-    assert arm_label(catalog.get("arms", "j7_pulseq_julia_mcp_koma")) == "J7 S2"
+    assert arm_label(catalog.get("arms", "p1_pypulseq_mrzero")) == "P0 S1"
+    assert arm_label(catalog.get("arms", "p2_pypulseq_koma")) == "P0 S3"
+    assert arm_label(catalog.get("arms", "j7_pulseq_julia_mcp_koma")) == "J4 S2"
     assert arm_label(catalog.get("arms", "p0_pypulseq")) == "P0"
-    assert arm_label(catalog.get("arms", "j6_koma_base_julia_mcp")) == "J6"
+    assert arm_label(catalog.get("arms", "j6_koma_base_julia_mcp")) == "J3"
+
+
+def test_figure1_arm_aliases_preserve_runtime_contracts():
+    catalog = Catalog(ROOT)
+    template = load_yaml(ROOT / "experiments/pi_j7_pulseq_julia_mcp_koma.yaml")
+    for label, identifier in ARM_REFERENCES.items():
+        arm = catalog.get("arms", identifier)
+        assert catalog.get("arms", label) == arm
+        assert catalog.get("arms", f"{label}@1") == arm
+        assert arm_label(arm) == label
+        public = Experiment.model_validate({**template, "arm": f"{label}@1"})
+        legacy = Experiment.model_validate({**template, "arm": f"{identifier}@1"})
+        assert public.model_dump() == legacy.model_dump()
+    j4_s2 = catalog.get("arms", "J4 S2")
+    assert j4_s2.tool_interface == "julia_mcp" and j4_s2.simulator == "koma"
+    cli_arm = catalog.get("arms", "j4_pulseq_julia_koma@1")
+    assert arm_label(cli_arm) == "J1 S2" and cli_arm.tool_interface == "cli"
 
 
 def test_configuration_labels_normalize_before_agent_contracts():
@@ -138,6 +160,7 @@ def test_cli_uses_public_labels(capsys):
     assert "field_strength_T: 1.5" in brief and "labels:" not in brief
     assert main(["--root", str(ROOT), "arms"]) == 0
     arms = capsys.readouterr().out
-    assert "P1 S1 (p1_pypulseq_mrzero@1)" in arms
-    assert "P2 S3 (p2_pypulseq_koma@1)" in arms
-    assert "J7 S2 (j7_pulseq_julia_mcp_koma@1)" in arms
+    assert "P0 S1 (p1_pypulseq_mrzero@1)" in arms
+    assert "P0 S3 (p2_pypulseq_koma@1)" in arms
+    assert "J4 S2 (j7_pulseq_julia_mcp_koma@1)" in arms
+    assert "J1 S2 (j4_pulseq_julia_koma@1)" in arms

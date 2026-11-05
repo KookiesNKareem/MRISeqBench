@@ -16,7 +16,17 @@ def gre_case():
     return catalog.resolve(catalog.get("tasks", "gre_t1w"))
 
 
-def test_selected_hardware_enforces_real_gradient_limit(tmp_path):
+@pytest.mark.parametrize(
+    "amplitude,rise_time,gradient_passes,slew_passes",
+    [
+        (0.03, 1e-3, (False, True, True), (True, True, True)),
+        (0.04, 1e-3, (False, False, True), (True, True, True)),
+        (0.02, 0.1e-3, (True, True, True), (False, False, True)),
+    ],
+)
+def test_selected_hardware_enforces_real_gradient_limit(
+    tmp_path, amplitude, rise_time, gradient_passes, slew_passes
+):
     from pypulseq import Opts, Sequence, make_adc, make_block_pulse, make_trapezoid
 
     from mriseqbench.evaluation.preflight import preflight
@@ -37,28 +47,32 @@ def test_selected_hardware_enforces_real_gradient_limit(tmp_path):
             0.5, duration=1e-3, delay=100e-6, system=system, use="excitation"
         )
     )
-    # 30 mT/m at 30 T/m/s clears the slew limit of both profiles,
-    # but exceeds Free.Max's 26 mT/m amplitude limit.
+    # The same serialized pulse must obey the selected profile's limits.
     grad = make_trapezoid(
         "x",
-        amplitude=0.03 * system.gamma,
-        rise_time=1e-3,
+        amplitude=amplitude * system.gamma,
+        rise_time=rise_time,
         flat_time=1e-3,
         system=system,
     )
-    adc = make_adc(32, duration=960e-6, delay=1e-3, system=system)
+    adc = make_adc(32, duration=960e-6, delay=rise_time, system=system)
     seq.add_block(grad, adc)
     path = tmp_path / "hardware.seq"
     seq.write(str(path))
-    for hardware, passes in [("high_performance@1", True), ("low_field@1", False)]:
+    for hardware, gradient_ok, slew_ok in zip(
+        ("low_field", "standard_1_5t", "high_performance"),
+        gradient_passes,
+        slew_passes,
+        strict=True,
+    ):
         case = catalog.resolve(
             catalog.get("tasks", "gre_t1w"),
             hardware_ref=hardware,
         )
         checks = preflight(path, case)
-        assert next(c for c in checks if c["name"] == "gradient_x")["passed"] is passes
-        assert next(c for c in checks if c["name"] == "slew_x")["passed"]
-        assert all(c["passed"] for c in checks) is passes
+        assert next(c for c in checks if c["name"] == "gradient_x")["passed"] is gradient_ok
+        assert next(c for c in checks if c["name"] == "slew_x")["passed"] is slew_ok
+        assert all(c["passed"] for c in checks) is (gradient_ok and slew_ok)
 
 
 def fake_backend(case, **changes):

@@ -17,10 +17,17 @@ from scipy.optimize import minimize_scalar
 from ..io import finite_json, write_json
 from .bart import provenance as bart_provenance
 from .s1 import evaluate_s1, resolve_decision
-from .s1_case import converge_phase, rf_phasor, voxel_spins
-from .s1_image import expected_receiver_phase, material_masks, rf_only_response
+from .s1_case import converge_phase, phase_replay, rf_phasor, voxel_spins
+from .s1_image import (
+    expected_receiver_phase,
+    material_masks,
+    nrmse,
+    refocusing_parity,
+    rf_only_response,
+)
 from .s1_koma import inversion_assay, reconstruct, simulate
-from .s1_phantom import phantom
+from .s1_phantom import Spins, phantom
+from .s1_probes import radical_inverse
 from .s1_sampling import analytic_reference, interval
 from .s1_sequence import MissingExcitation, check, family
 from .s4_sequence import frame_acquisition, inspect_sequence
@@ -49,7 +56,7 @@ class FullFrameReplay:
 
     def __call__(self, acquisition, spins, effects=(), **steps):
         if set(steps) - {"step_s", "rf_step_s", "integration_method"} or any(
-            effect.get("kind") != "b0" for effect in effects
+            effect.get("kind") not in {"b0", "motion"} for effect in effects
         ):
             return simulate(acquisition, spins, effects, **steps)
         indices = np.searchsorted(self.acquisition.adc, acquisition.adc)
@@ -123,7 +130,10 @@ def preparation_spoils(acq):
 
 
 def canonical_response(acq, properties):
-    return rf_only_response(acq, properties, spoil_times_s=preparation_spoils(acq))
+    response = rf_only_response(acq, properties, spoil_times_s=preparation_spoils(acq))
+    if getattr(acq, "measurements", {}).get("family") == "dwi_epi":
+        return response * refocusing_parity(acq)
+    return response
 
 
 def reference_image(acq, case, root, response, _reference_raw):
@@ -196,6 +206,129 @@ def mechanism_probes(acq, case, materials, properties):
         )
     )
     metrics["diagnostic_signal_fraction"] = usable
+    fam = family(case)
+    if fam in {"water_selective_gre", "venc_flow_2d"}:
+        probe_props = np.array([[1.0, 0.8, 0.08]])
+        ideal = canonical_response(acq, probe_props)[0]
+        center_ids = np.array(
+            [
+                ids[np.argmin(np.abs(acq.k[ids, int(np.argmax(np.ptp(acq.k[ids], axis=0)))]))]
+                for ids in acq.lines
+            ]
+        )
+        spec = case["task"]["sequence"]
+        width = np.r_[
+            np.asarray(spec["fov_mm"]) / np.asarray(spec["matrix"]) / 1000,
+            0.0,
+        ][:3]
+        errors = []
+        for count in (1021, 2053):
+            points = (
+                np.array(
+                    [
+                        [radical_inverse(i, b) - 0.5 for b in (2, 3, 5)]
+                        for i in range(1, count + 1)
+                    ]
+                )
+                * width
+            )
+            spins = Spins(
+                points,
+                np.zeros(count, dtype=np.int64),
+                ["diagnostic"],
+                probe_props,
+                1.0 / count,
+                (count,),
+                "diagnostic",
+            )
+            centered = copy(acq)
+            centered.adc, centered.adc_phase, centered.k = (
+                acq.adc[center_ids],
+                expected_receiver_phase(acq)[center_ids],
+                acq.k[center_ids],
+            )
+            actual = simulate(centered, spins, demodulate_encoding=True)
+            errors.append(nrmse(actual, ideal[center_ids]))
+        metrics["spoiling_relative_error"] = float(max(errors))
+        checks.append(
+            check(
+                "spoiled_gre",
+                max(errors) <= 0.2,
+                {"relative_errors": errors, "max": 0.2, "voxel_m": width.tolist()},
+            )
+        )
+        if fam == "water_selective_gre" and "fat" in materials:
+            fat_idx = materials.index("fat")
+            fat_frac = float(abs(response[fat_idx, central]) / properties[fat_idx, 0])
+            ratio = fat_frac / max(usable, 1e-15)
+            max_ratio = float(spec["application"]["fat_suppression_max_ratio"])
+            checks.append(
+                check(
+                    "water_selective_bloch_suppression",
+                    ratio <= max_ratio,
+                    {
+                        "fat_to_water_excitation_ratio": ratio,
+                        "max": max_ratio,
+                        "fat_signal_fraction": fat_frac,
+                        "water_signal_fraction": usable,
+                    },
+                )
+            )
+            metrics["fat_to_water_excitation_ratio"] = ratio
+        return checks, metrics, response
+    if fam == "dwi_epi":
+        probe_props = np.array([[1.0, 0.8, 0.08]])
+        refs = [p for p in acq.pulses if p.refocusing]
+        excs = [p for p in acq.pulses if not p.refocusing]
+        targets = []
+        for g in np.unique(acq.excitation):
+            exc = excs[int(g)]
+            last_adc = acq.adc[acq.lines[np.flatnonzero(acq.excitation == g)[-1]][-1]]
+            delta = -exc.center
+            echoes = []
+            for p in refs:
+                if exc.center < p.center < last_adc:
+                    delta = -2 * p.center - delta
+                    echoes.append(-delta)
+            if echoes:
+                targets.append((exc, np.asarray(echoes)))
+        retentions = []
+        for exc, echoes in targets:
+            a = copy(acq)
+            a.pulses = [p for p in acq.pulses if exc.start <= p.start < echoes[-1]]
+            a.adc, a.adc_phase, a.k = (
+                echoes,
+                np.zeros(len(echoes)),
+                np.zeros((len(echoes), 3)),
+            )
+            spins = Spins(
+                np.zeros((65, 3)),
+                np.zeros(65, dtype=int),
+                ["diagnostic"],
+                probe_props,
+                1 / 65,
+                (65,),
+                "diagnostic",
+            )
+            baseline = simulate(a, spins, zero_gradients=True)
+            actual = simulate(
+                a,
+                spins,
+                zero_gradients=True,
+                frequency_offsets=np.linspace(-50, 50, 65),
+            )
+            retentions.extend(
+                (np.abs(actual) / np.maximum(np.abs(baseline), 1e-15)).tolist()
+            )
+        metrics["min_refocusing_retention"] = float(min(retentions, default=0.0))
+        checks.append(
+            check(
+                "refocusing_response",
+                bool(retentions) and min(retentions) >= 0.9,
+                {"retentions": retentions, "min": 0.9},
+            )
+        )
+        return checks, metrics, response
     if prep_ids:
         a = copy(acq)
         a.pulses = [p for i, p in enumerate(acq.pulses) if i not in prep_ids]
@@ -597,9 +730,10 @@ def evaluate_s4(submission, case, root, workspace, *, physio_resolution, deadlin
         sequence_valid=all(c["passed"] for c in acq.checks),
         physio=physio_resolution,
     )
-    report["checks"].insert(
-        0, check("physio_trigger_resolution", True, physio_resolution)
-    )
+    if physio_resolution is not None:
+        report["checks"].insert(
+            0, check("physio_trigger_resolution", True, physio_resolution)
+        )
     write_json(workspace / "sequence.json", acq.measurements)
     if not report["sequence_valid"]:
         return report
@@ -776,11 +910,14 @@ def phase_reference(acq, case, root, reference, *, temporal_scale=1, batch=None)
         images = batch["images"].get(key) if batch is not None else None
         if images is None:
             images = []
-            for effects in ((), case["physics"]["effects"]):
+            field_effects = [
+                e for e in case["physics"]["effects"] if e.get("kind") != "motion"
+            ]
+            for effects in ((), field_effects):
                 # All frame echo samples share the exact preceding RF history.
                 # Later RF cannot affect earlier samples; each frame's scoring
                 # and temporal-convergence check remain independent below.
-                values = simulate(
+                values = phase_replay(
                     a,
                     spins,
                     effects,
@@ -809,7 +946,7 @@ def phase_reference(acq, case, root, reference, *, temporal_scale=1, batch=None)
         fine,
         valid,
         {
-            "model": "koma_rf_voxel_phase@1",
+            "model": "koma_rf_voxel_phase@2",
             "engine": "KomaMRICore",
             "echo_time_s": float(acq.adc[idx[0]]),
             "line": line,

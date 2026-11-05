@@ -227,6 +227,7 @@ def inspect_sequence(path, case):
             "te_ms",
             "tr_ms",
             "flip_angle_deg",
+            "slice_thickness_mm",
         }
     ]
     checks += [
@@ -286,7 +287,10 @@ def inspect_sequence(path, case):
         checks.append(
             check(
                 "echo_in_adc",
-                all(np.min(q[ids, 0]) <= 0 <= np.max(q[ids, 0]) for ids in a.lines),
+                all(
+                    np.min(q[ids, 0]) <= 1e-12 and np.max(q[ids, 0]) >= -1e-12
+                    for ids in a.lines
+                ),
                 "Every EPI line brackets kx=0 after the excitation endpoint",
             )
         )
@@ -297,7 +301,7 @@ def inspect_sequence(path, case):
             check(
                 "single_shot_epi",
                 len(np.unique(a.excitation)) == 1
-                and len(a.lines) == matrix[1] // 2
+                and len(a.lines) == int(expected.any(axis=0).sum())
                 and np.all(polarities[1:] * polarities[:-1] == -1),
                 {
                     "readout_lines": len(a.lines),

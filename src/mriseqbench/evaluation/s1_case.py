@@ -131,6 +131,11 @@ def phase_reference(
                 step_s=0.001 / temporal_scale / refinement,
                 rf_step_s=20e-6 / temporal_scale / refinement,
                 ideal_spoiling=family(case) not in {"bssfp", "rfov_epi"},
+                **(
+                    {"refocusing_projection": True}
+                    if family(case) == "reduced_fov"
+                    else {}
+                ),
             ).mean(axis=0)
             image = np.zeros(matrix, complex)
             np.add.at(image, tuple(loc.T), values)
@@ -154,7 +159,12 @@ def phase_reference(
             "sample_indices": idx.tolist(),
             "rf_history": "complete coherent history"
             if family(case) == "bssfp"
-            else "complete; ideal transverse spoiling before excitation",
+            else (
+                "complete; ideal transverse spoiling before excitation and "
+                "local balanced-crusher refocusing-pathway projection"
+                if family(case) == "reduced_fov"
+                else "complete; ideal transverse spoiling before excitation"
+            ),
             **summary,
         },
     )

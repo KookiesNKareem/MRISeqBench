@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import sys
 import tempfile
 import time
@@ -53,7 +54,16 @@ def main(argv=None):
                 )
             )
             temporary.rename(request / "request.toml")
-            wait_for(request / "done", deadline)
+            try:
+                wait_for(request / "done", deadline)
+            except (TimeoutError, KeyboardInterrupt):
+                if (request / "running.toml").exists() and os.getpid() != 1:
+                    try:
+                        os.kill(1, signal.SIGINT)
+                        wait_for(request / "done", time.monotonic() + 2.0)
+                    except (OSError, TimeoutError):
+                        pass
+                raise
             sys.stdout.write((request / "stdout").read_text(errors="replace"))
             sys.stderr.write((request / "stderr").read_text(errors="replace"))
             return int((request / "done").read_text())

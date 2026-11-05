@@ -7,8 +7,676 @@ import numpy as np
 from pypulseq import Sequence
 from scipy.optimize import least_squares
 
-from .s1_sequence import check, family, gradient_integrals
+from .s1_sequence import (
+    check,
+    family,
+    gradient_integrals,
+    midpoint_tolerance,
+)
 from .s1_sequence import inspect_sequence as inspect_cartesian
+
+APPLICATION_S4_FAMILIES = {"water_selective_gre", "dwi_epi", "venc_flow_2d"}
+
+
+def _bloch_rf_group_response(pulses, offsets_hz):
+    """Integrate 1D Bloch response M(0)=[0,0,1] across a pulse group at offsets_hz."""
+    offsets = np.asarray(offsets_hz, dtype=float)
+    mx = np.zeros_like(offsets)
+    my = np.zeros_like(offsets)
+    mz = np.ones_like(offsets)
+    for idx, p in enumerate(pulses):
+        if idx > 0:
+            gap = float(p.start - pulses[idx - 1].end)
+            if gap > 0:
+                phi = -2.0 * np.pi * offsets * gap
+                ca, sa = np.cos(phi), np.sin(phi)
+                mx, my = mx * ca - my * sa, mx * sa + my * ca
+        widths = np.diff(p.edges)
+        signal = np.asarray(p.signal, dtype=complex) * np.exp(1j * p.phase)
+        bz = float(p.frequency) + offsets
+        for val, w in zip(signal, widths, strict=True):
+            bx = np.full_like(offsets, float(val.real))
+            by = np.full_like(offsets, float(val.imag))
+            norm = np.sqrt(bx * bx + by * by + bz * bz)
+            angle = 2.0 * np.pi * float(w) * norm
+            denom = np.maximum(norm, 1e-30)
+            ux, uy, uz = bx / denom, by / denom, bz / denom
+            ca, sa = np.cos(angle), np.sin(angle)
+            dot = ux * mx + uy * my + uz * mz
+            cx = uy * mz - uz * my
+            cy = uz * mx - ux * mz
+            cz = ux * my - uy * mx
+            mx = mx * ca - cx * sa + ux * dot * (1.0 - ca)
+            my = my * ca - cy * sa + uy * dot * (1.0 - ca)
+            mz = mz * ca - cz * sa + uz * dot * (1.0 - ca)
+    return mx, my, mz
+
+
+def _inspect_water_selective_gre(acq, case):
+    spec = case["task"]["sequence"]
+    exc = [p for p in acq.pulses if not p.refocusing]
+    n_lines = len(acq.lines)
+    if not exc or n_lines == 0:
+        return _failed(acq, [check("water_selective_suppression", False, "No excitation")])
+    line_groups = []
+    for line_idx, ids in enumerate(acq.lines):
+        t_start = float(acq.adc[acq.lines[line_idx - 1][-1]]) if line_idx > 0 else -1.0
+        t_end = float(acq.adc[ids[0]])
+        candidates = [
+            i for i, p in enumerate(exc) if p.start > t_start - 1e-12 and p.end <= t_end + 1e-12
+        ]
+        line_groups.append(candidates)
+    group_size = len(line_groups[-1]) if line_groups and line_groups[-1] else 1
+    if line_groups and len(line_groups[0]) > group_size and len(line_groups[0]) % group_size == 0:
+        line_groups[0] = line_groups[0][-group_size:]
+    valid_grouping = all(len(g) == group_size and len(g) >= 1 for g in line_groups)
+    all_groups = []
+    if valid_grouping and group_size >= 1:
+        first_acq_pulse = line_groups[0][0]
+        for start_i in range(0, first_acq_pulse, group_size):
+            chunk = list(range(start_i, min(start_i + group_size, first_acq_pulse)))
+            if len(chunk) == group_size:
+                all_groups.append([exc[i] for i in chunk])
+        for g in line_groups:
+            all_groups.append([exc[i] for i in g])
+    else:
+        all_groups = [[p] for p in exc]
+
+    fat_hz = float(case["object"]["tissue_properties"]["fat"]["chemical_shift_hz"])
+    water_mxy, fat_mxy, ratios, group_flips, group_centers = [], [], [], [], []
+    internal_crusher_cycles = []
+    for g in (all_groups[-n_lines:] if len(all_groups) >= n_lines else all_groups):
+        mx, my, mz = _bloch_rf_group_response(g, [0.0, fat_hz])
+        mxy = np.hypot(mx, my)
+        w_val, f_val = float(mxy[0]), float(mxy[1])
+        water_mxy.append(w_val)
+        fat_mxy.append(f_val)
+        ratios.append(f_val / max(w_val, 1e-15))
+        group_flips.append(float(np.rad2deg(np.arccos(np.clip(mz[0], -1.0, 1.0)))))
+        weights = [float(np.sum(np.abs(p.signal) * np.diff(p.edges))) for p in g]
+        total_w = max(sum(weights), 1e-30)
+        group_centers.append(
+            float(sum(p.center * w for p, w in zip(g, weights, strict=True)) / total_w)
+        )
+        if len(g) > 1:
+            span = gradient_integrals(acq.seq, [g[0].start, g[-1].end])
+            internal_crusher_cycles.append(
+                float(np.max(crusher_cycles_per_voxel(span[1] - span[0], spec)))
+            )
+        else:
+            internal_crusher_cycles.append(0.0)
+
+    if group_size > 1 and valid_grouping and len(group_centers) == n_lines:
+        centers = np.asarray(acq.measurements["echo_times_s"], dtype=float)
+        acq.te = centers - np.asarray(group_centers, dtype=float)
+        acq.tr = np.diff(np.asarray(group_centers, dtype=float))
+        acq.flips = np.asarray(group_flips, dtype=float)
+        acq.measurements["te_ms"] = (acq.te * 1000).tolist()
+        acq.measurements["tr_ms"] = (acq.tr * 1000).tolist()
+        acq.measurements["flip_angle_deg"] = acq.flips.tolist()
+
+    checks = [
+        c
+        for c in acq.checks
+        if c["name"]
+        in {
+            "readout_samples",
+            "rf_before_adc",
+            "echo_in_adc",
+            "cartesian",
+            "matrix",
+            "fov_mm",
+            "slice_thickness_mm",
+            "no_refocusing",
+        }
+    ]
+    checks.append(
+        check(
+            "single_line_per_excitation",
+            valid_grouping and len(line_groups) == n_lines,
+            {"subpulses_per_excitation": group_size, "lines": n_lines},
+        )
+    )
+    for name, measured in (("te_ms", acq.te * 1000), ("tr_ms", acq.tr * 1000)):
+        limit = spec.get(name)
+        if limit:
+            ok = measured > 0
+            if limit.get("target") is not None:
+                ok &= np.abs(measured - limit["target"]) <= limit["tolerance"] + 1e-6
+            if limit.get("max") is not None:
+                ok &= measured <= limit["max"] + 1e-6
+            checks.append(
+                check(
+                    name,
+                    measured.size > 0 and bool(ok.all()),
+                    {
+                        "min": float(measured.min()) if measured.size else None,
+                        "max": float(measured.max()) if measured.size else None,
+                        "contract": limit,
+                    },
+                )
+            )
+    if spec.get("flip_angle_deg") is not None:
+        checks.append(
+            check(
+                "flip_angle_deg",
+                bool(np.all(np.abs(acq.flips - spec["flip_angle_deg"]) <= 1.0)),
+                {
+                    "min": float(acq.flips.min()),
+                    "max": float(acq.flips.max()),
+                    "tolerance_deg": 1.0,
+                },
+            )
+        )
+    checks.append(
+        check(
+            "gre",
+            bool(
+                np.all((acq.flips > 0.1) & (acq.flips < 135))
+                and not any(p.refocusing for p in acq.pulses)
+            ),
+            "Non-refocused water-selective gradient echoes",
+        )
+    )
+    max_ratio = float(spec["application"]["fat_suppression_max_ratio"])
+    max_measured_ratio = float(max(ratios, default=1.0))
+    min_water = float(min(water_mxy, default=0.0))
+    max_crusher = float(max(internal_crusher_cycles, default=0.0))
+    suppression_conditions = {
+        "water_excitation_present": min_water >= 0.05,
+        "fat_suppression_within_limit": max_measured_ratio <= max_ratio,
+        "no_inter_subpulse_crusher": max_crusher <= 0.5,
+        "no_refocusing_or_inversion_prep": not any(p.refocusing for p in acq.pulses),
+    }
+    checks.append(
+        check(
+            "water_selective_suppression",
+            all(suppression_conditions.values()),
+            {
+                "fat_chemical_shift_hz": fat_hz,
+                "min_water_transverse_mxy": min_water,
+                "max_fat_transverse_mxy": float(max(fat_mxy, default=0.0)),
+                "max_fat_to_water_ratio": max_measured_ratio,
+                "fat_suppression_max_ratio": max_ratio,
+                "subpulses_per_excitation": group_size,
+                "max_internal_crusher_cycles_per_voxel": max_crusher,
+                "conditions": suppression_conditions,
+            },
+        )
+    )
+    all_ids = np.concatenate(acq.lines).astype(int)
+    central = int(all_ids[np.argmin(np.linalg.norm(acq.k[all_ids], axis=1))])
+    unique = len(np.unique(acq.indices[all_ids], axis=0))
+    checks.append(
+        check(
+            "frame_0_full_cartesian_grid",
+            unique == int(np.prod(spec["matrix"])) and len(all_ids) == int(np.prod(spec["matrix"])),
+            {"unique_samples": unique, "samples": len(all_ids), "segments": 1},
+        )
+    )
+    frame = {
+        "adc_indices": all_ids.tolist(),
+        "line_indices": list(range(n_lines)),
+        "central_adc_index": central,
+        "preparation_pulse_indices": [],
+        "conditioning_pulse_indices": [],
+        "readout_pulse_indices": [g[-1] for g in line_groups] if valid_grouping else [],
+        "train_start_s": float(all_groups[0][0].start),
+        "trigger_time_s": 0.0,
+        "segment_index": 0,
+    }
+    spoil_times = [float(g[0].start) for g in all_groups]
+    acq.checks = checks
+    acq.measurements.update(
+        frames=[frame],
+        family="water_selective_gre",
+        reconstruction="bart_cartesian_fft@1",
+        preparation_spoil_times_s=spoil_times,
+        water_selective={
+            "fat_to_water_ratio": max_measured_ratio,
+            "fat_suppression_max_ratio": max_ratio,
+            "subpulses_per_excitation": group_size,
+        },
+    )
+    return acq
+
+
+def _shot_b_value_s_per_mm2(seq, t_exc, t_ref, t_ref_end, t_adc0):
+    """Exact Karlicek-Lowe / Stejskal-Tanner b-value (s/mm^2) from PPoly gradients."""
+    grads = seq.get_gradients()
+    integrals = [g.antiderivative() if g is not None else None for g in grads]
+
+    def g_int(times):
+        times = np.asarray(times, dtype=float)
+        out = np.zeros((len(times), 3))
+        for axis, integ in enumerate(integrals):
+            if integ is not None:
+                q = np.clip(times, integ.x[0], integ.x[-1])
+                out[:, axis] = integ(q) - integ(np.clip(0.0, integ.x[0], integ.x[-1]))
+        return out
+
+    breakpoints = [t_ref_end, t_adc0]
+    for g in grads:
+        if g is not None:
+            bp = g.x[(g.x >= t_ref_end - 1e-12) & (g.x <= t_adc0 + 1e-12)]
+            breakpoints.extend(bp.tolist())
+    probe = np.unique(np.clip(np.r_[breakpoints, np.linspace(t_ref_end, t_adc0, 257)], t_ref_end, t_adc0))
+    m_exc = g_int([t_exc])[0]
+    m_ref = g_int([t_ref])[0]
+    k_after = g_int(probe) - 2.0 * m_ref + m_exc
+    norms = np.linalg.norm(k_after, axis=1)
+    best = int(np.argmin(norms))
+    t_end = float(probe[best])
+    residual_k = float(norms[best])
+
+    knots = [t_exc, t_ref, t_end]
+    for g in grads:
+        if g is not None:
+            bp = g.x[(g.x > t_exc + 1e-12) & (g.x < t_end - 1e-12)]
+            knots.extend(bp.tolist())
+    knots = np.unique(np.clip(knots, t_exc, t_end))
+    if len(knots) < 2:
+        return 0.0, residual_k, 0.0
+    # 3-point Gauss-Legendre is exact for degree <= 5 polynomials (||k(t)||^2 is degree 4).
+    gl_nodes = np.array([-np.sqrt(3.0 / 5.0), 0.0, np.sqrt(3.0 / 5.0)])
+    gl_weights = np.array([5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0])
+    a_seg, b_seg = knots[:-1], knots[1:]
+    mid = 0.5 * (a_seg + b_seg)
+    half = 0.5 * (b_seg - a_seg)
+    quad_t = (mid[:, None] + half[:, None] * gl_nodes[None, :]).ravel()
+    quad_w = (half[:, None] * gl_weights[None, :]).ravel()
+    m_quad = g_int(quad_t)
+    before_ref = quad_t < t_ref
+    k_quad = np.where(
+        before_ref[:, None],
+        m_quad - m_exc[None, :],
+        m_quad - 2.0 * m_ref[None, :] + m_exc[None, :],
+    )
+    k_sq = np.sum(k_quad * k_quad, axis=1)
+    b_val = float(4.0 * (np.pi**2) * 1e-6 * np.sum(quad_w * k_sq))
+    peak_k = float(np.max(np.sqrt(k_sq), initial=0.0))
+    return b_val, residual_k, peak_k
+
+
+def _inspect_dwi_epi(acq, case):
+    spec = case["task"]["sequence"]
+    matrix = np.asarray(spec["matrix"])
+    fov = np.asarray(spec["fov_mm"]) / 1000
+    q = acq.k[:, : len(matrix)] * fov
+    read = spec.get("readout") or {}
+    checks = [
+        c
+        for c in acq.checks
+        if c["name"]
+        in {
+            "readout_samples",
+            "rf_before_adc",
+            "echo_in_adc",
+            "cartesian",
+            "matrix",
+            "fov_mm",
+            "slice_thickness_mm",
+            "tr_ms",
+        }
+    ]
+    exc = [p for p in acq.pulses if not p.refocusing]
+    refs = [p for p in acq.pulses if p.refocusing]
+    groups = [np.flatnonzero(acq.excitation == j) for j in np.unique(acq.excitation)]
+    shots = len(groups)
+    centre_ids = np.array(
+        [ids[np.argmin(np.linalg.norm(q[ids, :2], axis=1))] for ids in acq.lines]
+    )
+    centres = np.asarray(acq.measurements["echo_times_s"])
+    acq.te = centres - np.array([exc[max(j, 0)].center for j in acq.excitation])
+    effective_line = int(np.argmin(np.linalg.norm(q[centre_ids], axis=1)))
+    te_ms = float(acq.te[effective_line] * 1000)
+    if spec.get("te_ms"):
+        limit = spec["te_ms"]
+        ok = te_ms > 0
+        if limit.get("target") is not None:
+            ok &= abs(te_ms - limit["target"]) <= limit["tolerance"] + 1e-3
+        if limit.get("max") is not None:
+            ok &= te_ms <= limit["max"] + 1e-3
+        checks.append(check("te_ms", ok, {"effective_te_ms": te_ms, "contract": limit}))
+    if read.get("shots"):
+        checks.append(
+            check(
+                "shots",
+                shots == read["shots"],
+                {"measured": shots, "required": read["shots"]},
+            )
+        )
+    if read.get("echo_train_length"):
+        counts = [len(g) for g in groups]
+        checks.append(
+            check(
+                "echo_train_length",
+                all(n == read["echo_train_length"] for n in counts),
+                counts,
+            )
+        )
+    x_steps = [np.abs(np.abs(np.diff(q[ids, 0])) - 1) for ids in acq.lines]
+    transverse = [np.ptp(q[ids, 1:], axis=0) for ids in acq.lines]
+    x_readout = all(
+        len(ids) == matrix[0] and np.all(step <= 0.01) and np.all(motion <= 0.01)
+        for ids, step, motion in zip(acq.lines, x_steps, transverse, strict=True)
+    )
+    checks.append(
+        check(
+            "readout_axis",
+            x_readout,
+            {"required_axis": "x", "samples_per_readout": int(matrix[0])},
+        )
+    )
+    polarity = np.array([np.sign(q[ids[-1], 0] - q[ids[0], 0]) for ids in acq.lines])
+    alternating = all(
+        np.all(polarity[g][1:] * polarity[g][:-1] == -1) for g in groups
+    )
+    epi_valid = alternating and shots >= 2 and all(len(g) >= 2 for g in groups)
+    for g in groups:
+        ky = q[[centre_ids[i] for i in g], 1]
+        steps = np.diff(ky)
+        epi_valid &= (
+            len(ky) > 1
+            and bool(np.all(np.abs(np.abs(steps) - shots) <= 0.02))
+            and bool(np.all(steps > 0) or np.all(steps < 0))
+        )
+    checks.append(
+        check("epi", epi_valid, {"shots": shots, "alternating_polarity": alternating})
+    )
+
+    shot_refs, midpoint_errors, b_values, residuals, peaks = [], [], [], [], []
+    for j, g in zip(np.unique(acq.excitation), groups, strict=True):
+        p_exc = exc[int(j)]
+        t_adc0 = float(acq.adc[acq.lines[g[0]][0]])
+        r_list = [p for p in refs if p_exc.center < p.center < t_adc0]
+        shot_refs.append(len(r_list))
+        if len(r_list) == 1:
+            p_ref = r_list[0]
+            spin_echo_time = 2.0 * p_ref.center - p_exc.center
+            shot_centres = centres[g]
+            midpoint_errors.append(float(np.min(np.abs(shot_centres - spin_echo_time))))
+            b_val, res_k, peak_k = _shot_b_value_s_per_mm2(
+                acq.seq, p_exc.center, p_ref.center, p_ref.end, t_adc0
+            )
+            b_values.append(b_val)
+            residuals.append(res_k)
+            peaks.append(peak_k)
+        else:
+            midpoint_errors.append(1e6)
+            b_values.append(0.0)
+            residuals.append(1e6)
+            peaks.append(0.0)
+
+    tol_se = max(midpoint_tolerance(acq.seq), 50e-6)
+    se_valid = (
+        all(n == 1 for n in shot_refs)
+        and len(refs) == shots
+        and bool(np.all(np.abs(acq.flips - 90) <= 2))
+        and all(abs(p.flip - 180) <= 2 for p in refs)
+        and max(midpoint_errors, default=1e6) <= tol_se
+    )
+    checks.append(
+        check(
+            "spin_echo",
+            se_valid,
+            {
+                "refocusing_counts_per_shot": shot_refs,
+                "max_spin_echo_alignment_error_s": float(max(midpoint_errors, default=1e6)),
+                "tolerance_s": tol_se,
+            },
+        )
+    )
+    target_b = float(spec["application"]["b_value_s_per_mm2"])
+    b_arr = np.asarray(b_values, dtype=float)
+    res_limit = 0.02 / float(min(fov))
+    b_conditions = {
+        "one_refocusing_per_shot": all(n == 1 for n in shot_refs),
+        "positive_diffusion_encoding": bool(len(peaks) and min(peaks) >= 100.0),
+        "balanced_before_readout": bool(len(residuals) and max(residuals) <= res_limit),
+        "b_value_within_tolerance": bool(
+            len(b_arr) and np.all(np.abs(b_arr - target_b) <= 0.05 * target_b)
+        ),
+    }
+    checks.append(
+        check(
+            "diffusion_b_value",
+            all(b_conditions.values()),
+            {
+                "target_b_value_s_per_mm2": target_b,
+                "measured_b_value_min_s_per_mm2": float(b_arr.min()) if len(b_arr) else None,
+                "measured_b_value_max_s_per_mm2": float(b_arr.max()) if len(b_arr) else None,
+                "tolerance_s_per_mm2": 0.05 * target_b,
+                "max_residual_k_cycles_per_m": float(max(residuals, default=1e6)),
+                "residual_k_limit_cycles_per_m": res_limit,
+                "conditions": b_conditions,
+            },
+        )
+    )
+    all_ids = np.concatenate(acq.lines).astype(int)
+    central = int(all_ids[np.argmin(np.linalg.norm(acq.k[all_ids], axis=1))])
+    unique = len(np.unique(acq.indices[all_ids], axis=0))
+    checks.append(
+        check(
+            "frame_0_full_cartesian_grid",
+            unique == int(np.prod(spec["matrix"])) and len(all_ids) == int(np.prod(spec["matrix"])),
+            {"unique_samples": unique, "samples": len(all_ids), "segments": shots},
+        )
+    )
+    frame = {
+        "adc_indices": all_ids.tolist(),
+        "line_indices": list(range(len(acq.lines))),
+        "central_adc_index": central,
+        "preparation_pulse_indices": [],
+        "conditioning_pulse_indices": [],
+        "readout_pulse_indices": list(range(len(acq.pulses))),
+        "train_start_s": float(exc[0].start),
+        "trigger_time_s": 0.0,
+        "segment_index": 0,
+    }
+    acq.checks = checks
+    acq.measurements.update(
+        frames=[frame],
+        family="dwi_epi",
+        reconstruction="bart_cartesian_fft@1",
+        preparation_spoil_times_s=[float(p.start) for p in exc],
+        centre_sample_indices=[central],
+        b_values_s_per_mm2=b_values,
+    )
+    return acq
+
+
+def _line_moments_at_te(seq, t_exc, t_echo):
+    """Exact zeroth (cycles/m) and first (cycles*s/m) gradient moments on [t_exc, t_echo]."""
+    t0 = np.asarray(t_exc, dtype=float)
+    t1 = np.asarray(t_echo, dtype=float)
+    m0 = np.zeros((len(t0), 3))
+    m1 = np.zeros((len(t0), 3))
+    for axis, grad in enumerate(seq.get_gradients()):
+        if grad is not None:
+            g1 = grad.antiderivative()
+            g2 = g1.antiderivative()
+            q0 = np.clip(t0, g1.x[0], g1.x[-1])
+            q1 = np.clip(t1, g1.x[0], g1.x[-1])
+            v0, v1 = g1(q0), g1(q1)
+            w0, w1 = g2(q0), g2(q1)
+            m0[:, axis] = v1 - v0
+            m1[:, axis] = (q1 - q0) * v1 - (w1 - w0)
+    return m0, m1
+
+
+def _bloch_moving_spin_phase(seq, pulse, t_echo, velocity_m_per_s):
+    """1D Bloch phase at t_echo for a spin moving at constant velocity r(t)=v*(t-t_exc)."""
+    grads = seq.get_gradients()
+    knots = [pulse.end, t_echo]
+    for g in grads:
+        if g is not None:
+            bp = g.x[(g.x > pulse.end + 1e-12) & (g.x < t_echo - 1e-12)]
+            knots.extend(bp.tolist())
+    knots = np.unique(np.clip(knots, pulse.end, t_echo))
+    gl_nodes = np.array([-np.sqrt(3.0 / 5.0), 0.0, np.sqrt(3.0 / 5.0)])
+    gl_weights = np.array([5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0])
+    a_seg, b_seg = knots[:-1], knots[1:]
+    mid = 0.5 * (a_seg + b_seg)
+    half = 0.5 * (b_seg - a_seg)
+    quad_t = (mid[:, None] + half[:, None] * gl_nodes[None, :]).ravel()
+    quad_w = (half[:, None] * gl_weights[None, :]).ravel()
+    g_vals = np.zeros((len(quad_t), 3))
+    for axis, g in enumerate(grads):
+        if g is not None:
+            g_vals[:, axis] = g(np.clip(quad_t, g.x[0], g.x[-1]))
+    pos = (quad_t - pulse.center)[:, None] * np.asarray(velocity_m_per_s, dtype=float)[None, :]
+    freq = np.sum(g_vals * pos, axis=1)
+    return float(-2.0 * np.pi * np.sum(quad_w * freq))
+
+
+def _inspect_venc_flow_2d(acq, case):
+    spec = case["task"]["sequence"]
+    matrix = np.asarray(spec["matrix"])
+    fov = np.asarray(spec["fov_mm"]) / 1000
+    ny = int(matrix[1])
+    checks = [
+        c
+        for c in acq.checks
+        if c["name"]
+        in {
+            "readout_samples",
+            "rf_before_adc",
+            "echo_in_adc",
+            "cartesian",
+            "te_ms",
+            "tr_ms",
+            "flip_angle_deg",
+            "slice_thickness_mm",
+            "no_refocusing",
+            "gre",
+        }
+    ]
+    n_lines = len(acq.lines)
+    if n_lines != 2 * ny:
+        checks.append(
+            check(
+                "cardiac_frame_count",
+                False,
+                {"acquired_lines": n_lines, "required_lines": 2 * ny},
+            )
+        )
+        return _failed(acq, checks)
+
+    exc = [p for p in acq.pulses if not p.refocusing]
+    centres = np.asarray(acq.measurements["echo_times_s"], dtype=float)
+    frames = []
+    frame_m0, frame_m1, frame_central_line = [], [], []
+    for frame_no in range(2):
+        line_ids = list(range(frame_no * ny, (frame_no + 1) * ny))
+        ids = np.concatenate([acq.lines[j] for j in line_ids]).astype(int)
+        unique = len(np.unique(acq.indices[ids], axis=0))
+        in_bounds = bool(((acq.indices[ids] >= 0) & (acq.indices[ids] < matrix)).all())
+        checks.append(
+            check(
+                f"frame_{frame_no}_full_cartesian_grid",
+                in_bounds
+                and unique == int(np.prod(matrix))
+                and len(ids) == int(np.prod(matrix)),
+                {"unique_samples": unique, "samples": len(ids), "segments": 1},
+            )
+        )
+        ky_vals = np.array([int(acq.indices[acq.lines[j][0], 1]) for j in line_ids])
+        order = np.argsort(ky_vals)
+        ordered_lines = [line_ids[i] for i in order]
+        t_exc = np.array([exc[int(acq.excitation[j])].center for j in ordered_lines])
+        t_echo = np.array([centres[j] for j in ordered_lines])
+        m0, m1 = _line_moments_at_te(acq.seq, t_exc, t_echo)
+        frame_m0.append(m0)
+        frame_m1.append(m1)
+        central = int(ids[np.argmin(np.linalg.norm(acq.k[ids], axis=1))])
+        central_line = next(j for j in line_ids if central in acq.lines[j])
+        frame_central_line.append(central_line)
+        readout_ids = [int(acq.excitation[j]) for j in line_ids]
+        frames.append(
+            {
+                "adc_indices": ids.tolist(),
+                "line_indices": line_ids,
+                "central_adc_index": central,
+                "preparation_pulse_indices": [],
+                "conditioning_pulse_indices": [],
+                "readout_pulse_indices": readout_ids,
+                "train_start_s": float(exc[readout_ids[0]].start),
+                "trigger_time_s": 0.0,
+                "segment_index": 0,
+            }
+        )
+
+    dm0 = frame_m0[1] - frame_m0[0]
+    dm1 = frame_m1[1] - frame_m1[0]
+    mean_dm1 = np.mean(dm1, axis=0)
+    norm_dm1 = float(np.linalg.norm(mean_dm1))
+    max_dm0_err = float(np.max(np.linalg.norm(dm0, axis=1)))
+    max_dm1_spread = float(
+        np.max(np.linalg.norm(dm1 - mean_dm1[None, :], axis=1)) / max(norm_dm1, 1e-15)
+    )
+    measured_venc = 50.0 / max(norm_dm1, 1e-15)
+    target_venc = float(spec["application"]["venc_cm_per_s"])
+    direction = mean_dm1 / max(norm_dm1, 1e-15)
+    v_test = 0.5 * (target_venc / 100.0) * direction
+    phi0 = _bloch_moving_spin_phase(
+        acq.seq,
+        exc[int(acq.excitation[frame_central_line[0]])],
+        centres[frame_central_line[0]],
+        v_test,
+    )
+    phi1 = _bloch_moving_spin_phase(
+        acq.seq,
+        exc[int(acq.excitation[frame_central_line[1]])],
+        centres[frame_central_line[1]],
+        v_test,
+    )
+    dphi = float(abs(np.angle(np.exp(1j * (phi1 - phi0)))))
+    m0_limit = 0.01 / float(min(fov))
+    flow_conditions = {
+        "two_velocity_frames": len(frames) == 2,
+        "matched_zeroth_moment_at_te": max_dm0_err <= m0_limit,
+        "uniform_first_moment_across_lines": max_dm1_spread <= 0.02,
+        "venc_within_tolerance": abs(measured_venc - target_venc) <= 0.05 * target_venc,
+        "bloch_moving_spin_phase_match": abs(dphi - np.pi / 2) <= 0.10,
+    }
+    checks.append(
+        check(
+            "flow_encoding_venc",
+            all(flow_conditions.values()),
+            {
+                "target_venc_cm_per_s": target_venc,
+                "measured_venc_cm_per_s": measured_venc,
+                "venc_tolerance_cm_per_s": 0.05 * target_venc,
+                "delta_m1_cycles_s_per_m": mean_dm1.tolist(),
+                "max_delta_m0_cycles_per_m": max_dm0_err,
+                "max_delta_m1_relative_spread": max_dm1_spread,
+                "moving_spin_half_venc_phase_rad": dphi,
+                "expected_half_venc_phase_rad": float(np.pi / 2),
+                "conditions": flow_conditions,
+            },
+        )
+    )
+    checks.append(
+        check(
+            "cardiac_frame_count",
+            len(frames) == 2,
+            {"frames": len(frames), "required": 2},
+        )
+    )
+    acq.checks = checks
+    acq.measurements.update(
+        frames=frames,
+        family="venc_flow_2d",
+        reconstruction="bart_cartesian_fft@1",
+        preparation_spoil_times_s=[float(p.start) for p in exc],
+        flow_encoding={
+            "measured_venc_cm_per_s": measured_venc,
+            "target_venc_cm_per_s": target_venc,
+            "delta_m1_cycles_s_per_m": mean_dm1.tolist(),
+        },
+    )
+    return acq
 
 
 def _inversion_time_matches(measured_ms, target_ms, tolerance_ms):
@@ -68,7 +736,8 @@ def classify_preparation(pulses, window_ids, readout_flip, *, t2):
 # widths beyond its edge, so the ideal-dephasing oracle is a sound model.
 # Through-plane (z) moments do not dephase a single-slice 2D object.
 CRUSHER_MIN_CYCLES_PER_VOXEL = 2.0
-CRUSHER_RELATIVE_SLACK = 1e-6
+# Pulseq trapezoid amplitudes serialize to six significant digits.
+CRUSHER_RELATIVE_SLACK = 1e-5
 
 
 def crusher_cycles_per_voxel(area, spec):
@@ -164,6 +833,12 @@ def inspect_sequence(path, case):
             measurements={"frames": []},
         )
     acq = inspect_cartesian(path, case)
+    if family(case) == "water_selective_gre":
+        return _inspect_water_selective_gre(acq, case)
+    if family(case) == "dwi_epi":
+        return _inspect_dwi_epi(acq, case)
+    if family(case) == "venc_flow_2d":
+        return _inspect_venc_flow_2d(acq, case)
     spec = case["task"]["sequence"]
     timing = spec["temporal"]
     segments_per_frame = timing.get("segments_per_frame", 1)
@@ -199,6 +874,7 @@ def inspect_sequence(path, case):
             "matrix",
             "fov_mm",
             "single_line_per_excitation",
+            "slice_thickness_mm",
         }
     ]
     checks.append(
@@ -220,8 +896,8 @@ def inspect_sequence(path, case):
     checks.append(
         check(
             "nominal_rr_cadence",
-            np.all(np.abs(cadence - np.rint(cadence)) <= tolerance / rr)
-            and np.all(cadence >= 1 - tolerance / rr),
+            np.all(np.abs(cadence - np.rint(cadence)) <= (tolerance + 1e-9) / rr)
+            and np.all(cadence >= 1 - (tolerance + 1e-9) / rr),
             {"rr_ms": rr * 1000, "trigger_intervals_rr": cadence.tolist()},
         )
     )
@@ -232,8 +908,8 @@ def inspect_sequence(path, case):
         check(
             "cardiac_adc_window",
             valid.all()
-            and np.all(elapsed >= delay - tolerance)
-            and np.all(elapsed <= delay + window + tolerance),
+            and np.all(elapsed >= delay - tolerance - 1e-9)
+            and np.all(elapsed <= delay + window + tolerance + 1e-9),
             {
                 "adc_trigger_delay_ms": [
                     float(elapsed.min() * 1000),
@@ -393,8 +1069,32 @@ def inspect_sequence(path, case):
                 next(j for j in line_ids if central in acq.lines[j])
             ]
         )
-        application = spec["application"]
-        if family(case) in {"adiabatic_inversion", "t1_mapping"}:
+        application = spec.get("application") or {}
+        if family(case) == "cardiac_respiratory_bssfp":
+            resp_s = timing["respiratory_period_ms"] / 1000
+            trig_s = float(triggers[trigger_id])
+            phase_s = float(np.mod(trig_s, resp_s))
+            phase_err_s = min(phase_s, abs(resp_s - phase_s))
+            gating_conditions = {
+                "end_expiratory_trigger_phase": phase_err_s <= tolerance + 1e-9,
+                "no_magnetization_preparation": not preparations,
+                "no_unclassified_rf": not unclassified_ids,
+            }
+            checks.append(
+                check(
+                    f"frame_{frame_no}_respiratory_gating",
+                    all(gating_conditions.values()),
+                    {
+                        "trigger_time_s": trig_s,
+                        "respiratory_period_s": resp_s,
+                        "respiratory_phase_error_ms": phase_err_s * 1000,
+                        "timing_tolerance_ms": tolerance * 1000,
+                        **roles,
+                        "conditions": gating_conditions,
+                    },
+                )
+            )
+        elif family(case) in {"adiabatic_inversion", "t1_mapping"}:
             target_ti = (
                 application["inversion_time_ms"]
                 if family(case) == "adiabatic_inversion"
@@ -450,7 +1150,7 @@ def inspect_sequence(path, case):
                                 (inversion.end - inversion.start) * 1000
                                 - application["preparation_duration_ms"]
                             )
-                            <= tolerance * 1000,
+                            <= tolerance * 1000 + 1e-6,
                             hs,
                         )
                     )
@@ -478,9 +1178,11 @@ def inspect_sequence(path, case):
                     and abs(up.flip - 90) <= 2
                     and ref1.flip >= 178
                     and ref2.flip >= 178
-                    and abs(measured - target) <= tolerance * 1000
-                    and abs(ref1.center - down.center - interval / 4) <= tolerance
-                    and abs(ref2.center - down.center - 3 * interval / 4) <= tolerance
+                    and abs(measured - target) <= tolerance * 1000 + 1e-6
+                    and abs(ref1.center - down.center - interval / 4)
+                    <= tolerance + 1e-9
+                    and abs(ref2.center - down.center - 3 * interval / 4)
+                    <= tolerance + 1e-9
                     and all(error <= 0.01 for error in phase_errors)
                 )
                 prep_centers.append(down.center)
@@ -579,6 +1281,20 @@ def inspect_sequence(path, case):
                 {"preparation_intervals_s": separations.tolist(), "min_s": 3 * rr},
             )
         )
+    if family(case) == "cardiac_respiratory_bssfp":
+        resp_s = timing["respiratory_period_ms"] / 1000
+        seg_triggers = triggers[acquired_triggers]
+        seg_diffs = np.diff(seg_triggers)
+        checks.append(
+            check(
+                "respiratory_cycle_separation",
+                bool(np.all(seg_diffs >= resp_s - tolerance - 1e-9)),
+                {
+                    "segment_trigger_intervals_s": seg_diffs.tolist(),
+                    "min_s": resp_s,
+                },
+            )
+        )
     acq.checks = checks
     acq.measurements.update(
         frames=frames,
@@ -607,7 +1323,12 @@ def _assemble_frames(acq, segments, spec, checks, segments_per_frame):
             )
         )
         if segments_per_frame > 1:
-            for suffix in ("balanced_bssfp", "inversion", "t2_preparation"):
+            for suffix in (
+                "balanced_bssfp",
+                "inversion",
+                "t2_preparation",
+                "respiratory_gating",
+            ):
                 measured = [
                     item
                     for item in checks

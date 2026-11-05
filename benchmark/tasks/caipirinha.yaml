@@ -17,4 +17,25 @@ sequence:
     caipi_shift: 1
     pattern: uniform
 object: P1@1
-evaluation: s3@4
+evaluation: s3@5
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm and set the excitation flip angle
+    to 10 degrees. Preserve the matrix and all other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    - 200
+    flip_angle_deg: 10
+- id: parameter
+  request: Set the excitation flip angle to 30 degrees. Retain the larger FOV and
+    all other requirements.
+  patch:
+    flip_angle_deg: 30
+- id: sampling
+  request: Expand the central calibration region to 12 x 12 (ky, kz) lines, while
+    retaining the 220 x 220 x 200 mm FOV, 30-degree flip angle, and 2x2 CAIPIRINHA
+    shift-1 lattice.
+  patch:
+    sampling.calibration_lines: 12

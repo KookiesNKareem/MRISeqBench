@@ -46,7 +46,7 @@
   "objects": {
     "cardiac_2d@1": {
       "path": "assets/cardiac_2d.h5",
-      "sha256": "8151af633cae6968de61be446a11313786baf808bf93a13ed0f7ab25bdd3bfb8",
+      "sha256": "d484cf01f3713c2938e36bc8957d1b8f3d7e234c7a6707a0e8f6c0280885b7a5",
       "dimensions": 2,
       "grid": [
         90,
@@ -60,7 +60,64 @@
         0,
         0
       ],
-      "slice_index_zero_based": 545,
+      "slice_index_zero_based": 411,
+      "field_profile": "3t"
+    },
+    "cardiac_2d_055t@1": {
+      "path": "assets/cardiac_2d.h5",
+      "sha256": "d484cf01f3713c2938e36bc8957d1b8f3d7e234c7a6707a0e8f6c0280885b7a5",
+      "dimensions": 2,
+      "grid": [
+        90,
+        89
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015
+      ],
+      "center_m": [
+        0,
+        0
+      ],
+      "slice_index_zero_based": 411,
+      "field_profile": "055t"
+    },
+    "cardiac_2d_15t@1": {
+      "path": "assets/cardiac_2d.h5",
+      "sha256": "d484cf01f3713c2938e36bc8957d1b8f3d7e234c7a6707a0e8f6c0280885b7a5",
+      "dimensions": 2,
+      "grid": [
+        90,
+        89
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015
+      ],
+      "center_m": [
+        0,
+        0
+      ],
+      "slice_index_zero_based": 411,
+      "field_profile": "15t"
+    },
+    "cardiac_2d_3t@1": {
+      "path": "assets/cardiac_2d.h5",
+      "sha256": "d484cf01f3713c2938e36bc8957d1b8f3d7e234c7a6707a0e8f6c0280885b7a5",
+      "dimensions": 2,
+      "grid": [
+        90,
+        89
+      ],
+      "voxel_size_m": [
+        0.0015,
+        0.0015
+      ],
+      "center_m": [
+        0,
+        0
+      ],
+      "slice_index_zero_based": 411,
       "field_profile": "3t"
     },
     "cardiac_3d@1": {
@@ -83,63 +140,6 @@
         0
       ],
       "slice_index_zero_based": null,
-      "field_profile": "3t"
-    },
-    "cardiac_2d_055t@1": {
-      "path": "assets/cardiac_2d.h5",
-      "sha256": "8151af633cae6968de61be446a11313786baf808bf93a13ed0f7ab25bdd3bfb8",
-      "dimensions": 2,
-      "grid": [
-        90,
-        89
-      ],
-      "voxel_size_m": [
-        0.0015,
-        0.0015
-      ],
-      "center_m": [
-        0,
-        0
-      ],
-      "slice_index_zero_based": 545,
-      "field_profile": "055t"
-    },
-    "cardiac_2d_15t@1": {
-      "path": "assets/cardiac_2d.h5",
-      "sha256": "8151af633cae6968de61be446a11313786baf808bf93a13ed0f7ab25bdd3bfb8",
-      "dimensions": 2,
-      "grid": [
-        90,
-        89
-      ],
-      "voxel_size_m": [
-        0.0015,
-        0.0015
-      ],
-      "center_m": [
-        0,
-        0
-      ],
-      "slice_index_zero_based": 545,
-      "field_profile": "15t"
-    },
-    "cardiac_2d_3t@1": {
-      "path": "assets/cardiac_2d.h5",
-      "sha256": "8151af633cae6968de61be446a11313786baf808bf93a13ed0f7ab25bdd3bfb8",
-      "dimensions": 2,
-      "grid": [
-        90,
-        89
-      ],
-      "voxel_size_m": [
-        0.0015,
-        0.0015
-      ],
-      "center_m": [
-        0,
-        0
-      ],
-      "slice_index_zero_based": 545,
       "field_profile": "3t"
     },
     "cardiac_3d_055t@1": {

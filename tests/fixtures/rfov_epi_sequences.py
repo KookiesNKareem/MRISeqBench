@@ -39,8 +39,10 @@ def sampled_block(system, duration, *gradients):
     )
 
 
-@lru_cache(maxsize=6)
-def excitation_design(field, fat_offset, fat_t2, shifted=False, amplitude=0.4):
+@lru_cache(maxsize=12)
+def excitation_design(
+    field, fat_offset, fat_t2, shifted=False, amplitude=0.4, y_fraction=0.5
+):
     system = pp.Opts(max_grad=26, grad_unit="mT/m", max_slew=45, slew_unit="T/m/s")
     read = pp.make_trapezoid(
         "x", flat_area=80, flat_time=1000e-6, rise_time=60e-6, system=system
@@ -77,16 +79,29 @@ def excitation_design(field, fat_offset, fat_t2, shifted=False, amplitude=0.4):
     axis = ((np.arange(32) + 0.5) / 32 - 0.5) * 0.2
     x, y = np.meshgrid(axis, axis, indexing="ij")
     positions = np.column_stack((x.ravel(), y.ravel()))
+    y_width = 0.2 * y_fraction
+    y_half = y_width / 2
     # Supplement the uniform design grid with the published pass/stopband
     # locations so interpolation between grid cells is also constrained.
     additional = (
-        [(x, y) for x in (-0.056, 0.0, 0.056) for y in np.linspace(-0.035, 0.035, 9)]
+        [
+            (x, y)
+            for x in (-0.056, 0.0, 0.056)
+            for y in np.linspace(-0.35 * y_width, 0.35 * y_width, 9)
+        ]
         + [
             (x, y)
             for x in (-0.056, 0.0, 0.056)
-            for y in np.r_[np.linspace(-0.096, -0.065, 9), np.linspace(0.065, 0.096, 9)]
+            for y in np.r_[
+                np.linspace(-0.096, -0.65 * y_width, 9),
+                np.linspace(0.65 * y_width, 0.096, 9),
+            ]
         ]
-        + [(x, y) for x in (-0.096, -0.092, 0.092, 0.096) for y in (-0.025, 0.0, 0.025)]
+        + [
+            (x, y)
+            for x in (-0.096, -0.092, 0.092, 0.096)
+            for y in (-0.25 * y_width, 0.0, 0.25 * y_width)
+        ]
     )
     positions = np.vstack((positions, additional))
     target = (
@@ -100,8 +115,8 @@ def excitation_design(field, fat_offset, fat_t2, shifted=False, amplitude=0.4):
         )
         * (
             (
-                erf((positions[:, 1] + 0.05 - (0.03 if shifted else 0)) / 0.002)
-                - erf((positions[:, 1] - 0.05 - (0.03 if shifted else 0)) / 0.002)
+                erf((positions[:, 1] + y_half - (0.03 if shifted else 0)) / 0.002)
+                - erf((positions[:, 1] - y_half - (0.03 if shifted else 0)) / 0.002)
             )
             / 2
         )
@@ -149,6 +164,9 @@ def make_sequence(
     system = system_for(case)
     nx, ny = case["task"]["sequence"]["matrix"]
     fov = np.asarray(case["task"]["sequence"]["fov_mm"]) / 1000
+    fraction = (case["task"]["sequence"].get("sampling") or {}).get(
+        "reduced_fov_fraction", 0.5
+    )
     tissue = case["object"]["tissue_properties"]["fat"]
     gradient, signal, dt = excitation_design(
         system.B0,
@@ -156,8 +174,12 @@ def make_sequence(
         tissue["T2_s"],
         mutation == "shift_selection",
         excitation_fraction,
+        fraction,
     )
     gradient, signal = gradient.copy(), signal.copy()
+    # Scale the y-selective gradient with case FOV so its physical selection
+    # width stays tied to the reference design across hardware profiles.
+    gradient[:, 1] *= 0.2 / fov[1]
     if mutation == "no_selection":
         gradient[:] = 0
         signal[:] = 0
@@ -206,7 +228,8 @@ def make_sequence(
         )
     flat = read.flat_time
     full = mutation == "full_fov"
-    ys = list(range(-ny // 2, ny // 2, 1 if full else 2))
+    step = 1 if full else round(1 / fraction)
+    ys = [y - ny // 2 for y in range(ny) if (y - ny // 2) % step == 0]
     if ky_reverse:
         ys.reverse()
     if mutation == "missing_line":
@@ -215,6 +238,21 @@ def make_sequence(
         trapezoid(axis, area=area, duration=800e-6, system=system)
         for axis, area in zip("xy", (-read.area / 2, ys[0] / fov[1]), strict=True)
     ]
+    requested_te = (case["task"]["sequence"].get("te_ms") or {}).get("target")
+    if requested_te:
+        center = rf.delay + np.sum(rf.t * np.abs(signal)) / np.sum(np.abs(signal))
+        echo = (
+            pp.calc_duration(rf, *gradients)
+            + pp.calc_duration(*pre)
+            + np.argmin(np.abs(ys)) * pp.calc_duration(read)
+            + read.rise_time
+            + flat / 2
+        )
+        gap = round((requested_te / 1000 - echo + center) / 1e-5) * 1e-5
+        if gap < 0:
+            raise ValueError("requested TE too short")
+        if gap:
+            seq.add_block(pp.make_delay(gap))
     seq.add_block(*pre)
     for line, ky in enumerate(ys):
         gx = copy.deepcopy(read)

@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.7
+id: dwi_epi
+version: 2
+objective: Acquire a 2D diffusion-weighted spin-echo multi-shot EPI image on a 128 x 128 grid over a 200
+  x 200 mm FOV using 16 interleaved shots (echo train length 8) with Stejskal-Tanner diffusion encoding
+  achieving b = 300 s/mm^2.
+object: P1@1
+evaluation: s4@4
+sequence:
+  level: T4
+  capabilities: [diffusion, epi, spin_echo, cartesian, multi_shot]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  te_ms: {target: 70, tolerance: 3.0}
+  tr_ms: {target: 1000, tolerance: 50.0}
+  duration_s: 20
+  readout:
+    shots: 16
+    echo_train_length: 8
+  application:
+    b_value_s_per_mm2: 300
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: parameter
+  request: Increase the diffusion weighting to b = 500 s/mm^2 and set TE to 85 ms (tolerance 3.0 ms).
+    Retain the larger FOV and all other requirements.
+  patch:
+    application.b_value_s_per_mm2: 500
+    te_ms:
+      target: 85
+      tolerance: 3.0
+- id: readout
+  request: Increase the interleaved spin-echo EPI acquisition to 32 shots (echo train length 4) with a
+    36 s duration budget, retaining the 220 x 220 mm FOV, b = 500 s/mm^2, and 85 ms TE.
+  patch:
+    readout.shots: 32
+    readout.echo_train_length: 4
+    duration_s: 36

@@ -37,7 +37,7 @@ def test_active_catalog_and_full_suite():
         for task in catalog.documents["tasks"].values()
         if catalog.get("evaluators", task.evaluation).scope == "benchmark"
     }
-    assert len(cases) == len({case["case_id"] for case in cases}) == 81
+    assert len(cases) == len({case["case_id"] for case in cases}) == 93
     assert {case["task"]["id"] for case in cases} == tasks
     for task in tasks:
         selected = [case for case in cases if case["task"]["id"] == task]
@@ -55,10 +55,28 @@ def test_active_catalog_and_full_suite():
         assert case["image_policy"] == "static" and "object_level" not in case
         assert case["object"]["id"].startswith(f"cardiac_{dimensions}d_")
         assert case["object"]["definition"]["dimensions"] == dimensions
-        assert case["physics"]["id"] == (
-            "static_b0_3d" if dimensions == 3 else "static_b0"
-        )
-        assert all(effect["kind"] == "b0" for effect in case["physics"]["effects"])
+        if case["task"]["id"] == "cardiac_respiratory_bssfp":
+            assert case["physics"]["id"] == "cardiac_respiratory_b0"
+            assert {effect["kind"] for effect in case["physics"]["effects"]} == {
+                "b0",
+                "motion",
+            }
+        elif case["task"]["id"] in {
+            "t1_mapping",
+            "t2_mapping",
+            "t2_prepared",
+            "adiabatic_inversion",
+        }:
+            assert case["physics"]["id"] == "cardiac_b0"
+            assert {effect["kind"] for effect in case["physics"]["effects"]} == {
+                "b0",
+                "motion",
+            }
+        else:
+            assert case["physics"]["id"] == (
+                "static_b0_3d" if dimensions == 3 else "static_b0"
+            )
+            assert all(effect["kind"] == "b0" for effect in case["physics"]["effects"])
         assert case["evaluation"]["reconstruction"].startswith("bart_")
 
 
@@ -99,7 +117,7 @@ def test_core_smoke_and_default_hardware():
         (
             "tasks",
             "gre_t1w",
-            lambda d: d.update(evaluation="s2@5"),
+            lambda d: d.update(evaluation="s2@6"),
             "evaluator must match",
         ),
         ("tasks", "gre_t1w", lambda d: d.update(object="missing@1"), "unknown objects"),

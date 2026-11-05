@@ -1,11 +1,14 @@
 # yaml-language-server: $schema=../schemas/experiments.schema.json
 schema_version: 1
-id: pi_agentic
+id: pi_j4_s2
 version: 1
 suite: full@1
-arm: p0_pypulseq@1
+# Figure 1 J4 S2: Pulseq.jl + Julia MCP + KomaMRI.jl.
+# Historical manifest ID: j7_pulseq_julia_mcp_koma@1.
+arm: J4 S2@1
 arm_runtime:
-  author_image: mriseqbench/author-pypulseq:local
+  author_image: mriseqbench/author-pulseq_julia-mcp:local
+  simulator_image: mriseqbench/sim-koma:local
 repeats: 1
 submission_mode: submit
 max_submissions: 3
@@ -37,7 +40,3 @@ api_proxy:
   key_env: OPENROUTER_API_KEY
 feedback:
   timeout_s: 300
-workflow:
-  version: 1
-  stage_timeout_s: 3600
-  allow_unqualified: false

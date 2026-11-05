@@ -34,6 +34,10 @@ TASK_GROUPS = {
         "t2_prepared",
         "adiabatic_inversion",
         "rf_excitation_2d",
+        "water_selective_gre",
+        "dwi_epi",
+        "venc_flow_2d",
+        "cardiac_respiratory_bssfp",
     ),
 }
 TASK_LABELS = {
@@ -48,6 +52,34 @@ HARDWARE_LABELS = {
     "high_performance": "H3",
 }
 SIMULATOR_LABELS = {"mrzero": "S1", "koma": "S2", "komamripy": "S3"}
+# Public authoring labels follow Figure 1 of the MRISeqBench Abstract.
+# Historical manifest IDs remain provenance keys, not display labels.
+ARM_LABELS = {
+    "p0_pypulseq": "P0",
+    "p1_pypulseq_mrzero": "P0",
+    "p2_pypulseq_koma": "P0",
+    "j0_koma_base": "J0",
+    "j1_pulseq_julia": "J1",
+    "j2_pulseq_julia_unitful": "J2",
+    "j3_koma_base_koma": "J0",
+    "j4_pulseq_julia_koma": "J1",
+    "j5_pulseq_julia_unitful_koma": "J2",
+    "j6_koma_base_julia_mcp": "J3",
+    "j7_pulseq_julia_mcp_koma": "J4",
+}
+ARM_REFERENCES = {
+    "P0": "p0_pypulseq",
+    "P0 S1": "p1_pypulseq_mrzero",
+    "P0 S3": "p2_pypulseq_koma",
+    "J0": "j0_koma_base",
+    "J1": "j1_pulseq_julia",
+    "J2": "j2_pulseq_julia_unitful",
+    "J0 S2": "j3_koma_base_koma",
+    "J1 S2": "j4_pulseq_julia_koma",
+    "J2 S2": "j5_pulseq_julia_unitful_koma",
+    "J3": "j6_koma_base_julia_mcp",
+    "J4 S2": "j7_pulseq_julia_mcp_koma",
+}
 # 2D/3D and field-dependent tissue profiles are variants of the same anatomy.
 PHANTOM_LABELS = {
     f"cardiac_{dimension}d{suffix}": "P1"
@@ -64,6 +96,8 @@ def catalog_reference(kind, reference, *, dimensions=2):
     labels = {"tasks": TASK_LABELS, "hardware": HARDWARE_LABELS}.get(kind, {})
     identifier, separator, version = reference.partition("@")
     aliases = {label: identifier for identifier, label in labels.items()}
+    if kind == "arms":
+        aliases = ARM_REFERENCES
     if kind == "objects":
         aliases = {
             label: variants[dimensions] for label, variants in PHANTOM_OBJECTS.items()
@@ -88,6 +122,6 @@ def case_labels(case):
 
 def arm_label(arm):
     """Simulator modifiers describe access, independently of authoring arm IDs."""
-    label = arm.id.split("_", 1)[0].upper()
+    label = ARM_LABELS.get(arm.id, arm.id.split("_", 1)[0].upper())
     simulator = SIMULATOR_LABELS.get(arm.simulator)
     return f"{label} {simulator}" if simulator else label

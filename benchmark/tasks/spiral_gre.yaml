@@ -16,4 +16,26 @@ sequence:
     interleaves: 16
     turns: 8
     center_out: true
-evaluation: s2@5
+evaluation: s2@6
+followups:
+- id: flip
+  request: Set the excitation flip angle to 10 degrees and TE to 6 ms (tolerance 0.25
+    ms). Preserve all other requirements.
+  patch:
+    flip_angle_deg: 10
+    te_ms:
+      target: 6
+      tolerance: 0.25
+- id: parameter
+  request: Set TE to 7 ms with a tolerance of 0.5 ms. Retain the 10-degree excitation
+    and all other requirements.
+  patch:
+    te_ms:
+      target: 7
+      tolerance: 0.5
+- id: readout
+  request: Reconfigure the spiral readout to 20 interleaves and 6 turns per interleaf,
+    while retaining the 10-degree flip angle and 7 ms TE.
+  patch:
+    readout.interleaves: 20
+    readout.turns: 6

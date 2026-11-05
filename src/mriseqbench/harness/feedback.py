@@ -24,7 +24,25 @@ from .proxy import QuietHTTPServer
 
 
 def disclosed(result):
-    """Like a scanner: say whether SAR was exceeded, never the model or values."""
+    """Return feedback without private artifact paths or the scanner SAR model."""
+
+    def public(value):
+        if isinstance(value, dict):
+            return {
+                k: public(v)
+                for k, v in value.items()
+                if k
+                not in {
+                    "artifacts",
+                    "frame_artifacts",
+                    "encoded_replay_cache",
+                    "original_path",
+                    "resolved_path",
+                }
+            }
+        if isinstance(value, list):
+            return [public(v) for v in value]
+        return value
 
     def redact(checks):
         sar = [c for c in checks if str(c.get("name", "")).startswith("sar_")]
@@ -41,7 +59,7 @@ def disclosed(result):
             }
         ]
 
-    value = {**result}
+    value = public(result)
     for key in ("checks", "image_checks", "application_checks"):
         if isinstance(value.get(key), list):
             value[key] = redact(value[key])

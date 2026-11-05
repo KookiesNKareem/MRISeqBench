@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schemas/evaluators.schema.json
 schema_version: 1
 id: s2
-version: 5
+version: 6
 scope: benchmark
 calibrated: true
 reconstruction: bart_readout@1
@@ -27,9 +27,9 @@ metrics:
   max: 0.25
 case_image_criteria:
   static:
-    complex_nrmse_max: 0.45
-    magnitude_nrmse_max: 0.35
-    phase_rms_rad_max: 0.35
-    tissue_signal_fraction_min: 0.5
-    contrast_retention_min: 0.5
-    outside_energy_fraction_max: 0.25
+    complex_nrmse_max: 0.15
+    magnitude_nrmse_max: 0.10
+    phase_rms_rad_max: 0.15
+    tissue_signal_fraction_min: 0.80
+    contrast_retention_min: 0.80
+    outside_energy_fraction_max: 0.01

@@ -14,4 +14,24 @@ sequence:
   te_ms: {target: 20, tolerance: 2.0}
   readout:
     shots: 16
-evaluation: s2@5
+evaluation: s2@6
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: parameter
+  request: Set TE to 26 ms (tolerance 1 ms). Retain the larger FOV and all other requirements.
+  patch:
+    te_ms:
+      target: 26
+      tolerance: 1
+- id: readout
+  request: Increase the interleaved EPI readout to 32 shots (4 lines per shot) with
+    a 12 s duration budget, while retaining the 220 x 220 mm FOV and 26 ms TE.
+  patch:
+    readout.shots: 32
+    duration_s: 12

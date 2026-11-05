@@ -21,4 +21,24 @@ sequence:
     calibration_lines: 8
     mask_seed: 42
     pattern: variable_density
-evaluation: s3@4
+evaluation: s3@5
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm and set the excitation flip angle
+    to 10 degrees. Preserve the matrix and all other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    flip_angle_deg: 10
+- id: parameter
+  request: Set the excitation flip angle to 30 degrees. Retain the larger FOV and
+    all other requirements.
+  patch:
+    flip_angle_deg: 30
+- id: sampling
+  request: Adjust the variable-density undersampling to acceleration 2.5 with 12 central
+    calibration lines, while retaining the 220 x 220 mm FOV and 30-degree flip angle.
+  patch:
+    sampling.acceleration: 2.5
+    sampling.calibration_lines: 12

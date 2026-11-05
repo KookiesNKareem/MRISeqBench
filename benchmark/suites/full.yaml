@@ -15,7 +15,7 @@ cases:
   - H2@1
   - H3@1
   physics:
-  - static_b0@1
+  - cardiac_b0@1
 - task: T1.4@2
   hardware:
   - H1@1
@@ -148,21 +148,21 @@ cases:
   - H2@1
   - H3@1
   physics:
-  - static_b0@1
+  - cardiac_b0@1
 - task: T4.2@2
   hardware:
   - H1@1
   - H2@1
   - H3@1
   physics:
-  - static_b0@1
+  - cardiac_b0@1
 - task: T4.3@2
   hardware:
   - H1@1
   - H2@1
   - H3@1
   physics:
-  - static_b0@1
+  - cardiac_b0@1
 - task: T2.3@2
   hardware:
   - H1@1
@@ -184,3 +184,31 @@ cases:
   - H3@1
   physics:
   - static_b0@1
+- task: T4.6@2
+  hardware:
+  - H1@1
+  - H2@1
+  - H3@1
+  physics:
+  - static_b0@1
+- task: T4.7@2
+  hardware:
+  - H1@1
+  - H2@1
+  - H3@1
+  physics:
+  - static_b0@1
+- task: T4.8@2
+  hardware:
+  - H1@1
+  - H2@1
+  - H3@1
+  physics:
+  - static_b0@1
+- task: T4.9@2
+  hardware:
+  - H1@1
+  - H2@1
+  - H3@1
+  physics:
+  - cardiac_respiratory_b0@1

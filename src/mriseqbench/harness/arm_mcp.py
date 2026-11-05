@@ -27,14 +27,14 @@ DISABLED_JULIA = (
 )
 
 
-def instructions(arm):
+def instructions(arm, timeout_s=1200):
     """PROMPT.md text replacing the `./bin/julia` CLI instructions."""
     if arm.simulator == "none":
         return (
             "Execute all Julia code through the `julia_eval` MCP tool, provided by the pinned aplavin/julia-mcp server.\n"
             "One persistent Julia session belongs to this trial only. KomaMRIBase, KomaMRIFiles and Revise are preloaded.\n"
             "The same fixed generic authoring/write-read/Revise warmup finishes before your time budget starts; subsequent code compilation/execution counts.\n"
-            "Use `julia_eval` with `code` and an optional timeout in seconds. The default 0 leaves the harness in charge of the 1200-second charged-time deadline, allowing excluded native grading to finish. Set a positive timeout only for short authoring calls. State persists; use println/display to see output.\n"
+            f"Use `julia_eval` with `code` and an optional timeout in seconds. The default 0 leaves the harness in charge of the {timeout_s:g}-second charged-time deadline, allowing excluded native grading to finish. Set a positive timeout only for short authoring calls. State persists; use println/display to see output.\n"
             'Read/write/edit tools operate on files. For a script, call `include("design.jl")` through julia_eval.\n'
             'For edits, use `includet("design.jl")` then edit function definitions and call your function again; Revise runs before every evaluation.\n'
             "Use Julia's `run` through MCP for benchmark controls, e.g. `run(`./bin/status`)` and `run(`./bin/submit`)`.\n"
@@ -47,7 +47,7 @@ def instructions(arm):
         "Execute all Julia code through the `julia_eval` MCP tool and the pinned aplavin/julia-mcp server.\n"
         "One persistent Julia/PulseDesigner session belongs to this trial. KomaMRIBase, KomaMRIFiles and Revise are preloaded; PulseDesigner is enabled and Unitful is unavailable.\n"
         "Import PulseDesigner helpers explicitly, as documented in ARM_API.md. Generic authoring/write-read/Revise warmup completes before agent timing.\n"
-        "Use `julia_eval` with code and optional timeout in seconds; default 0 leaves the harness in charge of the original 1200-second charged deadline.\n"
+        f"Use `julia_eval` with code and optional timeout in seconds; default 0 leaves the harness in charge of the original {timeout_s:g}-second charged deadline.\n"
         'Use include("design.jl") or includet("design.jl") through MCP. State persists and Revise observes edits before each evaluation.\n'
         "Run controls through Julia: run(`./bin/status`), run(`./bin/lint`), run(`./bin/check`), run(`./bin/submit`), run(`./bin/feedback`).\n"
         "Use run(`./bin/simulate sequence.seq`) for the external KomaMRI simulator. Simulation time counts against the same charged agent allowance; waiting for a free simulator slot does not.\n"
@@ -59,14 +59,16 @@ def instructions(arm):
 def pi_command(command):
     """Load only the MCP extension and the allowed tools into Pi."""
     command = list(command)
-    if Path(command[0]).name == "pi":
-        command[1:1] = [
-            "--no-extensions",
-            "--extension",
-            "/arm_mcp_extension.ts",
-            "--tools",
-            ",".join(TOOLS),
-        ]
+    for index, token in enumerate(command):
+        if Path(token).name == "pi":
+            command[index + 1 : index + 1] = [
+                "--no-extensions",
+                "--extension",
+                "/arm_mcp_extension.ts",
+                "--tools",
+                ",".join(TOOLS),
+            ]
+            break
     return command
 
 

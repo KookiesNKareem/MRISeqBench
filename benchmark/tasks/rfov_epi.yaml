@@ -9,7 +9,7 @@ objective: Use 2D-selective RF excitation followed by single-shot EPI to image t
   last line centers. Maximum exterior / mean interior magnitude at each matching echo must be
   at most 0.10.
 object: P1@1
-evaluation: s3@4
+evaluation: s3@5
 sequence:
   level: T3
   capabilities: [rf_excitation_2d, epi, cartesian, reduced_fov]
@@ -23,3 +23,28 @@ sequence:
   sampling:
     reduced_fov_fraction: 0.5
     pattern: reduced_fov
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm and set TE to 100 ms (tolerance
+    2 ms). Preserve the matrix and all other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    te_ms:
+      target: 100
+      tolerance: 2
+- id: parameter
+  request: Set TE to 120 ms (tolerance 2 ms). Retain the larger FOV and all other
+    requirements.
+  patch:
+    te_ms:
+      target: 120
+      tolerance: 2
+- id: sampling
+  request: Narrow the 2D-RF reduced-FOV fraction along y to 0.25 with echo train length
+    32 (retaining every 4th ky line), while retaining the 220 x 220 mm FOV and 120
+    ms TE.
+  patch:
+    readout.echo_train_length: 32
+    sampling.reduced_fov_fraction: 0.25

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=../../schemas/physics.schema.json
+schema_version: 1
+id: cardiac_b0
+version: 1
+level: P3
+description: Cardiac systolic contraction and late-diastolic atrial kick on top of
+  the field-scaled static B0 gradient under a breath-hold; quiescent during the mid-diastolic
+  gating window.
+reference_field_strength_T: 3
+effects:
+- kind: b0
+  model: linear
+  offset_hz: 0
+  gradient_hz_per_m:
+  - 1000
+  - 0
+- kind: motion
+  model: cardiac_respiratory
+  rr_interval_s: 1.0
+  systolic_duration_s: 0.22
+  diastolic_window_s:
+  - 0.23
+  - 0.86
+  cardiac_translation_mm:
+  - 4.5
+  - -3.5
+  cardiac_rotation_deg: 8.0
+  atrial_kick_scale: 0.35
+  respiratory_period_s: 4.0
+  respiratory_quiescent_s: 0.88
+  respiratory_translation_mm:
+  - 0.0
+  - 0.0

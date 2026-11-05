@@ -63,12 +63,12 @@ Image limits under the declared physics (these decide the verdict):
 
 | Metric | Limit |
 |---|---:|
-| Complex NRMSE | ≤ 0.45 |
-| Magnitude NRMSE | ≤ 0.35 |
-| Wrapped phase RMS | ≤ 0.35 rad |
-| Minimum tissue signal fraction | ≥ 0.5 |
-| Contrast retention | ≥ 0.5 |
-| Outside-object energy fraction | ≤ 0.25 |
+| Complex NRMSE | ≤ 0.15 |
+| Magnitude NRMSE | ≤ 0.10 |
+| Wrapped phase RMS | ≤ 0.15 rad |
+| Minimum tissue signal fraction | ≥ 0.8 |
+| Contrast retention | ≥ 0.8 |
+| Outside-object energy fraction | ≤ 0.01 |
 
 Ideal-control images are reported for information only. No fitted gain, phase,
 registration or B0-aware reconstruction is permitted.

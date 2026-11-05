@@ -225,6 +225,150 @@
       "title": "B0",
       "type": "object"
     },
+    "CardiacRespiratoryMotion": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "motion",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "const": "cardiac_respiratory",
+          "title": "Model",
+          "type": "string"
+        },
+        "rr_interval_s": {
+          "exclusiveMinimum": 0,
+          "title": "Rr Interval S",
+          "type": "number"
+        },
+        "systolic_duration_s": {
+          "exclusiveMinimum": 0,
+          "title": "Systolic Duration S",
+          "type": "number"
+        },
+        "diastolic_window_s": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          ],
+          "title": "Diastolic Window S",
+          "type": "array"
+        },
+        "cardiac_translation_mm": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Cardiac Translation Mm"
+        },
+        "cardiac_rotation_deg": {
+          "default": 0,
+          "title": "Cardiac Rotation Deg",
+          "type": "number"
+        },
+        "atrial_kick_scale": {
+          "default": 0.35,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Atrial Kick Scale",
+          "type": "number"
+        },
+        "respiratory_period_s": {
+          "exclusiveMinimum": 0,
+          "title": "Respiratory Period S",
+          "type": "number"
+        },
+        "respiratory_quiescent_s": {
+          "minimum": 0,
+          "title": "Respiratory Quiescent S",
+          "type": "number"
+        },
+        "respiratory_translation_mm": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Respiratory Translation Mm"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "rr_interval_s",
+        "systolic_duration_s",
+        "diastolic_window_s",
+        "cardiac_translation_mm",
+        "respiratory_period_s",
+        "respiratory_quiescent_s",
+        "respiratory_translation_mm"
+      ],
+      "title": "CardiacRespiratoryMotion",
+      "type": "object"
+    },
     "ConstantB0": {
       "additionalProperties": false,
       "properties": {
@@ -774,6 +918,7 @@
               "discriminator": {
                 "mapping": {
                   "affine_sinusoidal": "#/$defs/Deformation",
+                  "cardiac_respiratory": "#/$defs/CardiacRespiratoryMotion",
                   "rigid_keyframes": "#/$defs/RigidTrajectory",
                   "rigid_sinusoidal": "#/$defs/Motion"
                 },
@@ -788,6 +933,9 @@
                 },
                 {
                   "$ref": "#/$defs/Deformation"
+                },
+                {
+                  "$ref": "#/$defs/CardiacRespiratoryMotion"
                 }
               ]
             },
@@ -825,6 +973,7 @@
             "discriminator": {
               "mapping": {
                 "affine_sinusoidal": "#/$defs/Deformation",
+                "cardiac_respiratory": "#/$defs/CardiacRespiratoryMotion",
                 "rigid_keyframes": "#/$defs/RigidTrajectory",
                 "rigid_sinusoidal": "#/$defs/Motion"
               },
@@ -839,6 +988,9 @@
               },
               {
                 "$ref": "#/$defs/Deformation"
+              },
+              {
+                "$ref": "#/$defs/CardiacRespiratoryMotion"
               }
             ]
           },

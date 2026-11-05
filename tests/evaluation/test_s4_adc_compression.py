@@ -47,6 +47,30 @@ def test_additional_preparation_spoiling_needs_two_cycles_per_voxel(
     assert times == ([following] if spoiled else [])
 
 
+@pytest.mark.parametrize("cycles,expected", [(2.0, [0]), (1.9999, [])])
+def test_crusher_boundary_survives_pulseq_serialization(tmp_path, cycles, expected):
+    spec = {"matrix": [128, 128], "fov_mm": [220, 220]}
+    system = Opts(max_grad=80, grad_unit="mT/m", max_slew=200, slew_unit="T/m/s")
+    seq = Sequence(system)
+    rf = make_block_pulse(np.pi / 2, duration=0.001, system=system)
+    seq.add_block(rf)
+    seq.add_block(
+        make_trapezoid("x", area=cycles * 128 / 0.22, duration=0.0012, system=system)
+    )
+    following = sum(seq.block_durations.values())
+    seq.add_block(rf)
+    path = tmp_path / "crusher.seq"
+    seq.write(str(path))
+    loaded = Sequence(system)
+    loaded.read(str(path))
+    acq = SimpleNamespace(
+        seq=loaded,
+        pulses=[SimpleNamespace(end=0.001), SimpleNamespace(start=following)],
+    )
+    ids, _ = spoiled_preparations(acq, [0], spec)
+    assert ids == expected
+
+
 def test_s4_oracle_spoils_only_verified_preparations_not_readout_rf(monkeypatch):
     acq = SimpleNamespace(
         adc=np.array([0.03, 0.06]),
@@ -64,6 +88,28 @@ def test_s4_oracle_spoils_only_verified_preparations_not_readout_rf(monkeypatch)
 def test_explicit_preparation_spoiling_cannot_enter_encoded_replay():
     with pytest.raises(ValueError, match="RF-only replay"):
         s1_koma.simulate(None, None, spoil_times_s=[0.1])
+
+
+def test_refocusing_projection_is_limited_to_rf_only_individual_replay():
+    with pytest.raises(ValueError, match="RF-only replay"):
+        s1_koma.simulate(None, None, refocusing_projection=True)
+
+
+def test_refocusing_projection_rejects_adc_inside_refocusing_event():
+    from types import SimpleNamespace
+
+    acq = SimpleNamespace(
+        pulses=[SimpleNamespace(refocusing=True, start=0.001, end=0.003)],
+        adc=np.array([0.002]),
+    )
+    with pytest.raises(ValueError, match="cannot score ADCs inside"):
+        s1_koma.simulate(
+            acq,
+            None,
+            zero_gradients=True,
+            individual=True,
+            refocusing_projection=True,
+        )
 
 
 @pytest.mark.parametrize(

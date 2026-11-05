@@ -89,6 +89,7 @@ def inspect_sequence(path, case):
             "readout_bandwidth",
             "rf_before_adc",
             "flip_angle_deg",
+            "slice_thickness_mm",
             "tr_ms",
         }
         or fam in CARTESIAN
@@ -674,16 +675,20 @@ def inspect_sequence(path, case):
         grid = np.indices(tuple(matrix)).reshape(len(matrix), -1).T - matrix // 2
         disk = np.linalg.norm(grid[:, :2], axis=1) <= min(matrix[:2]) / 2 - 1
         distances = cKDTree(q).query(grid[disk])[0]
-        covered = bool(
-            distances.max() <= 1.5
-            and (len(matrix) == 3 or np.max(np.abs(a.k[:, 2])) <= 0.05 / min(fov))
+        through_plane_ok = bool(
+            len(matrix) == 3 or np.max(np.abs(a.k[:, 2])) <= 0.01 / min(fov)
         )
+        covered = bool(distances.max() <= 1.5 and through_plane_ok)
         checks.extend(
             [
                 check(
                     "matrix",
                     covered,
-                    {"max_gap_samples": float(distances.max()), "limit": 1.5},
+                    {
+                        "max_gap_samples": float(distances.max()),
+                        "limit": 1.5,
+                        "through_plane_rephased": through_plane_ok,
+                    },
                 ),
                 check(
                     "fov_mm",
@@ -691,6 +696,7 @@ def inspect_sequence(path, case):
                     {
                         "fov_mm": spec["fov_mm"],
                         "max_gap_samples": float(distances.max()),
+                        "through_plane_rephased": through_plane_ok,
                     },
                 ),
             ]

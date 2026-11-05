@@ -18,9 +18,10 @@ def views(array):
     # Native 32-partition voxels are four times thicker than in-plane voxels.
     # Nearest-neighbour display preserves that physical aspect ratio.
     through_plane = array.shape[0] // array.shape[2]
+    sax_slice = round(array.shape[2] * 411 / 1090)
     return np.concatenate(
         [
-            array[:, :, array.shape[2] // 2].T,
+            array[:, :, sax_slice].T,
             np.repeat(array[:, array.shape[1] // 2, :].T, through_plane, axis=0),
             np.repeat(array[array.shape[0] // 2, :, :].T, through_plane, axis=0),
         ],

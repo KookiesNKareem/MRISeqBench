@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.8
+id: venc_flow_2d
+version: 2
+objective: Acquire a 2-frame 2D phase-contrast velocity-encoded spoiled GRE acquisition on a 128 x 128
+  grid over a 200 x 200 mm FOV with bipolar flow-encoding gradients achieving VENC = 100 cm/s between
+  the two velocity-encoding frames.
+object: P1@1
+evaluation: s4@4
+sequence:
+  level: T4
+  capabilities: [flow_encoding, spoiled_gre, cartesian]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  te_ms: {target: 6, tolerance: 0.5}
+  tr_ms: {target: 20, tolerance: 1.0}
+  duration_s: 8
+  flip_angle_deg: 15
+  temporal:
+    frames: 2
+  application:
+    venc_cm_per_s: 100
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: parameter
+  request: Reduce VENC to 60 cm/s (stronger first-moment encoding) and set TE to 7 ms (tolerance 0.5 ms).
+    Retain the larger FOV and all other requirements.
+  patch:
+    application.venc_cm_per_s: 60
+    te_ms:
+      target: 7
+      tolerance: 0.5
+- id: flip_and_timing
+  request: Increase the flip angle to 20 degrees and set TR to 24 ms (tolerance 1.0 ms) with a 10 s duration
+    budget, retaining the 220 x 220 mm FOV, VENC = 60 cm/s, and 7 ms TE.
+  patch:
+    flip_angle_deg: 20
+    tr_ms:
+      target: 24
+      tolerance: 1.0
+    duration_s: 10

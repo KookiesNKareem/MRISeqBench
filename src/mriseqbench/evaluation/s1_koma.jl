@@ -46,6 +46,45 @@ function update_device_fields!(obj, host_obj, c, mid, offsets)
     copyto!(obj.Δw,host_obj.Δw)
 end
 
+function merge_refocusing_ranges(ranges, rf_on, seqd, pulses)
+    isempty(pulses) && return ranges, rf_on, zeros(Int,length(ranges))
+    tol = 1e-8
+    covered = zeros(Int,length(ranges))
+    for (pulse_index,pulse) in enumerate(pulses)
+        active = findall(eachindex(ranges)) do i
+            midpoint = (seqd.t[first(ranges[i])] + seqd.t[last(ranges[i])]) / 2
+            rf_on[i] && midpoint >= pulse[1] - tol && midpoint <= pulse[2] + tol
+        end
+        isempty(active) && error("Refocusing projection found no active RF range")
+        first_range,last_range = first(active),last(active)
+        any(covered[first_range:last_range] .!= 0) &&
+            error("Overlapping refocusing projection RF ranges")
+        active_set = Set(active)
+        any(rf_on[i] && !(i in active_set) for i in first_range:last_range) &&
+            error("Refocusing projection span includes another active RF event")
+        covered[first_range:last_range] .= pulse_index
+    end
+    merged_ranges, merged_rf, projection_ids = UnitRange{Int}[], Bool[], Int[]
+    i = 1
+    while i <= length(ranges)
+        pulse_index = covered[i]
+        if pulse_index == 0
+            push!(merged_ranges,ranges[i]); push!(merged_rf,rf_on[i]); i += 1
+            push!(projection_ids,0)
+            continue
+        end
+        last_index = i
+        while last_index < length(ranges) && covered[last_index+1] == pulse_index
+            last_index += 1
+        end
+        push!(merged_ranges,first(ranges[i]):last(ranges[last_index]))
+        push!(merged_rf,true)
+        push!(projection_ids,pulse_index)
+        i = last_index + 1
+    end
+    return merged_ranges, merged_rf, projection_ids
+end
+
 function execution_device()
     Dict("backend"=>DEVICE, "precision"=>"f64",
          "device"=>CUDA.name(CUDA.device()),
@@ -87,11 +126,13 @@ end
 struct CaseTimeSampling{R} <: CoreMRI.KomaMRIBase.SamplingRule
     rule::R
     maxdt::Float64
+    delay_maxdt::Float64
 end
 CoreMRI.KomaMRIBase.preserved_samples(r::CaseTimeSampling) = CoreMRI.KomaMRIBase.preserved_samples(r.rule)
 function CoreMRI.KomaMRIBase.additional_sampling_times(r::CaseTimeSampling, times, context::CoreMRI.KomaMRIBase.BlockSamplingContext)
     extra = CoreMRI.KomaMRIBase.additional_sampling_times(r.rule, times, context)
-    n = max(1,ceil(Int,context.duration/r.maxdt))
+    dt = (length(extra) <= 2 && length(times) <= 2 && context.duration > 0.02) ? r.delay_maxdt : r.maxdt
+    n = max(1,ceil(Int,context.duration/dt))
     return sort!(unique!(vcat(extra,collect(range(0.0,context.duration;length=n+1)))))
 end
 
@@ -113,14 +154,14 @@ function check_native_timeline(seqd, seq)
     return seqd
 end
 
-function discretize_case(seq, params, motion, has_dynamic)
+function discretize_case(seq, params, motion, has_dynamic; delay_maxdt=params["Δt"])
     rule = CoreMRI.simulation_sampling_rule(params["sim_method"],params)
     if has_dynamic
         # Add the dynamic-field time grid before the method inserts its RF
         # quadrature nodes, so higher-order integration groups stay intact.
         rule = rule isa CoreMRI.IntegrationNodeSamplingRule ?
-            CoreMRI.IntegrationNodeSamplingRule(rule.method,CaseTimeSampling(rule.rule,params["Δt"])) :
-            CaseTimeSampling(rule,params["Δt"])
+            CoreMRI.IntegrationNodeSamplingRule(rule.method,CaseTimeSampling(rule.rule,params["Δt"],delay_maxdt)) :
+            CaseTimeSampling(rule,params["Δt"],delay_maxdt)
     end
     return check_native_timeline(discretize(seq; sampling_rule=rule, motion,
                                             freq_in_phase=params["freq_in_phase"]), seq)
@@ -128,6 +169,21 @@ end
 
 has_dynamic_fields(c) = any(e->e["kind"]=="time_variation",c.effects) ||
     (any(e->e["kind"]=="motion",c.effects) && any(e->e["kind"]=="b0",c.effects))
+has_time_variation(c) = any(e->e["kind"]=="time_variation",c.effects)
+
+function is_resting_state(c, t)
+    has_time_variation(c) && return false
+    for e in c.effects
+        e["kind"] == "motion" || continue
+        if e["model"] == "cardiac_respiratory"
+            MRISeqBenchPhantoms.cardiac_envelope(e, t) == 0.0 || return false
+            MRISeqBenchPhantoms.respiratory_envelope(e, t) == 0.0 || return false
+        else
+            return false
+        end
+    end
+    return true
+end
 
 function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
     has_dynamic = has_dynamic_fields(c)
@@ -140,7 +196,8 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
         !has_dynamic && obj.motion isa NoMotion
     # Static S4 replay can use the public simulator end to end. The file already
     # contains upstream-resolved waits; NoPhysioSignal prevents double waiting.
-    if !has_dynamic && get(params,"spoil_times_s",nothing) === nothing && !fuse_rf
+    if !has_dynamic && get(params,"spoil_times_s",nothing) === nothing &&
+        !fuse_rf && !get(params,"refocusing_projection",false)
         simulation_backend() # Fail closed before upstream's automatic fallback.
         discretize_case(seq,params,obj.motion,false) # Timeline check only.
         p = copy(params)
@@ -160,7 +217,8 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
             occursin("not a multiple of", sprint(showerror, err)) || rethrow()
         end
     end
-    seqd = discretize_case(seq,params,obj.motion,has_dynamic)
+    delay_dt = has_time_variation(c) ? params["Δt"] : max(params["Δt"], 0.02)
+    seqd = discretize_case(seq,params,obj.motion,has_dynamic;delay_maxdt=delay_dt)
     stride = CoreMRI.eval_intervals_per_step(method)
     if stride > 1
         # Two event times inside a pulse can differ by rounding noise only, e.g.
@@ -176,12 +234,13 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
     spoil_times = get(params,"spoil_times_s",nothing)
     # Bound GPU temporaries, including the per-spin diagnostic dictionaries.
     # The discretization and every ADC/integration step remain unchanged.
-    block_length = has_dynamic ? 1 : 256
+    block_length = has_time_variation(c) ? 1 : (has_dynamic ? 64 : 256)
     ranges, rf_on = CoreMRI.get_sim_ranges(seqd;max_block_length=block_length,max_rf_block_length=block_length,eval_intervals_per_step=CoreMRI.eval_intervals_per_step(method))
+    refocusing_pulses = get(params,"refocusing_pulses",Vector{Vector{Float64}}())
 
-    if spoil_times !== nothing && !has_dynamic
+    if spoil_times !== nothing
         # Retain the exact one-interval implementation's reset locations while
-        # batching native GPU work between resets. Never batch dynamic fields.
+        # batching native GPU work between resets.
         rf_steps = findall(seqd.excitation_bool)
         end_times = seqd.t[rf_steps .+ 1]
         reset_steps = sort!(unique!([rf_steps[j] for t in spoil_times
@@ -196,6 +255,10 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
         end
         ranges,rf_on = split_ranges,split_rf
     end
+    projection_ids = zeros(Int,length(ranges))
+    if get(params,"refocusing_projection",false)
+        ranges, rf_on, projection_ids = merge_refocusing_ranges(ranges,rf_on,seqd,refocusing_pulses)
+    end
     state, obj = CoreMRI.initialize_spins_state(obj,method)
     state.z = copy(state.z) # Keep evolving Mz separate from equilibrium rho.
     backend = simulation_backend()
@@ -203,14 +266,22 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
     obj, seqd, state = on_device(obj), on_device(seqd), on_device(state)
     groupsize = CoreMRI.DEFAULT_PRECESSION_GROUPSIZE
     max_adc = maximum(r -> sum(@view host_seqd.ADC[(first(r)+1):last(r)]), ranges; init=0)
-    prealloc = CoreMRI.prealloc(method,backend,obj,state,maximum(length.(ranges)),max_adc,groupsize,sys)
+    # The projection RF range may span a shaped pulse with thousands of
+    # integration nodes. When fused RF is enabled, those events use the
+    # separate Bloch preallocation below; exclude them from dictionary sizing.
+    dictionary_lengths = [length(r) for (r, rf, projection_id) in zip(ranges,rf_on,projection_ids)
+        if !(fuse_rf && rf && projection_id != 0)]
+    prealloc = CoreMRI.prealloc(method,backend,obj,state,maximum(dictionary_lengths;init=1),max_adc,groupsize,sys)
     signal = on_device(individual ? zeros(ComplexF64,sum(seq.ADC.N),length(obj),1,1) : zeros(ComplexF64,sum(seq.ADC.N),1,1))
     rf_method = CoreMRI.Bloch()
     rf_prealloc = fuse_rf ? CoreMRI.prealloc(rf_method,backend,obj,state,maximum(length.(ranges)),0,groupsize,sys) : nothing
     rf_signal = fuse_rf ? on_device(zeros(ComplexF64,0,1,1)) : nothing
     sample = 1
     next_spoil = 1
-    for (range,rf) in zip(ranges,rf_on)
+    at_rest = is_resting_state(c, 0.0)
+    hasproperty(prealloc,:ΔBz) && (prealloc.ΔBz .= obj.Δw ./ (2π * γ))
+    projected_refocusers = Set{Int}()
+    for (range,rf,projection_id) in zip(ranges,rf_on,projection_ids)
         host_step = @view host_seqd[range]
         step = @view seqd[range]
         mid = (first(host_step.t)+last(host_step.t))/2
@@ -224,10 +295,42 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
                 next_spoil += 1
             end
         end
-        has_dynamic && update_device_fields!(obj,host_obj,c,mid,offsets)
-        hasproperty(prealloc,:ΔBz) && (prealloc.ΔBz .= obj.Δw ./ (2π * γ))
+        if has_dynamic
+            rest = is_resting_state(c, mid)
+            if !rest || !at_rest
+                update_device_fields!(obj,host_obj,c,rest ? 0.0 : mid,offsets)
+                hasproperty(prealloc,:ΔBz) && (prealloc.ΔBz .= obj.Δw ./ (2π * γ))
+                at_rest = rest
+            end
+        end
         slots = sample:(sample+count-1)
-        if rf && fuse_rf && count == 0
+        refocuser_index = projection_id == 0 ? nothing : projection_id
+        if rf && refocuser_index !== nothing
+            refocuser_index in projected_refocusers && error("Refocusing projection split one RF pulse across ranges")
+            push!(projected_refocusers,refocuser_index)
+            # Four local RF-frame branches approximate the coherence selection
+            # of a balanced crusher pair. Each branch starts from the same full
+            # pre-pulse state; transverse and longitudinal outputs are averaged
+            # before the next event, so rejected pathways cannot alter later Mz.
+            count == 0 || error("Refocusing projection cannot acquire inside its RF event")
+            xy_before, z_before = copy(state.xy), copy(state.z)
+            xy_sum, z_sum = similar(state.xy), similar(state.z)
+            fill!(xy_sum,0); fill!(z_sum,0)
+            for phase in (0.0,pi/2,pi,3pi/2)
+                state.xy .= xy_before .* cis(-phase)
+                copyto!(state.z,z_before)
+                if fuse_rf
+                    CoreMRI.run_spin_excitation_parallel!(obj,step,rf_signal,state,sys,rf_method,groupsize,backend,rf_prealloc;Nthreads=1)
+                else
+                    CoreMRI.run_spin_excitation_parallel!(obj,step,@view(signal[slots,:,:,:]),state,sys,method,groupsize,backend,prealloc;Nthreads=1)
+                end
+                state.xy .*= cis(-phase)
+                xy_sum .+= state.xy
+                z_sum .+= state.z
+            end
+            state.xy .= xy_sum ./ 4
+            state.z .= z_sum ./ 4
+        elseif rf && fuse_rf && count == 0
             # Same discretized left-endpoint rotations/relaxation and shared state;
             # keep dictionary acquisition whenever RF and ADC overlap.
             CoreMRI.run_spin_excitation_parallel!(obj,step,rf_signal,state,sys,rf_method,groupsize,backend,rf_prealloc;Nthreads=1)
@@ -240,6 +343,9 @@ function simulate_case(obj, seq, sys, c, offsets, params; individual=false)
         end
         CoreMRI.KA.synchronize(backend)
         sample += count
+    end
+    if get(params,"refocusing_projection",false) && length(projected_refocusers) != length(refocusing_pulses)
+        error("Refocusing projection did not cover every retained refocusing RF event")
     end
     return CoreMRI.cpu(individual ? dropdims(signal;dims=4) : sum(signal;dims=3))
 end
@@ -274,8 +380,9 @@ function simulate_receive_case(obj,seq,sys,c,offsets,params,receive)
         return reshape(result,sum(seq.ADC.N),size(receive,2))
     end
     method = CoreMRI.BlochDict()
-    seqd = discretize_case(seq,params,obj.motion,has_dynamic)
-    block_length = has_dynamic ? 1 : 256
+    delay_dt = has_time_variation(c) ? params["Δt"] : max(params["Δt"], 0.02)
+    seqd = discretize_case(seq,params,obj.motion,has_dynamic;delay_maxdt=delay_dt)
+    block_length = has_time_variation(c) ? 1 : (has_dynamic ? 64 : 256)
     ranges, rf_on = CoreMRI.get_sim_ranges(seqd;max_block_length=block_length,max_rf_block_length=block_length,eval_intervals_per_step=CoreMRI.eval_intervals_per_step(method))
     state, obj = CoreMRI.initialize_spins_state(obj,method)
     state.z = copy(state.z)
@@ -350,6 +457,8 @@ function simulate_request(req)
     params["fuse_diagnostic_rf"] = get(req,"fuse_diagnostic_rf",true)
     individual = get(req,"individual",false)
     params["spoil_times_s"] = get(req,"spoil_times_s",nothing)
+    params["refocusing_projection"] = haskey(req,"refocusing_pulses")
+    params["refocusing_pulses"] = get(req,"refocusing_pulses",Vector{Vector{Float64}}())
     if individual
         params["sim_method"] = CoreMRI.BlochDict()
         params["Nthreads"] = 1

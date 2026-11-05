@@ -5,7 +5,7 @@ import copy
 import numpy as np
 import pypulseq as pp
 
-from tests.fixtures.binomial_rf import sparse_binomial_rf
+from tests.fixtures.binomial_rf import corpse_rf, sparse_binomial_rf
 from tests.fixtures.gradients import trapezoid
 
 
@@ -65,8 +65,9 @@ def make_sequence(
     )
     seq = pp.Sequence(system)
     refocused = fam in {"tse_t2w", "propeller_tse", "grase"}
+    excitation_flip = np.deg2rad(spec.get("flip_angle_deg") or 5)
     rf = pp.make_block_pulse(
-        np.pi / 2 if refocused else np.deg2rad(5),
+        np.pi / 2 if refocused else excitation_flip,
         duration=0.0001 if fam == "ute_radial" else 0.0006 if refocused else 0.0004,
         system=system,
         delay=system.rf_dead_time,
@@ -81,7 +82,7 @@ def make_sequence(
 
     if water_selective_order:
         rf = binomial_rf(
-            np.pi / 2 if refocused else np.deg2rad(5),
+            np.pi / 2 if refocused else excitation_flip,
             water_selective_order,
             "excitation",
         )
@@ -98,26 +99,7 @@ def make_sequence(
             raise ValueError("Water-selective refocusing requires a refocused family")
         ref = binomial_rf(np.pi, water_selective_refocusing_order, "refocusing")
     elif corpse_refocusing:
-        # CORPSE180: 420y, -300y, 60y, one coherent RF event.
-        lead = system.block_duration_raster
-        edges = lead + ref_duration * np.array([0, 420 / 180, 720 / 180, 780 / 180])
-        times = np.r_[
-            0,
-            np.column_stack((edges - 0.5e-6, edges + 0.5e-6)).ravel(),
-            780 / 180 * ref_duration + 2 * lead,
-        ]
-        values = np.array([0, 0, 1, 1, -1, -1, 1, 1, 0, 0]) / (2 * ref_duration)
-        ref = pp.make_arbitrary_rf(
-            values,
-            np.pi,
-            no_signal_scaling=True,
-            delay=system.rf_dead_time,
-            system=system,
-            phase_offset=np.pi / 2,
-            use="refocusing",
-        )
-        ref.t, ref.shape_dur = times, times[-1]
-        ref.center = ref.shape_dur / 2
+        ref = corpse_rf(ref_duration, system, phase=np.pi / 2)
     saturation = None
     if fat_saturation_pulses:
         if fat_saturation_pulses not in (1, 2, 3):
@@ -186,9 +168,13 @@ def make_sequence(
     def refocus(when):
         nonlocal coherence, crusher_number
         area = n / fov[0] * (1 + (crusher_number % 8) / 8)
+        crush_duration = max(
+            0.0012,
+            pp.calc_duration(trapezoid("x", area=area, system=system)),
+        )
         if refocusing_crushers:
-            wait(when - ref.delay - ref.shape_dur / 2 - 0.0012)
-            add(trapezoid("x", area=area, duration=0.0012, system=system))
+            wait(when - ref.delay - ref.shape_dur / 2 - crush_duration)
+            add(trapezoid("x", area=area, duration=crush_duration, system=system))
         else:
             wait(when - ref.delay - ref.shape_dur / 2)
         r = copy.copy(ref)
@@ -196,7 +182,7 @@ def make_sequence(
         coherence = -2 * moment - coherence
         add(r)
         if refocusing_crushers:
-            add(trapezoid("x", area=area, duration=0.0012, system=system))
+            add(trapezoid("x", area=area, duration=crush_duration, system=system))
             crusher_number += 1
 
     def shift(target, duration=0.0006):
@@ -240,7 +226,11 @@ def make_sequence(
             + normal * ky / fov[1]
         )
         start[2] = z / fov[-1] if len(fov) == 3 else 0
-        blip = None if adaptive_epi and fam.startswith("epi") else 0.0006
+        blip = (
+            None
+            if adaptive_epi and fam.startswith("epi")
+            else (0.0007 if fam == "grase" else 0.0006)
+        )
         if (
             not adaptive_epi
             and (fam.startswith("epi") or fam == "grase")
@@ -271,11 +261,73 @@ def make_sequence(
             )
         add(*grads, adc)
 
+    spoil_count = 0
+
     def finish(tr):
-        # Spoil within the registered object dimensions; a z spoiler cannot
-        # destroy coherence on the benchmark's zero-thickness 2D plane.
-        axis = "z" if len(fov) == 3 else "x"
-        add(trapezoid(axis, area=4 * n / fov[0], duration=0.0012, system=system))
+        nonlocal spoil_count
+        if fam == "radial_readout" and spec.get("flip_angle_deg"):
+            factors = [1.0, 1.17, 1.30, 1.05, 1.25, 1.10, 1.20]
+            fx = factors[spoil_count % len(factors)]
+            fy = factors[(spoil_count + 3) % len(factors)]
+            base_x, base_y = 8 * n / fov[0] * fx, 5 * n / fov[1] * fy
+            remaining = shot_start + tr - clock
+
+            def candidate(scale):
+                ax, ay = base_x * scale, base_y * scale
+                gx = trapezoid("x", area=ax, system=system)
+                gy = trapezoid("y", area=ay, system=system)
+                duration = (
+                    max(pp.calc_duration(gx), pp.calc_duration(gy), 0.0012) + 2e-5
+                )
+                return duration, (
+                    trapezoid("x", area=ax, duration=duration, system=system),
+                    trapezoid("y", area=ay, duration=duration, system=system),
+                )
+
+            duration, events = candidate(1.0)
+            scale = 1.0
+            if duration > remaining + 1e-9:
+                lo, hi = 0.0, 1.0
+                for _ in range(24):
+                    mid = (lo + hi) / 2
+                    d, _ = candidate(mid)
+                    if d <= remaining + 1e-9:
+                        lo = mid
+                    else:
+                        hi = mid
+                scale = lo
+                duration, events = candidate(scale)
+            if duration > remaining + 1e-9 or scale < 0.25:
+                raise ValueError(
+                    "hardware-feasible varied spoilers do not fit the requested TR"
+                )
+            add(*events)
+            spoil_count += 1
+        else:
+            # Spoil within the registered object dimensions; a z spoiler cannot
+            # destroy coherence on the benchmark's zero-thickness 2D plane.
+            axis = "z" if len(fov) == 3 else "x"
+            area = 4 * n / fov[0]
+            shortest = pp.calc_duration(trapezoid(axis, area=area, system=system))
+            remaining = shot_start + tr - clock
+            raster = system.grad_raster_time
+            budget = np.floor((remaining + 1e-12) / raster) * raster
+            if budget + 1e-9 < shortest:
+                raise ValueError("the readout leaves no legal spoiler duration")
+            # Preserve the requested spoiler duration when it fits.  The
+            # shared trapezoid helper rounds up if it is shorter than the
+            # gradient's raster-feasible minimum.
+            nominal = (
+                0.003
+                if h["id"] == "low_field"
+                else 0.0022
+                if fam in {"radial_readout", "stack_of_stars"}
+                and h["id"] == "standard_1_5t"
+                and not spec.get("flip_angle_deg")
+                else 0.0012
+            )
+            duration = min(nominal, budget)
+            add(trapezoid(axis, area=area, duration=duration, system=system))
         wait(shot_start + tr)
 
     if fam in {"epi_single_shot", "epi_multishot", "tse_t2w", "grase", "propeller_tse"}:
@@ -399,6 +451,15 @@ def make_sequence(
                         for rank, echo_number in enumerate(priority)
                     }
                     ys = np.array([bins[e][j] for e in range(etl)])
+                train_offset = 0.0
+                if fam in {"tse_t2w", "propeller_tse"} and echo_time is not None:
+                    central_echo_index = min(3, etl - 1)
+                    train_offset = echo_time - (central_echo_index + 1) * spacing
+                    if train_offset < -1e-9:
+                        raise ValueError(
+                            "requested TE is shorter than the echo train permits"
+                        )
+                    train_offset = max(0.0, train_offset)
                 if fam == "grase":
                     previous_echo = exc_time
                     for e in range(etl // 2):
@@ -416,8 +477,14 @@ def make_sequence(
                         shift(np.zeros(3))
                 else:
                     for e, y in enumerate(ys):
-                        echo = exc_time + (e + 1) * spacing
-                        refocus(echo - spacing / 2)
+                        echo = exc_time + train_offset + (e + 1) * spacing
+                        refocus(
+                            (exc_time + echo) / 2
+                            if fam in {"tse_t2w", "propeller_tse"}
+                            and e == 0
+                            and train_offset > 0
+                            else echo - spacing / 2
+                        )
                         line(y, angle, echo)
                         shift(np.zeros(3))
                 finish(
@@ -458,7 +525,19 @@ def make_sequence(
             if fam == "ute_radial":
                 # Centre-out readout with its first sample at the requested TE.
                 direction = np.array([np.cos(angle), np.sin(angle)])
-                amplitude = (n / 2 - 0.25) / fov[0] / 0.00064
+                ute_requested_flat = (
+                    cartesian_flat if cartesian_flat is not None else 0.00064
+                )
+                ute_adc_dwell = (
+                    np.floor(ute_requested_flat / n / system.adc_raster_time + 1e-9)
+                    * system.adc_raster_time
+                )
+                ute_adc_duration = n * ute_adc_dwell
+                ute_gradient_flat = (
+                    np.ceil(ute_adc_duration / system.grad_raster_time - 1e-9)
+                    * system.grad_raster_time
+                )
+                amplitude = (n / 2 - 0.25) / fov[0] / ute_adc_duration
                 rise = max(
                     0.0001,
                     np.ceil(amplitude / system.max_slew / 1e-5 - 1e-9) * 1e-5,
@@ -467,7 +546,7 @@ def make_sequence(
                     trapezoid(
                         axis,
                         amplitude=component * amplitude,
-                        flat_time=0.00064,
+                        flat_time=ute_gradient_flat,
                         rise_time=rise,
                         fall_time=rise,
                         system=system,
@@ -480,10 +559,10 @@ def make_sequence(
                 for g in grads:
                     target["xyz".index(g.channel)] = -g.amplitude * rise / 2
                 shift(target, duration=ute_pre_duration)
-                wait(exc_time + ute_te - rise - 0.00064 / n / 2)
+                wait(exc_time + ute_te - rise - ute_adc_dwell / 2)
                 adc = pp.make_adc(
                     n,
-                    duration=0.00064,
+                    dwell=ute_adc_dwell,
                     delay=rise,
                     phase_offset=phase,
                     system=system,

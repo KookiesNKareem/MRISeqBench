@@ -135,29 +135,18 @@ RF-only phase oracle adds declared B0; submitted masks, receiver errors,
 readout-induced fat displacement and blur cannot define the target.
 Receiver phase follows the common FID convention.
 
-Declared-physics image limits are set per task:
+Declared-physics image limits use the common strict quality policy:
 
-| Task | Complex NRMSE ≤ | Magnitude NRMSE ≤ | Phase RMS ≤ (rad) | Tissue signal ≥ | Contrast retention ≥ | Outside energy ≤ |
-|---|---:|---:|---:|---:|---:|---:|
-| `sense_sampling` | 0.23 | 0.21 | 0.17 | 0.66 | 0.66 | 0.05 |
-| `grappa_sampling` | 0.23 | 0.21 | 0.18 | 0.66 | 0.66 | 0.05 |
-| `caipirinha` | 0.23 | 0.21 | 0.13 | 0.66 | 0.66 | 0.05 |
-| `compressed_sensing` | 0.23 | 0.20 | 0.17 | 0.66 | 0.66 | 0.05 |
-| `variable_density` | 0.23 | 0.21 | 0.17 | 0.66 | 0.66 | 0.05 |
-| `partial_fourier` | 0.23 | 0.20 | 0.16 | 0.66 | 0.66 | 0.05 |
-| `elliptical_kspace` | 0.35 | 0.30 | 0.21 | 0.62 | 0.71 | 0.05 |
-| `reduced_fov` | 0.34 | 0.33 | 0.25 | 0.59 | — | 0.05 |
-| `rfov_epi` | 0.37 | 0.35 | 0.27 | 0.63 | — | 0.05 |
+| Complex NRMSE ≤ | Magnitude NRMSE ≤ | Phase RMS ≤ (rad) | Tissue signal ≥ | Contrast retention ≥ | Outside energy ≤ |
+|---:|---:|---:|---:|---:|---:|
+| 0.15 | 0.10 | 0.15 | 0.80 | 0.80 | 0.01 |
 
-Each limit is the larger of 1.5× the worst reference value and 1.2× the worst
-value of a held-out ensemble of valid alternative designs (readout bandwidth
-from the 500 Hz/pixel floor to about 1560 Hz/pixel, forward/reverse/centric
-ordering, block or sinc excitation, alternative RF/gradient spoiling, z
-spoiling in 3D, inner-volume reduced FOV) across the three hardware profiles,
-with a 0.05 floor for outside energy, and never looser than complex 0.45 /
-magnitude 0.35 / phase 0.35 rad / tissue 0.5 / contrast 0.5. A +0.6 rad receiver
-phase error, missing spoiling or missing calibration fail these limits. The
-exact sampling mask remains the primary sampling gate.
+CAIPIRINHA retains its tighter 0.13 rad phase limit. These limits replace the
+previous margins derived from the worst accepted reference/alternative designs:
+visual review found that those margins admitted ghosting, blur and streaks.
+The exact sampling mask remains the primary sampling gate. Existing reference
+sequences must meet the new image limits; being a reference does not exempt a
+sequence from quality grading.
 
 Spatial-selection tasks (`reduced_fov`, `rfov_epi`) assess selected-region signal
 and rejected exterior without requiring a particular fat/water contrast ordering.

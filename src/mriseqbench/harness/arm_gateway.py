@@ -25,6 +25,9 @@ class Handler(BaseHTTPRequestHandler):
         if not 0 <= length <= 16777216:
             self.send_error(413)
             return
+        body = self.rfile.read(length)
+        if len(body) != length:
+            return
         name = uuid.uuid4().hex
         request = DIRECTORY / (name + ".request")
         temporary = DIRECTORY / (name + ".tmp")
@@ -41,7 +44,7 @@ class Handler(BaseHTTPRequestHandler):
                         for k, v in self.headers.items()
                         if k.lower() == "x-session-id"
                     },
-                    "body": base64.b64encode(self.rfile.read(length)).decode(),
+                    "body": base64.b64encode(body).decode(),
                 }
             )
         )
@@ -51,7 +54,7 @@ class Handler(BaseHTTPRequestHandler):
             # The controller owns author/API lifetime, including excluded
             # admission and provider waits. Do not impose a second wall clock.
             if target in {"api", "simulate"}
-            or (target == "feedback" and route == "submit")
+            or (target == "feedback" and route in {"submit", "next"})
             else time.monotonic() + 1800
         )
         headers_sent = False

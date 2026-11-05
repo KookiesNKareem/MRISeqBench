@@ -415,39 +415,11 @@ def prepare_inputs(workspace, case, root, phantom_dir=None):
     return assets
 
 
-def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
+def evaluation_markdown(case):
     from ..evaluation.s1_case import COMPLEX_NRMSE_RULE, contrast_required
 
-    workspace = Path(workspace).resolve()
-    workspace.mkdir(parents=True, exist_ok=True)
-    # Ship the public document we tell participants to read. Never copy judge
-    # code, reference sequences or the rest of the catalog into the workspace.
     kind = case["evaluation"]["id"]
-    if case["evaluation"]["scope"] != "smoke":
-        public_docs = workspace / "docs"
-        public_docs.mkdir(exist_ok=True)
-        filenames = {
-            "COMMON_EVALUATION.md",
-            "RF_EXCITATION_EVALUATION.md"
-            if kind == "rf_excitation"
-            else kind.upper() + "_EVALUATION.md",
-        }
-        if case["task"]["id"] == "rfov_epi":
-            filenames.add("RFOV_EPI_EVALUATION.md")
-        if case["object"]["phantom"].startswith("cardiac_"):
-            filenames.add("CARDIAC_PHANTOM.md")
-        for filename in sorted(filenames):
-            source = Path(server.root) / "docs" / filename
-            shutil.copyfile(source, public_docs / filename)
-    public_case = {
-        **case,
-        "hardware": {
-            k: v for k, v in case["hardware"].items() if k not in ("provenance", "sar")
-        },
-    }
-    write_json(workspace / "case.json", public_case)
-    (workspace / "task.yaml").write_text(brief_yaml(case))
-    (workspace / "EVALUATION.md").write_text(
+    return (
         case_evaluation_summary(case)
         + ("\n\n" + s2_contract_notes(case) if kind == "s2" else "")
         + "\n\n"
@@ -491,13 +463,41 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
             "step and half step. A verdict that cannot be resolved at the maximum spatial sampling fails.\n"
         )
     )
+
+
+def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
+    workspace = Path(workspace).resolve()
+    workspace.mkdir(parents=True, exist_ok=True)
+    # Ship the public document we tell participants to read. Never copy judge
+    # code, reference sequences or the rest of the catalog into the workspace.
+    kind = case["evaluation"]["id"]
+    if case["evaluation"]["scope"] != "smoke":
+        public_docs = workspace / "docs"
+        public_docs.mkdir(exist_ok=True)
+        filenames = {
+            "COMMON_EVALUATION.md",
+            "RF_EXCITATION_EVALUATION.md"
+            if kind == "rf_excitation"
+            else kind.upper() + "_EVALUATION.md",
+        }
+        if case["task"]["id"] == "rfov_epi":
+            filenames.add("RFOV_EPI_EVALUATION.md")
+        if case["object"]["phantom"].startswith("cardiac_"):
+            filenames.add("CARDIAC_PHANTOM.md")
+        for filename in sorted(filenames):
+            source = Path(server.root) / "docs" / filename
+            shutil.copyfile(source, public_docs / filename)
+    public_case = {
+        **case,
+        "hardware": {
+            k: v for k, v in case["hardware"].items() if k not in ("provenance", "sar")
+        },
+    }
+    write_json(workspace / "case.json", public_case)
+    (workspace / "task.yaml").write_text(brief_yaml(case))
+    (workspace / "EVALUATION.md").write_text(evaluation_markdown(case))
     prepare_inputs(workspace, case, server.root, phantom_dir)
     python = "python3" if arm else sys.executable
-    submission_allowance = (
-        server.max_submissions
-        if experiment.workflow is not None
-        else experiment.max_submissions
-    )
     instructions = prompt(case) + (
         f"\n## Execution\n\nTime budget: {experiment.agent.timeout_s:g} s of agent runtime, excluding submission grading.\n"
         "All other work counts. The harness tracks time automatically.\n"
@@ -510,7 +510,9 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
         "Editing source alone does not change submitted sequence bytes.\n"
         "Work and write files only inside this working directory.\n"
         + (
-            f"Python: `{python}`; NumPy and h5py are installed.\n"
+            ""
+            if arm and arm.tool_interface == "julia_mcp"
+            else f"Python: `{python}`; NumPy and h5py are installed.\n"
             if arm
             else f"Python: `{python}`; NumPy, h5py and PyPulseq are installed.\n"
         )
@@ -527,7 +529,7 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
             "Package API and unit conventions: `ARM_API.md`.\n"
         )
         if arm.tool_interface == "julia_mcp":
-            instructions += arm_mcp.instructions(arm)
+            instructions += arm_mcp.instructions(arm, experiment.agent.timeout_s)
         elif arm.language == "julia":
             instructions += (
                 "Use `./bin/julia script.jl [args...]` or `./bin/julia -e 'Julia code'`.\n"
@@ -554,7 +556,7 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
     instructions += (
         "\n## Submissions\n\n`./bin/lint`: file/timing checks. `./bin/check`: also RF amplitude, gradients and slew.\n"
         "Both are unlimited; neither consumes submissions or scores SAR/images.\n"
-        f"`./bin/submit`: judge `sequence.seq`; up to {submission_allowance} attempts; only the last counts.\n"
+        f"`./bin/submit`: judge `sequence.seq`; up to {experiment.max_submissions} attempts; only the last counts.\n"
         "Wait in the foreground; grading can take minutes. Full responses are saved automatically "
         "under `feedback/` before output is printed; `feedback/latest-submit.json` retains the latest "
         "submission response. Output lists failed sequence, application and image checks with their "
@@ -582,12 +584,11 @@ def prepare(workspace, case, experiment, server, phantom_dir=None, *, arm=None):
         instructions += "You must run `./bin/submit` before your time expires.\n"
     else:
         instructions += "Submit explicitly, or leave `sequence.seq` and exit successfully for one final evaluation without revision.\n"
-    if experiment.workflow is not None:
+    if experiment.agentic:
         instructions = instructions.replace("three submissions", "submission attempts")
         instructions += (
             "\n## Multi-turn workflow\n"
-            f"This {experiment.workflow.mode} workflow shares the conversation and workspace. Each stage allows {submission_allowance} submissions "
-            f"and {server.stage_timeout_s:g} charged seconds, within the total budget above. "
+            f"All stages share this conversation, workspace, and total time budget. Each stage allows {experiment.max_submissions} submissions. "
             "On stage_passed, finish your response immediately and wait for the next user request. "
             "On submitted, the entire workflow is finished. A pass does not reset the total time budget. "
             "The current case.json, task.yaml and EVALUATION.md are refreshed at each user turn. "

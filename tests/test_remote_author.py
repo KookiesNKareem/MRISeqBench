@@ -66,7 +66,9 @@ def test_author_manifest_detects_mutation_without_following_links(tmp_path):
 
 
 @pytest.mark.parametrize("disconnected", [False, True])
-def test_remote_author_inspection_does_not_require_local_docker(monkeypatch, disconnected):
+def test_remote_author_inspection_does_not_require_local_docker(
+    monkeypatch, disconnected
+):
     from mriseqbench.harness import arm_runtime, remote_author
 
     def local_docker(*args, **kwargs):
@@ -112,14 +114,176 @@ def test_failed_remote_transfer_revokes_token_and_releases_slot(tmp_path, monkey
     monkeypatch.setattr(remote_author, "remote", remote)
     monkeypatch.setattr(remote_author, "sync", lambda *args: None)
     monkeypatch.setattr(
-        arm_runtime, "container_args",
+        arm_runtime,
+        "container_args",
         lambda image, name: (["docker", "run", "--rm", "--user", "1000:1000"], image),
     )
-    with pytest.raises(RuntimeError, match="transfer failure"), fleet.launch(
-        {"author_image": "test", "author_memory_mb": 1024},
-        ["author"], workspace, control, {},
+    with (
+        pytest.raises(RuntimeError, match="transfer failure"),
+        fleet.launch(
+            {"author_image": "test", "author_memory_mb": 1024},
+            ["author"],
+            workspace,
+            control,
+            {},
+        ),
     ):
         assert fleet.tokens
     assert not fleet.tokens
     assert fleet.slots[0].acquire(blocking=False)
     assert not (tmp_path / "test-drain-request.json").exists()
+
+
+@pytest.mark.parametrize("reported_simulator", ["none", "koma"])
+def test_remote_mcp_checks_arm_before_admitting_pi(
+    tmp_path, monkeypatch, reported_simulator
+):
+    from mriseqbench.harness import arm_mcp, arm_runtime, remote_author
+
+    workspace = tmp_path / "trial" / "agent"
+    control = workspace.parent / "control"
+    workspace.mkdir(parents=True)
+    control.mkdir()
+    fleet = Fleet.__new__(Fleet)
+    fleet.config = {"assignments": {"trial": 0}}
+    fleet.hosts = [{"endpoint": "example", "key": "/unused", "instance_id": "test"}]
+    fleet.slots = [threading.Semaphore(1)]
+    fleet.pending = [1]
+    fleet.tokens = {}
+    fleet.lock = threading.Lock()
+    fleet.helper_root = "/unused"
+    fleet.broker_port = 8766
+    calls = []
+
+    def remote(host, args, **kwargs):
+        calls.append(args)
+        result = (
+            {
+                "mode": "persistent_mcp",
+                "pulse_designer": True,
+                "simulator": reported_simulator,
+            }
+            if "--ready" in args
+            else {}
+        )
+        return SimpleNamespace(stdout=json.dumps(result))
+
+    monkeypatch.setattr(remote_author, "remote", remote)
+    monkeypatch.setattr(remote_author, "sync", lambda *args: None)
+    monkeypatch.setattr(
+        arm_runtime,
+        "container_args",
+        lambda image, name: (["docker", "run", "--rm", "--user", "1000:1000"], image),
+    )
+    runtime = {
+        "author_image": "test",
+        "author_memory_mb": 2048,
+        "julia_heap_size_hint_mb": 100,
+        "setup_timeout_s": 600,
+        "arm": {
+            "tool_interface": "julia_mcp",
+            "pulse_designer": True,
+            "simulator": "none",
+        },
+    }
+
+    def launch():
+        with fleet.launch(runtime, ["pi", "-p", "control"], workspace, control, {}) as (
+            _,
+            isolation,
+        ):
+            assert isolation["persistent_container"]
+            assert isolation["active_tools"] == arm_mcp.TOOLS
+            spec = json.loads((control / "remote-author-spec.json").read_text())
+            assert spec["command"][:3] == ["sudo", "docker", "exec"]
+            assert json.loads(spec["command"][-1]) == arm_mcp.pi_command(
+                ["pi", "-p", "control"]
+            )
+
+    if reported_simulator == "none":
+        launch()
+    else:
+        with pytest.raises(ValueError, match="not the selected arm"):
+            launch()
+        assert not (control / "remote-author-spec.json").exists()
+    assert any("--serve" in args and "--pulse-designer" in args for args in calls)
+    assert any(args[:4] == ["sudo", "docker", "rm", "--force"] for args in calls)
+    assert (
+        json.loads((control / "remote-author-transfer.json").read_text())["status"]
+        == "verified"
+    )
+    assert not fleet.tokens
+    assert fleet.slots[0].acquire(blocking=False)
+
+
+@pytest.mark.parametrize("ready", [True, False])
+def test_remote_cli_julia_requires_warm_session_and_preserves_pi_tools(
+    tmp_path, monkeypatch, ready
+):
+    from mriseqbench.harness import arm_runtime, remote_author
+
+    workspace = tmp_path / "trial" / "agent"
+    control = workspace.parent / "control"
+    workspace.mkdir(parents=True)
+    control.mkdir()
+    fleet = Fleet.__new__(Fleet)
+    fleet.config = {"assignments": {"trial": 0}}
+    fleet.hosts = [{"endpoint": "example", "key": "/unused", "instance_id": "test"}]
+    fleet.slots = [threading.Semaphore(1)]
+    fleet.pending = [1]
+    fleet.tokens = {}
+    fleet.lock = threading.Lock()
+    fleet.helper_root = "/unused"
+    fleet.broker_port = 8766
+    calls = []
+
+    def remote(host, args, **kwargs):
+        calls.append(args)
+        result = (
+            {"mode": "persistent" if ready else "wrong", "revise_version": "3"}
+            if "--ready" in args
+            else {}
+        )
+        return SimpleNamespace(stdout=json.dumps(result))
+
+    monkeypatch.setattr(remote_author, "remote", remote)
+    monkeypatch.setattr(remote_author, "sync", lambda *args: None)
+    monkeypatch.setattr(
+        arm_runtime,
+        "container_args",
+        lambda image, name: (["docker", "run", "--rm", "--user", "1000:1000"], image),
+    )
+    runtime = {
+        "author_image": "test",
+        "author_memory_mb": 2048,
+        "julia_heap_size_hint_mb": 100,
+        "setup_timeout_s": 600,
+        "arm": {
+            "tool_interface": "cli",
+            "language": "julia",
+            "pulse_designer": True,
+            "unitful": False,
+            "simulator": "koma",
+        },
+    }
+    command = ["pi", "-p", "control"]
+
+    def launch():
+        with fleet.launch(runtime, command, workspace, control, {}) as (_, isolation):
+            assert isolation["persistent_container"]
+            assert isolation["julia_session"]["mode"] == "persistent"
+            spec = json.loads((control / "remote-author-spec.json").read_text())
+            assert json.loads(spec["command"][-1]) == command
+
+    if ready:
+        launch()
+    else:
+        with pytest.raises(ValueError, match="warm readiness"):
+            launch()
+        assert not (control / "remote-author-spec.json").exists()
+    start = next(args for args in calls if "--detach" in args)
+    assert start[-3:] == ["/arm_julia_session.jl", "true", "false"]
+    assert "--compiled-modules=existing" in start
+    assert any(args[:4] == ["sudo", "docker", "rm", "--force"] for args in calls)
+    assert not fleet.tokens
+    assert fleet.slots[0].acquire(blocking=False)

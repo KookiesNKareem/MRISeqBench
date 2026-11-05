@@ -13,4 +13,28 @@ sequence:
   te_ms: {target: 5, tolerance: 1}
   tr_ms: {max: 24}
   duration_s: 8
-evaluation: s1@5
+evaluation: s1@6
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm and set TR to 24 ms (tolerance
+    0.5 ms, maximum 24 ms). Preserve the matrix and all other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    tr_ms:
+      target: 24
+      tolerance: 0.5
+      max: 24
+- id: parameter
+  request: Set TR to 20 ms (tolerance 0.5 ms). Retain the larger FOV and all other
+    requirements.
+  patch:
+    tr_ms:
+      target: 20
+      tolerance: 0.5
+- id: slice_selection
+  request: Add 2D slice selection with a 5 mm slice thickness (FWHM tolerance 20%)
+    and through-plane rephasing, while retaining the larger FOV and preceding TR change.
+  patch:
+    slice_thickness_mm: 5

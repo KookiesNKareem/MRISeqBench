@@ -13,7 +13,7 @@ from pypulseq import (
     make_trapezoid,
 )
 
-from tests.fixtures.binomial_rf import sparse_binomial_rf
+from tests.fixtures.binomial_rf import corpse_rf, sparse_binomial_rf
 
 
 def make_sequence(
@@ -26,6 +26,7 @@ def make_sequence(
     water_selective_order=0,
     water_selective_refocusing_order=0,
     refocusing_crushers=False,
+    corpse_refocusing=False,
     rf_duration=None,
     flip_angle=None,
     spoiler_factors=None,
@@ -66,13 +67,29 @@ def make_sequence(
         te = echo_time
     if repetition_time is not None:
         tr = repetition_time
-    rf = make_block_pulse(
-        np.deg2rad(flip),
-        duration=rf_duration or (0.0008 if balanced else 0.0004),
-        delay=system.rf_dead_time,
-        system=system,
-        use="excitation",
-    )
+    gz = gzr = None
+    if spec.get("slice_thickness_mm") is not None and not water_selective_order:
+        from pypulseq import make_sinc_pulse
+
+        rf, gz, gzr = make_sinc_pulse(
+            np.deg2rad(flip),
+            duration=rf_duration or (0.0016 if se else 0.0008),
+            slice_thickness=spec["slice_thickness_mm"] / 1000,
+            time_bw_product=2 if balanced else 4,
+            apodization=0.15 if balanced else 0.5,
+            return_gz=True,
+            delay=system.rf_dead_time,
+            system=system,
+            use="excitation",
+        )
+    else:
+        rf = make_block_pulse(
+            np.deg2rad(flip),
+            duration=rf_duration or (0.0008 if balanced else 0.0004),
+            delay=system.rf_dead_time,
+            system=system,
+            use="excitation",
+        )
 
     def binomial_rf(angle, order, use):
         if not se or order not in {1, 2}:
@@ -100,6 +117,8 @@ def make_sequence(
     )
     if water_selective_refocusing_order:
         ref = binomial_rf(np.pi, water_selective_refocusing_order, "refocusing")
+    elif corpse_refocusing:
+        ref = corpse_rf(0.0006, system)
     read = make_trapezoid(
         "x", flat_area=nx / fov[0], flat_time=readout_flat, system=system
     )
@@ -107,12 +126,19 @@ def make_sequence(
     # it actually plays, so the unused spoiler cannot inflate its minimum TR.
     spoil_area = max(nx, 32) / fov[0] * 1.3
     required_area = (
-        max(read.area / 2, ny / (2 * fov[1]), nz[0] / (2 * fov[2]) if nz else 0)
+        max(
+            read.area / 2,
+            ny / (2 * fov[1]),
+            nz[0] / (2 * fov[2]) if nz else (abs(gzr.area) if gzr is not None else 0),
+        )
         if balanced
-        else spoil_area * (max(spoiler_factors) if spoiler_factors else 1)
+        else max(
+            spoil_area * (max(spoiler_factors) if spoiler_factors else 1),
+            abs(gzr.area) if gzr is not None else 0,
+        )
     )
     gdur = max(
-        0.0008,
+        0.0005 if balanced and gz is not None else 0.0008,
         np.ceil(
             calc_duration(make_trapezoid("x", area=required_area, system=system)) / 1e-5
         )
@@ -142,6 +168,10 @@ def make_sequence(
                 pre.append(
                     make_trapezoid("z", area=zz / fov[2], duration=gdur, system=system)
                 )
+            elif gzr is not None and not se:
+                pre.append(
+                    make_trapezoid("z", area=gzr.area, duration=gdur, system=system)
+                )
             phase = (
                 np.pi * (shot % 2)
                 if balanced
@@ -152,9 +182,16 @@ def make_sequence(
             a = copy.copy(adc)
             ref_phase = phase
             a.phase_offset = 2 * ref_phase - phase + np.pi if se else phase
-            seq.add_block(r)
-            elapsed = calc_duration(r)
+            if gz is not None:
+                seq.add_block(r, gz)
+                elapsed = calc_duration(r, gz)
+            else:
+                seq.add_block(r)
+                elapsed = calc_duration(r)
             if se:
+                if gzr is not None:
+                    seq.add_block(gzr)
+                    elapsed += calc_duration(gzr)
                 seq.add_block(
                     make_delay(
                         te / 2
@@ -201,6 +238,12 @@ def make_sequence(
                     post.append(
                         make_trapezoid(
                             "z", area=-zz / fov[2], duration=gdur, system=system
+                        )
+                    )
+                elif gzr is not None:
+                    post.append(
+                        make_trapezoid(
+                            "z", area=gzr.area, duration=gdur, system=system
                         )
                     )
                 seq.add_block(*post)

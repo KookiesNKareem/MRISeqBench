@@ -9,11 +9,13 @@ are excluded. The fixed single-coil BART FFT reconstructs the central half of
 the phase FOV at 1.5625 mm resolution.
 
 Imaging k starts at the end of the Pulseq block containing the excitation RF.
-Gradients inside that block, including any rewinder placed in it, never count
-toward imaging k; gradients in later blocks (e.g. a separate rewinder or
-prephaser) do. Each line must bracket kx=0. Effective TE runs from the
-magnitude-weighted RF centre to the central-ky echo and must be within
-`te_ms.max`.
+Gradients inside that block, including any 2D RF rewinder placed in it, never
+count toward imaging k and are retained by the 2D RF phase oracle; gradients in
+later blocks (e.g. a separate rewinder or prephaser block) count as imaging
+gradients and are excluded from the 2D RF phase oracle, so place any 2D RF
+excitation rewinder inside the excitation RF block itself. Each line must
+bracket kx=0. Effective TE runs from the magnitude-weighted RF centre to the
+central-ky echo and must be within `te_ms.max`.
 
 ## Selection probes
 
@@ -44,8 +46,8 @@ from the RF selectivity itself.
 The cardiac image is scored under declared B0, relaxation and fat against an
 independent target. Its phase oracle retains RF selection gradients and removes
 later imaging gradients; submitted ADC phase never defines the target.
-Limits: complex/magnitude NRMSE ≤0.37/0.35, phase RMS ≤0.27 rad, tissue signal
-≥0.63, outside energy ≤0.05. Contrast retention is diagnostic for this spatial
+Limits: complex/magnitude NRMSE ≤0.15/0.10, phase RMS ≤0.15 rad, tissue signal
+≥0.80, outside energy ≤0.01. Contrast retention is diagnostic for this spatial
 selection task. Ideal-control images are diagnostic. No fitted gain, phase,
 registration or field correction is used. Common rules, including preflight,
 SAR, outcomes, image-metric definitions and numerical acceptance, are in

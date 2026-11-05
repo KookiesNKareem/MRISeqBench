@@ -3,7 +3,8 @@ schema_version: 1
 id: pi_j6_koma_base_julia_mcp
 version: 1
 suite: full@1
-arm: j6_koma_base_julia_mcp@1
+# Public arm: J3; filename and experiment ID retain historical naming.
+arm: J3@1
 arm_runtime:
   author_image: mriseqbench/author-koma_base-mcp:local
 repeats: 1

@@ -69,7 +69,7 @@ for profile, field in (("15t", 1.5), ("055t", 0.55)):
     )
 for dims in (2, 3):
     ref = f"cardiac_{dims}d@1"
-    arr = grid[:, :, 545] if dims == 2 else grid
+    arr = grid[:, :, 411] if dims == 2 else grid
     p = root / "assets" / f"cardiac_{dims}d.h5"
     with h5py.File(p, "w") as f:
         f.create_dataset(
@@ -84,7 +84,7 @@ for dims in (2, 3):
         "grid": list(arr.shape),
         "voxel_size_m": spacing[:dims].tolist(),
         "center_m": [0] * dims,
-        "slice_index_zero_based": 545 if dims == 2 else None,
+        "slice_index_zero_based": 411 if dims == 2 else None,
         "field_profile": "3t",
     }
     (root / f"cardiac_{dims}d.yaml").write_text(

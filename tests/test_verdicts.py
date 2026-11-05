@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from mriseqbench.catalog import Catalog
@@ -55,3 +56,45 @@ def test_malformed_sequences_fail_but_infrastructure_errors_propagate(
         preflight(submission, case)
     with pytest.raises(OSError):
         evaluate_sar(submission, case["hardware"])
+
+
+def test_sar_active_window_ignores_leading_and_trailing_idle_padding(tmp_path):
+    from copy import deepcopy
+
+    import pypulseq as pp
+
+    from mriseqbench.evaluation.sar import sar_checks
+
+    case = Catalog(ROOT).find_case(CASE)
+    system = pp.Opts(
+        B0=case["hardware"]["field_strength_T"],
+        max_grad=case["hardware"]["max_gradient_mT_per_m"],
+        grad_unit="mT/m",
+        max_slew=case["hardware"]["max_slew_T_per_m_per_s"],
+        slew_unit="T/m/s",
+        rf_dead_time=case["hardware"]["rf_dead_time_us"] * 1e-6,
+        rf_ringdown_time=case["hardware"]["rf_ringdown_time_us"] * 1e-6,
+        adc_dead_time=case["hardware"]["adc_dead_time_us"] * 1e-6,
+    )
+    base = pp.Sequence(system)
+    rf = pp.make_block_pulse(
+        np.pi, duration=0.001, delay=system.rf_dead_time, system=system
+    )
+    for _ in range(10):
+        base.add_block(rf)
+        base.add_block(pp.make_delay(0.01))
+    padded = pp.Sequence(system)
+    padded.add_block(pp.make_delay(5.0))
+    for _ in range(10):
+        padded.add_block(deepcopy(rf))
+        padded.add_block(pp.make_delay(0.01))
+    padded.add_block(pp.make_delay(10.0))
+    base_checks = {c["name"]: c for c in sar_checks(base, case["hardware"])}
+    padded_checks = {c["name"]: c for c in sar_checks(padded, case["hardware"])}
+    assert set(base_checks) == {"sar_360s", "sar_10s", "sar_1s"}
+    for name in ("sar_360s", "sar_10s", "sar_1s"):
+        assert np.isclose(
+            padded_checks[name]["detail"]["peak_W_per_kg"],
+            base_checks[name]["detail"]["peak_W_per_kg"],
+            rtol=1e-12,
+        )

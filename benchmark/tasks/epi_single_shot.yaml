@@ -19,4 +19,27 @@ sequence:
     acceleration: 3
     calibration_lines: 0
     pattern: uniform
-evaluation: s2@5
+evaluation: s2@6
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm and set TE to 80 ms (tolerance
+    2 ms). Preserve the matrix and all other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    te_ms:
+      target: 80
+      tolerance: 2
+- id: parameter
+  request: Set TE to 90 ms (tolerance 2 ms). Retain the larger FOV and all other requirements.
+  patch:
+    te_ms:
+      target: 90
+      tolerance: 2
+- id: sampling
+  request: Accelerate the single-shot EPI readout to R=2 along ky with 8 central calibration
+    lines, while retaining the 220 x 220 mm FOV and 90 ms TE.
+  patch:
+    sampling.acceleration: 2
+    sampling.calibration_lines: 8

@@ -23,7 +23,7 @@ function load_case(source::Dict)
         if kind in ("b0","b1")
             model in ("constant","linear","gaussian") || error("Unsupported field model: $model")
         elseif kind == "motion"
-            model in ("rigid_sinusoidal","rigid_keyframes","affine_sinusoidal") || error("Unsupported motion model: $model")
+            model in ("rigid_sinusoidal","rigid_keyframes","affine_sinusoidal","cardiac_respiratory") || error("Unsupported motion model: $model")
         else
             model == "sinusoidal" || error("Unsupported time model: $model")
             e["target"] in ("b0_offset","b1_scale","proton_density") || error("Unsupported variation target")

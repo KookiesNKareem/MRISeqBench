@@ -3,7 +3,8 @@ schema_version: 1
 id: pi_p0_pypulseq
 version: 1
 suite: full@1
-arm: p0_pypulseq@1
+# Public arm: P0; filename and experiment ID retain historical naming.
+arm: P0@1
 arm_runtime:
   author_image: mriseqbench/author-pypulseq:local
 repeats: 1

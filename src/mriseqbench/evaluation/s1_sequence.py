@@ -209,6 +209,138 @@ def gradient_integrals(seq, times):
     return out
 
 
+def slice_selection_checks(
+    seq, pulses, exc, acquired_excitation, adc, k, lines, spec, through_plane
+):
+    """Evaluate 2D slice-selective excitation, rephasing and Bloch slice profile."""
+    target_mm = spec.get("slice_thickness_mm")
+    if target_mm is None:
+        return [], None
+    target_mm = float(target_mm)
+    target_m = target_mm / 1000.0
+    grad_z = seq.get_gradients()[2]
+    if grad_z is None or not len(acquired_excitation):
+        detail = {
+            "target_slice_thickness_mm": target_mm,
+            "measured_fwhm_mm": None,
+            "stopband_ripple": None,
+            "passband_phase_coherence": None,
+            "conditions": {
+                "slice_selection_gradient_present": False,
+                "through_plane_rephased": bool(through_plane),
+                "fwhm_within_tolerance": False,
+                "stopband_within_limit": False,
+                "passband_rephased": False,
+            },
+        }
+        return [check("slice_thickness_mm", False, detail)], detail
+    integral_z = grad_z.antiderivative()
+
+    def gz_int(t):
+        q = np.clip(t, integral_z.x[0], integral_z.x[-1])
+        return float(
+            integral_z(q) - integral_z(np.clip(0.0, integral_z.x[0], integral_z.x[-1]))
+        )
+
+    selective_flags = []
+    for idx in acquired_excitation:
+        p = exc[int(idx)]
+        mids = 0.5 * (p.edges[:-1] + p.edges[1:])
+        amp = np.abs(p.signal)
+        active = amp > (np.max(amp, initial=0.0) * 1e-5)
+        if not active.any():
+            selective_flags.append(False)
+            continue
+        gz_vals = grad_z(np.clip(mids[active], grad_z.x[0], grad_z.x[-1]))
+        selective_flags.append(bool(np.max(np.abs(gz_vals)) > 100.0))
+    all_selective = bool(selective_flags and all(selective_flags))
+    first_exc_idx = int(acquired_excitation[0])
+    p0 = exc[first_exc_idx]
+    later_rf = [p.start for p in pulses if p.start > p0.end - 1e-12]
+    first_adc_after = [
+        float(adc[ids[0]]) for ids in lines if float(adc[ids[0]]) >= p0.end - 1e-12
+    ]
+    window_end = min(
+        later_rf + first_adc_after + [float(integral_z.x[-1])],
+    )
+    probe_times = np.linspace(p0.end, max(p0.end, window_end), 129)
+    center_moment = gz_int(p0.center)
+    moments_from_center = np.array([gz_int(t) - center_moment for t in probe_times])
+    best_idx = int(np.argmin(np.abs(moments_from_center)))
+    t_reph = float(probe_times[best_idx])
+    residual_kz_cycles = float(abs(moments_from_center[best_idx]) * target_m)
+    rephased_area_after_rf = gz_int(t_reph) - gz_int(p0.end)
+
+    z = np.linspace(-3.0 * target_m, 3.0 * target_m, 601)
+    mids = 0.5 * (p0.edges[:-1] + p0.edges[1:])
+    widths = np.diff(p0.edges)
+    gz_vals = grad_z(np.clip(mids, grad_z.x[0], grad_z.x[-1]))
+    mx = np.zeros_like(z)
+    my = np.zeros_like(z)
+    mz = np.ones_like(z)
+    for val, w, g in zip(p0.signal, widths, gz_vals, strict=True):
+        bx = np.full_like(z, float(val.real))
+        by = np.full_like(z, float(val.imag))
+        bz = float(p0.frequency) + float(g) * z
+        norm = np.sqrt(bx * bx + by * by + bz * bz)
+        angle = 2.0 * np.pi * float(w) * norm
+        denom = np.maximum(norm, 1e-30)
+        ux, uy, uz = bx / denom, by / denom, bz / denom
+        ca, sa = np.cos(angle), np.sin(angle)
+        dot = ux * mx + uy * my + uz * mz
+        cx = uy * mz - uz * my
+        cy = uz * mx - ux * mz
+        cz = ux * my - uy * mx
+        mx = mx * ca - cx * sa + ux * dot * (1.0 - ca)
+        my = my * ca - cy * sa + uy * dot * (1.0 - ca)
+        mz = mz * ca - cz * sa + uz * dot * (1.0 - ca)
+    mxy = (mx + 1j * my) * np.exp(-2j * np.pi * z * rephased_area_after_rf)
+    mag = np.abs(mxy)
+    passband_mask = np.abs(z) <= 0.25 * target_m
+    stopband_mask = np.abs(z) >= 1.5 * target_m
+    peak = float(np.max(mag[passband_mask], initial=0.0))
+    if peak > 1e-9:
+        half = 0.5 * peak
+        above = np.flatnonzero(mag >= half)
+        if len(above) >= 2 and above[0] > 0 and above[-1] < len(z) - 1:
+            i0, i1 = int(above[0]), int(above[-1])
+            z_left = float(
+                np.interp(half, [mag[i0 - 1], mag[i0]], [z[i0 - 1], z[i0]])
+            )
+            z_right = float(
+                np.interp(half, [mag[i1 + 1], mag[i1]], [z[i1 + 1], z[i1]])
+            )
+            fwhm_mm = (z_right - z_left) * 1000.0
+        else:
+            fwhm_mm = float((z[above[-1]] - z[above[0]]) * 1000.0) if len(above) else 0.0
+        stopband_ripple = float(np.max(mag[stopband_mask], initial=0.0) / peak)
+        pb = mxy[passband_mask]
+        coherence = float(np.abs(np.mean(pb)) / max(float(np.mean(np.abs(pb))), 1e-15))
+    else:
+        fwhm_mm = 0.0
+        stopband_ripple = 1.0
+        coherence = 0.0
+    conditions = {
+        "slice_selection_gradient_present": all_selective,
+        "through_plane_rephased": bool(through_plane and residual_kz_cycles <= 0.05),
+        "fwhm_within_tolerance": bool(abs(fwhm_mm - target_mm) <= 0.20 * target_mm),
+        "stopband_within_limit": bool(stopband_ripple <= 0.15),
+        "passband_rephased": bool(coherence >= 0.85),
+    }
+    detail = {
+        "target_slice_thickness_mm": target_mm,
+        "measured_fwhm_mm": fwhm_mm,
+        "fwhm_tolerance_mm": 0.20 * target_mm,
+        "stopband_ripple": stopband_ripple,
+        "stopband_ripple_max": 0.15,
+        "passband_phase_coherence": coherence,
+        "passband_phase_coherence_min": 0.85,
+        "residual_kz_cycles_across_slice": residual_kz_cycles,
+        "conditions": conditions,
+    }
+    return [check("slice_thickness_mm", all(conditions.values()), detail)], detail
+
+
 def inspect_sequence(path, case):
     spec = case["task"]["sequence"]
     seq = Sequence(Opts(B0=case["hardware"]["field_strength_T"]))
@@ -365,7 +497,7 @@ def inspect_sequence(path, case):
         axis = int(np.argmax(np.ptp(line, axis=0)))
         if len(ids) > 1 and abs(line[-1, axis] - line[0, axis]) > 1e-12:
             fraction = -line[0, axis] / (line[-1, axis] - line[0, axis])
-            echoes_inside.append(bool(0 <= fraction <= 1))
+            echoes_inside.append(bool(-1e-12 <= fraction <= 1 + 1e-12))
             center = adc[ids[0]] + fraction * (adc[ids[-1]] - adc[ids[0]])
         else:
             center = float(np.mean(adc[ids]))
@@ -565,9 +697,13 @@ def inspect_sequence(path, case):
                 },
             )
         )
-    # Balance intervals start at acquired excitations only; the last runs to the
-    # end of the sequence, so unacquired RF cannot hide a terminal spoiler.
-    starts = np.array([p.start for p in exc])[acquired_excitation]
+    slice_checks, slice_profile = slice_selection_checks(
+        seq, pulses, exc, acquired_excitation, adc, k, lines, spec, through_plane
+    )
+    checks.extend(slice_checks)
+    # Balance intervals start at acquired excitation blocks only; the last runs
+    # to the end of the sequence, so unacquired RF cannot hide a terminal spoiler.
+    starts = np.array([p.block_start for p in exc])[acquired_excitation]
     moments_tr = gradient_integrals(seq, np.r_[starts, clock])
     interval = np.searchsorted(acquired_excitation, np.maximum(excitation, 0))
     areas = (
@@ -651,6 +787,7 @@ def inspect_sequence(path, case):
         "lattice_offset": offset.tolist(),
         "coverage": coverage,
         "nominal_rotation_scope": "on-resonance envelope rotation; RF selectivity evaluated by Bloch replay",
+        **({"slice_profile": slice_profile} if slice_profile is not None else {}),
     }
     return Acquisition(
         seq,

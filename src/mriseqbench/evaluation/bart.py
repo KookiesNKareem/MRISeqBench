@@ -246,13 +246,8 @@ def _inverse_nufft(data, trajectory, shape):
     return run(command, {"trajectory": trajectory, "data": data})
 
 
-def _stack_inverse(data, nodes, matrix):
-    """Factor a complete Cartesian partition axis into BART FFT and 2D NUFFT.
-
-    Return None unless every partition has identical transverse sample nodes.
-    The z transform is unitary, so the same Tikhonov lambda applies to every
-    slice. Source sample values never enter geometry detection or scaling.
-    """
+def _stack_plan(nodes, matrix):
+    """Precompute partition indices and 2D trajectory for a complete 3D stack."""
     if len(matrix) != 3:
         return None
     nz = matrix[2]
@@ -277,12 +272,62 @@ def _stack_inverse(data, nodes, matrix):
         for indices in partitions[1:]
     ):
         return None
+    return partitions, count, nz, _trajectory(xy, matrix[:2])
+
+
+def _stack_inverse(data, nodes, matrix, *, plan=None):
+    """Factor a complete Cartesian partition axis into BART FFT and 2D NUFFT.
+
+    Return None unless every partition has identical transverse sample nodes.
+    The z transform is unitary, so the same Tikhonov lambda applies to every
+    slice. Source sample values never enter geometry detection or scaling.
+    """
+    if plan is None:
+        plan = _stack_plan(nodes, matrix)
+    if plan is None:
+        return None
+    partitions, count, nz, xy_trajectory = plan
     ordered = np.column_stack([data[indices] for indices in partitions])
     slices = fft(ordered, inverse=True, axes=(1,)) * np.sqrt(nz)
     result = _inverse_nufft(
-        slices.reshape(1, count, 1, nz), _trajectory(xy, matrix[:2]), (*matrix[:2], 1)
+        slices.reshape(1, count, 1, nz), xy_trajectory, (*matrix[:2], 1)
     )
     return result.reshape(matrix)
+
+
+def _noncartesian_plan(acq, matrix, fov_mm):
+    """Cache trajectory, Nyquist mask, phase factor and stack plan across replicates."""
+    fov_tuple = tuple(map(float, fov_mm))
+    k_view = np.ascontiguousarray(acq.k[:, : len(matrix)], dtype=np.float64)
+    key = (
+        matrix,
+        fov_tuple,
+        k_view.shape,
+        hashlib.sha256(k_view.tobytes()).hexdigest(),
+    )
+    cache = getattr(acq, "_bart_noncartesian_cache", None)
+    if cache is not None and cache.get("key") == key:
+        return cache["plan"]
+    original_nodes = np.asarray(
+        acq.k[:, : len(matrix)] * (np.asarray(fov_mm) / 1000) / np.asarray(matrix),
+        dtype=np.float64,
+    )
+    keep = np.all(np.abs(original_nodes) <= 0.5 + 1e-5, axis=1)
+    nodes = np.clip(original_nodes[keep], -0.5, 0.5)
+    if not len(nodes):
+        raise ValueError("No samples inside reconstruction Nyquist box")
+    unwrapped = (
+        acq.k[keep, : len(matrix)] * (np.asarray(fov_mm) / 1000) / np.asarray(matrix)
+    )
+    phase = np.exp(1j * np.pi * np.sum(unwrapped, axis=1))
+    stack_plan = _stack_plan(nodes, matrix)
+    trajectory = None if stack_plan is not None else _trajectory(nodes, matrix)
+    plan = (keep, nodes, phase, stack_plan, trajectory)
+    try:
+        acq._bart_noncartesian_cache = {"key": key, "plan": plan}
+    except AttributeError:
+        pass
+    return plan
 
 
 def reconstruct_noncartesian(raw, acq, matrix, fov_mm):
@@ -293,30 +338,21 @@ def reconstruct_noncartesian(raw, acq, matrix, fov_mm):
     unitary-operator signal scale, with no fitted gain or field-map correction.
     """
     matrix = tuple(map(int, matrix))
-    original_nodes = np.asarray(
-        acq.k[:, : len(matrix)] * (np.asarray(fov_mm) / 1000) / np.asarray(matrix),
-        dtype=np.float64,
+    keep, nodes, phase, stack_plan, trajectory = _noncartesian_plan(
+        acq, matrix, fov_mm
     )
-    keep = np.all(np.abs(original_nodes) <= 0.5 + 1e-5, axis=1)
-    nodes = np.mod(original_nodes[keep] + 0.5, 1.0) - 0.5
-    if not len(nodes):
-        raise ValueError("No samples inside reconstruction Nyquist box")
-    unwrapped = (
-        acq.k[keep, : len(matrix)] * (np.asarray(fov_mm) / 1000) / np.asarray(matrix)
-    )
-    corrected = np.asarray(raw)[keep] * np.exp(1j * np.pi * np.sum(unwrapped, axis=1))
+    corrected = np.asarray(raw)[keep] * phase
     data = corrected / np.sqrt(np.prod(matrix))
-    stack = _stack_inverse(data, nodes, matrix)
-    if stack is not None:
-        return stack
+    if stack_plan is not None:
+        return _stack_inverse(data, nodes, matrix, plan=stack_plan)
     shape = matrix + (1,) * (3 - len(matrix))
-    return _inverse_nufft(
-        data.reshape(1, -1, 1), _trajectory(nodes, matrix), shape
-    ).reshape(matrix)
+    return _inverse_nufft(data.reshape(1, -1, 1), trajectory, shape).reshape(matrix)
 
 
 ESPIRIT_CALIBRATION = 24
 ESPIRIT_KERNEL = 6
+_espirit_cache = {}
+_ESPIRIT_CACHE_MAX = 16
 
 
 def espirit_maps(kspace):
@@ -335,7 +371,26 @@ def espirit_maps(kspace):
         str(min(ESPIRIT_CALIBRATION, n) if n > 1 else 1) for n in data.shape[:3]
     )
     ksize = ":".join(str(ESPIRIT_KERNEL if n > 1 else 1) for n in data.shape[:3])
-    return run(
-        ["ecalib", "-m", "1", "-k", ksize, "-r", size, "{data}", "{out}"],
-        {"data": data},
-    ).reshape(data.shape)
+    command = ["ecalib", "-m", "1", "-k", ksize, "-r", size, "{data}", "{out}"]
+    cfl_bytes = np.asarray(data, dtype=np.complex64)
+    if np.isfinite(cfl_bytes).all() and cfl_bytes.size > 0:
+        key = (
+            data.shape,
+            size,
+            ksize,
+            hashlib.sha256(cfl_bytes.ravel(order="F").tobytes()).hexdigest(),
+        )
+        with _lock:
+            cached = _espirit_cache.get(key)
+            if cached is not None:
+                _commands[tuple(command)] += 1
+                return cached.copy()
+    else:
+        key = None
+    result = run(command, {"data": data}).reshape(data.shape)
+    if key is not None:
+        with _lock:
+            if len(_espirit_cache) >= _ESPIRIT_CACHE_MAX:
+                _espirit_cache.pop(next(iter(_espirit_cache)))
+            _espirit_cache[key] = result.copy()
+    return result

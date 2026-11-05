@@ -246,10 +246,10 @@ def _run_one(
     abort_event=None,
 ):
     workflow = None
-    if experiment.workflow is not None:
-        from ..workflows import execution_workflow
+    if experiment.agentic:
+        from ..workflows import workflow_for
 
-        workflow = execution_workflow(catalog, case, experiment.workflow.mode)
+        workflow = workflow_for(catalog, case)
         case = workflow["stages"][0]["case"]
     arm = catalog.get("arms", experiment.arm) if experiment.arm else None
     agent_dir, judge_dir = workspace / "agent", workspace / "evaluation"
@@ -259,16 +259,7 @@ def _run_one(
         from .workflow import WorkflowServer
 
         server_type = WorkflowServer if workflow else FeedbackServer
-        workflow_args = (
-            {
-                "workflow": workflow,
-                "stage_timeout_s": experiment.agent.timeout_s
-                if experiment.workflow.mode == "final_spec"
-                else experiment.workflow.stage_timeout_s,
-            }
-            if workflow
-            else {}
-        )
+        workflow_args = {"workflow": workflow} if workflow else {}
         server = stack.enter_context(
             server_type(
                 case,
@@ -276,11 +267,7 @@ def _run_one(
                 catalog.root,
                 workspace / "control",
                 experiment.backend,
-                max_submissions=(
-                    4 * experiment.max_submissions
-                    if workflow and experiment.workflow.mode == "final_spec"
-                    else experiment.max_submissions
-                ),
+                max_submissions=experiment.max_submissions,
                 grading_slots=grading_slots,
                 abort=abort_event,
                 **workflow_args,
@@ -299,36 +286,9 @@ def _run_one(
             if experiment.api_proxy
             else None
         )
-        seed_sources = {}
-        if workflow and experiment.workflow.mode == "supplied_edit":
-            from .workflow_seed import load_seed
-
-            base_case_id = workflow["case_id"].split("--workflow-")[0]
-            seed_bytes, seed_sources, seed_identity = load_seed(
-                experiment.workflow.seed_manifest,
-                catalog.root,
-                base_case_id,
-                experiment.arm,
-            )
-            if len(seed_bytes) > experiment.feedback.max_submission_bytes:
-                raise ValueError("seed sequence exceeds submission byte limit")
-            server.handle("submit", server.token, seed_bytes)
-            if server.stages[0]["status"] != "passed":
-                raise ValueError(
-                    "supplied seed failed full initial-stage grading; no agent was run"
-                )
-            server.stages[0].update(origin="supplied", seed_identity=seed_identity)
-            server.handle("next", server.token, b'{"after_stage":0}')
-            case = server.case
         prompt_path, case_path, submission = prepare(
             agent_dir, case, experiment, server, phantom_dir, arm=arm
         )
-        if seed_sources:
-            submission.write_bytes(seed_bytes)
-            for name, data in seed_sources.items():
-                destination = agent_dir / name
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_bytes(data)
         values = {
             "prompt": prompt_path,
             "prompt_text": prompt_path.read_text(),
@@ -457,8 +417,6 @@ def _run_one(
                     def is_set(self):
                         if abort_event is not None and abort_event.is_set():
                             server.closed.set()
-                            return True
-                        if workflow and server.stage_expired():
                             return True
                         return server.submitted.is_set() or bool(
                             proxy and proxy.exhausted
@@ -869,15 +827,11 @@ def run(
     catalog, experiment, output=None, *, cases="*", repeats=None, selected_keys=None
 ):
     """Launch or resume a campaign; returns (output, reports, complete)."""
-    if experiment.workflow is not None:
+    if experiment.agentic:
         from ..workflows import workflow_for
 
         for selected_case in catalog.cases(catalog.get("suites", experiment.suite)):
             workflow_for(catalog, selected_case)
-        if not experiment.workflow.allow_unqualified:
-            raise ValueError(
-                "Agentic v1 workflows are draft: qualify reference stages first, or explicitly enable workflow.allow_unqualified for development runs"
-            )
     started, started_at = time.monotonic(), utc_now()
     if experiment.agent.uses_model:
         # Unpinned models/providers make scores incomparable across runs.
@@ -920,18 +874,6 @@ def run(
         if runtime
         else None,
     }
-    if experiment.workflow is not None and experiment.workflow.mode == "supplied_edit":
-        from .workflow_seed import load_seed
-
-        identity["workflow_seeds"] = {
-            c["case_id"]: load_seed(
-                experiment.workflow.seed_manifest,
-                catalog.root,
-                c["case_id"],
-                experiment.arm,
-            )[2]
-            for c in catalog.cases(catalog.get("suites", experiment.suite))
-        }
     if (output / "campaign.json").exists():
         recorded = json.loads((output / "campaign.json").read_text())
         # Campaigns launched before concurrency left the identity recorded it.
@@ -998,7 +940,7 @@ def run(
             grading_pool=grading_slots.stats(),
         )
         write_json(output / "accounting.json", campaign)
-        if experiment.workflow is not None:
+        if experiment.agentic:
             from ..workflows import summarize_workflows
 
             write_json(output / "workflow-summary.json", summarize_workflows(reports))

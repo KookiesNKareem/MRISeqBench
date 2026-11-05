@@ -140,10 +140,10 @@ Readout transients, blur and displacement remain image errors.
 
 | Every achieved image must meet | Limit |
 |---|---:|
-| Complex / magnitude NRMSE | ≤0.45 / ≤0.35 |
-| Wrapped phase RMS | ≤0.35 rad |
-| Minimum tissue signal / contrast retention | ≥0.5 / ≥0.5 |
-| Outside-object energy | ≤0.25 |
+| Complex / magnitude NRMSE | ≤0.15 / ≤0.10 |
+| Wrapped phase RMS | ≤0.15 rad |
+| Minimum tissue signal / contrast retention | ≥0.8 / ≥0.8 |
+| Outside-object energy | ≤0.01 |
 
 No gain, receiver phase or registration is fitted; receiver phase follows the
 common FID convention. Ideal-control images are diagnostic.

@@ -271,6 +271,8 @@ def infrastructure_failure(isolation, execution):
     isolation["container_state"] = state
     if state.get("OOMKilled"):
         return None
+    if isolation.get("remote_host") and execution.get("returncode") == 255:
+        return "remote SSH connection dropped (exit 255)"
     if isolation.get("persistent_container"):
         return None if state.get("Running") else "author container stopped"
     if state.get("Running"):

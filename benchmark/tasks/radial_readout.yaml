@@ -13,4 +13,25 @@ sequence:
   duration_s: 6
   readout:
     spokes: 202
-evaluation: s2@5
+evaluation: s2@6
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm and set the excitation flip angle
+    to 10 degrees. Preserve the matrix and all other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    flip_angle_deg: 10
+- id: parameter
+  request: Set the excitation flip angle to 30 degrees. Retain the larger FOV and
+    all other requirements.
+  patch:
+    flip_angle_deg: 30
+- id: readout
+  request: Increase the radial readout to 256 spokes uniformly spanning [0, pi) with
+    a 6.5 s duration budget, while retaining the 220 x 220 mm FOV and preceding flip-angle
+    change.
+  patch:
+    readout.spokes: 256
+    duration_s: 6.5

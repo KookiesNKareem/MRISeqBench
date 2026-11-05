@@ -41,7 +41,13 @@ def refocusing_parity(acq):
 
 
 def rf_only_response(
-    acq, properties, *, ideal_spoiling=False, spoil_times_s=(), compress=True
+    acq,
+    properties,
+    *,
+    ideal_spoiling=False,
+    spoil_times_s=(),
+    refocusing_projection=False,
+    compress=True,
 ):
     """Finite-RF Bloch; all preparations/transients and intrinsic fat retained."""
     a = copy(acq)
@@ -85,6 +91,7 @@ def rf_only_response(
         zero_gradients=True,
         individual=True,
         ideal_spoiling=ideal_spoiling,
+        **({"refocusing_projection": True} if refocusing_projection else {}),
         **({"spoil_times_s": spoil_times_s} if len(spoil_times_s) else {}),
     ).T
     if anchors is None:
@@ -106,7 +113,9 @@ def canonical_response(acq, properties, fam, *, finite_rf):
 
     This deliberately does not copy encoding gradients or spoiler effectiveness:
     spoiled families use ideal spoiling, while bSSFP/rFOV EPI keep their full
-    coherent history. Refocused echoes share the excitation phase convention.
+    coherent history. Reduced-FOV spin echoes additionally apply the local
+    balanced-crusher coherence projection at each refocuser, preserving the full
+    incoming RF state. Refocused echoes share the excitation phase convention.
     Callers state ``finite_rf=True``; no other family oracle exists.
     """
     if not finite_rf:
@@ -114,7 +123,10 @@ def canonical_response(acq, properties, fam, *, finite_rf):
     reference_acq = copy(acq)
     reference_acq.pulses = [p for p in acq.pulses if p.start < acq.adc[-1]]
     return rf_only_response(
-        reference_acq, properties, ideal_spoiling=fam not in {"bssfp", "rfov_epi"}
+        reference_acq,
+        properties,
+        ideal_spoiling=fam not in {"bssfp", "rfov_epi"},
+        **({"refocusing_projection": True} if fam == "reduced_fov" else {}),
     ) * refocusing_parity(acq)
 
 

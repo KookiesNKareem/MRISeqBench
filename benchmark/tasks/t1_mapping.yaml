@@ -6,7 +6,7 @@ objective: Acquire inversion-prepared bSSFP images at TI 100, 400 and 1200 ms, i
   T1 mapping. Use four 32-line ECG-triggered segments per image, repeat the preparation for each
   segment, and allow three RR intervals between preparations.
 object: P1@1
-evaluation: s4@3
+evaluation: s4@4
 sequence:
   level: T4
   capabilities: [bssfp, cartesian, inversion, multi_contrast, mapping, triggering, gating]
@@ -22,3 +22,27 @@ sequence:
     trigger_delay_ms: 600
     acquisition_window_ms: 200
     segments_per_frame: 4
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: parameter
+  request: Set the inversion times to 150, 500, 1300 ms, in that order. Retain the
+    larger FOV and all other requirements.
+  patch:
+    application.inversion_times_ms:
+    - 150
+    - 500
+    - 1300
+- id: segmentation
+  request: Acquire each TI frame across 8 ECG-triggered segments (16 lines per heartbeat)
+    within a 100 ms acquisition window and a 120 s duration budget, retaining the
+    220 x 220 mm FOV and [150, 500, 1300] ms inversion times.
+  patch:
+    temporal.segments_per_frame: 8
+    temporal.acquisition_window_ms: 100
+    duration_s: 120

@@ -17,8 +17,12 @@ the image replay and the phase oracle halve their timesteps at most 6 times
 2^`temporal_refinement`); a replay still above its 0.01 temporal gate there fails
 (`failure_kind=unresolved_at_timestep_cap`). References need at most 2 halvings.
 
-SAR is evaluated only when you submit; a submission that exceeds the scanner's
-SAR limit fails, and the feedback will say so.
+SAR is evaluated only when you submit, integrated over the active acquisition
+window (from the first non-delay block to the end of the last RF/gradient/ADC
+block plus at most one repetition interval, or 2 s for ECG-triggered sequences)
+across 360 s (1× limit), 10 s (2× limit) and 1 s (3× limit) sliding windows;
+leading or trailing pure-delay padding cannot dilute SAR, and a submission that
+exceeds the scanner's SAR limit fails.
 
 ## Pulseq preflight
 

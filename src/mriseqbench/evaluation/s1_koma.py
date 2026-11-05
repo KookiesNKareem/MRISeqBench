@@ -310,6 +310,7 @@ def simulate(
     integration_method="bloch",
     ideal_spoiling=False,
     spoil_times_s=(),
+    refocusing_projection=False,
     receive_weights=None,
 ):
     if integration_method not in {"bloch", "magnus4"}:
@@ -324,6 +325,35 @@ def simulate(
         raise ValueError("Ideal spoiling requires individual RF-only replay")
     if not np.isfinite(spoil_times_s).all():
         raise ValueError("Spoiling times must be finite")
+    refocusing_pulses = []
+    if refocusing_projection:
+        if not (individual and zero_gradients):
+            raise ValueError("Refocusing projection requires individual RF-only replay")
+        refocusing_pulses = [p for p in acq.pulses if p.refocusing]
+        if not refocusing_pulses:
+            raise ValueError("Refocusing projection requires refocusing RF events")
+        if any(
+            np.any((acq.adc >= pulse.start - 1e-9) & (acq.adc <= pulse.end + 1e-9))
+            for pulse in refocusing_pulses
+        ):
+            raise ValueError(
+                "Refocusing projection cannot score ADCs inside a refocusing RF event"
+            )
+        count = 0
+        for pulse in acq.pulses:
+            count = count + 1 if pulse.refocusing else 0
+            if count > 1:
+                raise ValueError(
+                    "Refocusing projection supports isolated spin echoes, not refocusing trains"
+                )
+        if any(
+            effect["kind"] != "b0"
+            or effect["model"] not in {"constant", "linear"}
+            for effect in effects
+        ):
+            raise ValueError(
+                "Refocusing projection requires static constant or linear fields"
+            )
     if receive_weights is not None:
         receive_weights = np.asarray(receive_weights, dtype=float)
         if individual or demodulate_encoding or integration_method != "bloch":
@@ -370,25 +400,30 @@ def simulate(
         result = handle["signal_real"][...] + 1j * handle["signal_imag"][...]
         return result.transpose() if individual else result
 
+    request = {
+        "operation": "simulate",
+        "sequence": path,
+        "sequence_sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+        "effects": list(effects),
+        "materials": list(spins.materials),
+        "step_s": step_s,
+        "rf_step_s": rf_step_s,
+        "rf_frequency_hz": [p.frequency for p in acq.pulses],
+        "rf_phase_correction_rad": [p.phase_correction for p in acq.pulses],
+        "field_strength_T": acq.seq.system.B0,
+        "demodulate_encoding": demodulate_encoding,
+        "individual": individual,
+        "integration_method": integration_method,
+        "spoil_times_s": [float(p.start) for p in acq.pulses if not p.refocusing]
+        if ideal_spoiling
+        else [float(t) for t in spoil_times_s] or None,
+    }
+    if refocusing_projection:
+        request["refocusing_pulses"] = [
+            [float(p.start), float(p.end)] for p in refocusing_pulses
+        ]
     result = engine.call(
-        {
-            "operation": "simulate",
-            "sequence": path,
-            "sequence_sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest(),
-            "effects": list(effects),
-            "materials": list(spins.materials),
-            "step_s": step_s,
-            "rf_step_s": rf_step_s,
-            "rf_frequency_hz": [p.frequency for p in acq.pulses],
-            "rf_phase_correction_rad": [p.phase_correction for p in acq.pulses],
-            "field_strength_T": acq.seq.system.B0,
-            "demodulate_encoding": demodulate_encoding,
-            "individual": individual,
-            "integration_method": integration_method,
-            "spoil_times_s": [float(p.start) for p in acq.pulses if not p.refocusing]
-            if ideal_spoiling
-            else [float(t) for t in spoil_times_s] or None,
-        },
+        request,
         write,
         read,
     )

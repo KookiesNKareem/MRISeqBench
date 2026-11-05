@@ -9,19 +9,42 @@ no S modifier. These modifiers describe agent access; the shared judge always
 uses KomaMRI. P/J arm names remain authoring configuration names; the phantom
 label **P1** is a separate axis. Full mapping: [labels](LABELS.md).
 
-| Arm / simulator modifier | Authoring | PulseDesigner | Unitful | Simulator | Julia tools |
-|---|---|:---:|:---:|---|---|
-| P0 (`p0_pypulseq@1`) | PyPulseq | — | — | None | — |
-| P1 S1 (`p1_pypulseq_mrzero@1`) | PyPulseq | — | — | S1 · MRzero | — |
-| P2 S3 (`p2_pypulseq_koma@1`) | PyPulseq | — | — | S3 · KomaMRI / komamripy | — |
-| J0 (`j0_koma_base@1`) | KomaMRIBase / KomaMRIFiles | No | No | None | CLI |
-| J1 (`j1_pulseq_julia@1`) | KomaMRIBase / KomaMRIFiles | Yes | No | None | CLI |
-| J2 (`j2_pulseq_julia_unitful@1`) | KomaMRIBase / KomaMRIFiles | Yes | Yes | None | CLI |
-| J3 S2 (`j3_koma_base_koma@1`) | KomaMRIBase / KomaMRIFiles | No | No | S2 · KomaMRI | CLI |
-| J4 S2 (`j4_pulseq_julia_koma@1`) | KomaMRIBase / KomaMRIFiles | Yes | No | S2 · KomaMRI | CLI |
-| J5 S2 (`j5_pulseq_julia_unitful_koma@1`) | KomaMRIBase / KomaMRIFiles | Yes | Yes | S2 · KomaMRI | CLI |
-| J6 (`j6_koma_base_julia_mcp@1`) | KomaMRIBase / KomaMRIFiles | No | No | None | MCP |
-| J7 S2 (`j7_pulseq_julia_mcp_koma@1`) | KomaMRIBase / KomaMRIFiles | Yes | No | S2 · KomaMRI | MCP |
+Figure 1 of the [MRISeqBench Abstract](https://docs.google.com/document/d/1ssPmltYEzQQNVuKCOyroliBeHsXi6e7JOip7OZzillc/edit)
+is authoritative for public arm labels and tool names. Historical manifest IDs
+and saved campaign names are retained for reproducibility; their numeric prefixes
+must not be interpreted as current labels.
+
+| Public arm | Authoring and simulator tools | Manifest reference |
+|---|---|---|
+| P0 | PyPulseq | `p0_pypulseq@1` |
+| P0 S1 | PyPulseq + MRzero | `p1_pypulseq_mrzero@1` |
+| P0 S3 | PyPulseq + komamripy | `p2_pypulseq_koma@1` |
+| J0 | PulseqBase.jl | `j0_koma_base@1` |
+| J1 | Pulseq.jl | `j1_pulseq_julia@1` |
+| J2 | Pulseq.jl + Unitful.jl | `j2_pulseq_julia_unitful@1` |
+| J3 | PulseqBase.jl + Julia MCP | `j6_koma_base_julia_mcp@1` |
+| J4 S2 | Pulseq.jl + Julia MCP + KomaMRI.jl | `j7_pulseq_julia_mcp_koma@1` |
+
+Additional CLI simulator combinations remain available outside Figure 1:
+
+| Public arm | Tools | Historical manifest reference |
+|---|---|---|
+| J0 S2 | PulseqBase.jl + KomaMRI.jl | `j3_koma_base_koma@1` |
+| J1 S2 | Pulseq.jl + KomaMRI.jl | `j4_pulseq_julia_koma@1` |
+| J2 S2 | Pulseq.jl + Unitful.jl + KomaMRI.jl | `j5_pulseq_julia_unitful_koma@1` |
+
+J4 S2 combines Pulseq.jl, Julia MCP, and KomaMRI.jl simulator access.
+The historical `j4_pulseq_julia_koma` configuration is **J1 S2**, which uses CLI
+Julia tools. Historical J7 results are **J4 S2** results under the current labels.
+The pinned runtime internally names the PulseqBase.jl toolset
+`KomaMRIBase`/`KomaMRIFiles`, and the Pulseq.jl authoring feature `PulseDesigner`.
+Relabeling does not change those installed packages or runtime capabilities.
+
+Experiment `arm` fields accept public references such as `J1 S2@1`, `J4 S2@1`,
+and `P0 S3@1`, normalizing them to historical IDs before execution.
+For J1 S2, use `experiments/pi_j4_pulseq_julia_koma.yaml`; for J4 S2,
+use `experiments/pi_j4_s2.yaml`. Existing experiment filenames
+are historical; each template identifies its current public label.
 
 ```bash
 uv run mriseqbench arms

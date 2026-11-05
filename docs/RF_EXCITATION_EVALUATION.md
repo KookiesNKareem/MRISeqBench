@@ -21,9 +21,9 @@ extra +1000 Hz/m on γ̄Gx (γ̄ = 42.576 MHz/T).
 
 | Metric over disc spins | Limit |
 |---|---:|
-| Magnitude NRMSE, normalized by target norm | ≤0.20 |
-| Mean magnitude / mean target where target ≥0.45 | 0.80–1.20 |
-| RMS magnitude / 0.5 where target ≤0.005 | ≤0.10 |
+| Magnitude NRMSE, normalized by target norm | ≤0.10 |
+| Mean magnitude / mean target where target ≥0.45 | 0.90–1.10 |
+| RMS magnitude / 0.5 where target ≤0.005 | ≤0.05 |
 
 No gain, registration or normalization is fitted.
 
@@ -33,7 +33,7 @@ error estimate is `max(0.0001, 2·|current − previous|)`. The verdict is resol
 when every estimate is ≤0.002 and every metric differs from each of its bounds
 (both bounds for the inside-signal range) by more than its estimate; the
 metrics at that step then decide pass/fail (bounds inclusive). So a stable
-NRMSE of 0.19995 never resolves against 0.20 and fails. A verdict still
+NRMSE of 0.09995 never resolves against 0.10 and fails. A verdict still
 unresolved at 0.625 µs fails. Preflight, SAR and outcome rules are in
 [COMMON_EVALUATION.md](COMMON_EVALUATION.md); this task has no ADC, so its
 waveform and image sections do not apply. Grading has no time limit.

@@ -12,9 +12,14 @@ def trapezoid(channel, *, duration=None, system=None, **kwargs):
     except (AssertionError, ValueError):
         shortest = calc_duration(make_trapezoid(channel, system=system, **kwargs))
         raster = 1e-5
-        return make_trapezoid(
-            channel,
-            duration=float(np.ceil(shortest / raster - 1e-9) * raster),
-            system=system,
-            **kwargs,
-        )
+        rounded = float(np.ceil(shortest / raster - 1e-9) * raster)
+        try:
+            return make_trapezoid(channel, duration=rounded, system=system, **kwargs)
+        except (AssertionError, ValueError):
+            # Some minimum-duration boundaries round one ULP too low.
+            return make_trapezoid(
+                channel,
+                duration=float(np.nextafter(rounded, np.inf)),
+                system=system,
+                **kwargs,
+            )

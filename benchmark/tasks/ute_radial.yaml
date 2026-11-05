@@ -12,8 +12,29 @@ sequence:
   matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 6
-  te_ms: {target: 0.9, tolerance: 0.09}
+  te_ms: {target: 0.9, tolerance: 0.02}
   readout:
     spokes: 404
     center_out: true
-evaluation: s2@5
+evaluation: s2@6
+followups:
+- id: flip
+  request: Set the excitation flip angle to 10 degrees and TE to 0.95 ms (tolerance
+    0.005 ms). Preserve all other requirements.
+  patch:
+    flip_angle_deg: 10
+    te_ms:
+      target: 0.95
+      tolerance: 0.005
+- id: parameter
+  request: Set TE to 0.98 ms (tolerance 0.005 ms). Retain the 10-degree excitation
+    and all other requirements.
+  patch:
+    te_ms:
+      target: 0.98
+      tolerance: 0.005
+- id: readout
+  request: Increase the centre-out UTE radial readout to 460 spokes uniformly spanning
+    [0, 2*pi), while retaining the 10-degree flip angle and 0.98 ms TE.
+  patch:
+    readout.spokes: 460

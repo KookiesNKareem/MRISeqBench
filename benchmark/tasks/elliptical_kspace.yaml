@@ -16,4 +16,25 @@ sequence:
   sampling:
     pattern: elliptical
 object: P1@1
-evaluation: s3@4
+evaluation: s3@5
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    - 200
+- id: parameter
+  request: Set the excitation flip angle to 30 degrees. Retain the larger FOV and
+    all other requirements.
+  patch:
+    flip_angle_deg: 30
+- id: timing
+  request: Shorten TR to 12 ms (tolerance 0.5 ms), while retaining the 220 x 220 x
+    200 mm FOV, 30-degree flip angle, and elliptical (ky, kz) support.
+  patch:
+    tr_ms:
+      target: 12
+      tolerance: 0.5

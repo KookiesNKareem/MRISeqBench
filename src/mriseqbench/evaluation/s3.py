@@ -384,10 +384,22 @@ def temporal_image_error(delta, acq, matrix, reference, coarse=None):
         if coarse is not None
         else known_map_raw(np.asarray(reference), acq, tuple(matrix))
     )
+    base_key = (
+        tuple(matrix),
+        base.shape,
+        np.ascontiguousarray(base, dtype=np.complex128).tobytes(),
+    )
+    base_cache = getattr(acq, "_bart_temporal_base_cache", None)
+    if base_cache is not None and base_cache.get("key") == base_key:
+        base_image = base_cache["image"]
+    else:
+        base_image = reconstruct(base, acq, matrix)
+        try:
+            acq._bart_temporal_base_cache = {"key": base_key, "image": base_image}
+        except AttributeError:
+            pass
     calibrated = float(
-        np.linalg.norm(
-            reconstruct(base + delta, acq, matrix) - reconstruct(base, acq, matrix)
-        )
+        np.linalg.norm(reconstruct(base + delta, acq, matrix) - base_image)
     )
     acq.measurements["temporal_image_error_terms"] = {
         "calibrated": calibrated / norm,

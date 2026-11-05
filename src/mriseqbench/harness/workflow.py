@@ -10,7 +10,7 @@ from ..storage import atomic_json
 from .accounting import read_api, summarize_requests
 from .feedback import FeedbackServer, disclosed
 from .grading import EvaluationIncomplete
-from .prepare import brief_yaml, case_evaluation_summary, prompt
+from .prepare import brief_yaml, evaluation_markdown, prompt
 
 
 def public_case(case):
@@ -22,23 +22,19 @@ def public_case(case):
 
 
 class WorkflowServer(FeedbackServer):
-    def __init__(self, *args, workflow, stage_timeout_s, **kwargs):
+    def __init__(self, *args, workflow, **kwargs):
         super().__init__(*args, **kwargs)
         self.workflow = workflow
-        self.stage_timeout_s = stage_timeout_s
         self.stage_index = 0
-        self.stage_started_charged = 0.0
         self.pending = False
         self.on_stage = None
         self.next_responses = {}
-        self.api_start = 0
         self.stages = [
             {
                 "index": i,
                 "id": s["id"],
                 "status": "not_reached",
                 "submissions": 0,
-                "charged_wall_s": 0.0,
                 "api_request_start": 0,
             }
             for i, s in enumerate(workflow["stages"])
@@ -46,30 +42,15 @@ class WorkflowServer(FeedbackServer):
         self.stages[0]["status"] = "running"
         self.checkpoint()
 
-    def stage_elapsed(self):
-        return max(
-            0.0, super().runtime_status()["charged_wall_s"] - self.stage_started_charged
-        )
-
-    def stage_expired(self):
-        return (
-            self.agent_started is not None
-            and self.stage_elapsed() >= self.stage_timeout_s
-        )
-
     def runtime_status(self):
         value = super().runtime_status()
-        row = self.stages[self.stage_index]
-        stage_remaining = max(0.0, self.stage_timeout_s - self.stage_elapsed())
         value.update(
             stage_index=self.stage_index,
-            stage_id=row["id"],
-            stage_remaining_s=stage_remaining,
             awaiting_next_turn=self.pending,
-            submissions_remaining=max(0, self.max_submissions - row["submissions"]),
+            submissions_remaining=max(
+                0, self.max_submissions - self.stages[self.stage_index]["submissions"]
+            ),
         )
-        if value["remaining_s"] is not None:
-            value["remaining_s"] = min(value["remaining_s"], stage_remaining)
         return value
 
     def stats(self):
@@ -93,18 +74,12 @@ class WorkflowServer(FeedbackServer):
                 "status": "awaiting_next_turn",
                 "reason": "This stage passed; finish your response and wait for the next user request.",
             }
-        if self.stage_expired():
-            return 409, {
-                "status": "stage_timeout",
-                "reason": "Stage time allowance exhausted.",
-            }
         return super()._submit(body)
 
     def complete_submission(self, attempt, result):
         row = self.stages[self.stage_index]
         row["submissions"] += 1
         row["evaluation"] = deepcopy(result)
-        row["charged_wall_s"] = self.stage_elapsed()
         row["last_attempt"] = attempt
         if result["status"] == "passed":
             row["status"] = "passed"
@@ -131,21 +106,14 @@ class WorkflowServer(FeedbackServer):
             }
         else:
             row["status"] = "failed"
-        row["usage"], row["api_request_end"] = self.stage_usage()
         self.checkpoint(terminal=True)
         self.submitted.set()
         return 200, {
             "status": "submitted",
             "attempt": attempt,
+            "evaluation": disclosed(result),
             "reason": "Workflow finished; stop now.",
         }
-
-    def stage_usage(self):
-        path = self.directory.parent / "api.jsonl"
-        rows = read_api(path)
-        return summarize_requests(
-            rows[self.api_start :], configured=path.exists()
-        ), len(rows)
 
     def checkpoint(self, terminal=False):
         value = self.report()
@@ -161,12 +129,9 @@ class WorkflowServer(FeedbackServer):
         rows = deepcopy(self.stages)
         if ended is not None:
             row = rows[self.stage_index]
-            row["api_request_end"] = len(read_api(self.directory.parent / "api.jsonl"))
-            refresh_usage(rows, self.directory.parent / "api.jsonl")
             if row["status"] == "running":
-                row.update(
-                    status="failed", reason=ended, charged_wall_s=self.stage_elapsed()
-                )
+                row.update(status="failed", reason=ended)
+        refresh_usage(rows, self.directory.parent / "api.jsonl")
         passed = all(s["status"] == "passed" for s in rows)
         return {
             "case_id": self.workflow["case_id"],
@@ -175,8 +140,6 @@ class WorkflowServer(FeedbackServer):
             "metrics": {},
             "workflow": {
                 "id": self.workflow["id"],
-                "mode": self.workflow.get("mode", "generate_edit"),
-                "qualification": self.workflow["qualification"],
                 "stages": rows,
                 "complete": passed,
             },
@@ -203,34 +166,23 @@ class WorkflowServer(FeedbackServer):
                 return 409, {"status": "closed"}
             if previous in self.next_responses:
                 return 200, self.next_responses[previous]
-            if self.stage_expired():
-                return 409, {"status": "stage_timeout"}
             if not self.pending or previous != self.stage_index:
                 return 409, {"status": "not_ready"}
             try:
-                self.stages[self.stage_index]["usage"], self.api_start = (
-                    self.stage_usage()
-                )
-                self.stages[self.stage_index]["api_request_end"] = self.api_start
-                self.stages[self.stage_index]["charged_wall_s"] = self.stage_elapsed()
                 self.stage_index += 1
                 self.pending = False
                 stage = self.workflow["stages"][self.stage_index]
                 self.case = deepcopy(stage["case"])
                 self.stages[self.stage_index]["status"] = "running"
-                self.stages[self.stage_index]["api_request_start"] = self.api_start
-                self.stage_started_charged = super().runtime_status()["charged_wall_s"]
+                self.stages[self.stage_index]["api_request_start"] = len(
+                    read_api(self.directory.parent / "api.jsonl")
+                )
                 atomic_json(self.directory / "case.json", self.case)
                 if self.on_stage:
                     self.on_stage(public_case(self.case))
                 message = (
-                    stage["request"]
-                    + "\n\n"
-                    + prompt(self.case)
-                    + (
-                        "\nThis is the complete current contract. Earlier changes persist unless explicitly replaced. "
-                        "After stage_passed, finish your response and wait for the next user request."
-                    )
+                    prompt(self.case)
+                    + "\nAfter stage_passed, finish your response and wait for the next user request."
                 )
                 value = {
                     "status": "next_stage",
@@ -239,7 +191,7 @@ class WorkflowServer(FeedbackServer):
                     "files": {
                         "case.json": json.dumps(public_case(self.case), indent=2),
                         "task.yaml": brief_yaml(self.case),
-                        "EVALUATION.md": case_evaluation_summary(self.case),
+                        "EVALUATION.md": evaluation_markdown(self.case),
                         "CURRENT_STAGE.md": message,
                     },
                 }
@@ -268,17 +220,14 @@ class WorkflowServer(FeedbackServer):
 
 
 def refresh_usage(stages, path):
+    """Slice the existing API log at user-turn boundaries; retain unknown usage."""
     requests = read_api(path)
-    for row in stages:
-        if row["status"] != "not_reached":
-            row["usage"] = summarize_requests(
-                requests[
-                    row.get("api_request_start", 0) : row.get(
-                        "api_request_end", len(requests)
-                    )
-                ],
-                configured=path.exists(),
-            )
+    reached = [row for row in stages if row["status"] != "not_reached"]
+    for row, following in zip(reached, [*reached[1:], None], strict=True):
+        end = following["api_request_start"] if following else len(requests)
+        row["usage"] = summarize_requests(
+            requests[row["api_request_start"] : end], configured=path.exists()
+        )
 
 
 def recover_workflow(workspace, session):

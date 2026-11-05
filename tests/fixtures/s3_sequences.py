@@ -18,8 +18,9 @@ def mask_for(fam, matrix, sampling):
         step = int(sampling.get("acceleration", 2))
         mask[:, sorted(set(range(0, ny, step)) | set(centre))] = True
     elif fam == "caipirinha":
+        shift = sampling.get("caipi_shift", 1)
         for j, z in enumerate(range(0, nz[0], 2)):
-            for y in range(j % 2, ny, 2):
+            for y in range((j * shift) % 2, ny, 2):
                 mask[:, y, z] = True
         for y in centre:
             for z in range(nz[0] // 2 - width // 2, nz[0] // 2 + (width + 1) // 2):
@@ -45,7 +46,8 @@ def mask_for(fam, matrix, sampling):
         count = int(np.ceil(ny * sampling.get("partial_fourier_fraction", 0.75)))
         mask[:, ny - count :] = True
     elif fam == "reduced_fov":
-        mask[:, np.arange(ny)[(np.arange(ny) - ny // 2) % 2 == 0]] = True
+        step = round(1 / sampling.get("reduced_fov_fraction", 0.5))
+        mask[:, np.arange(ny)[(np.arange(ny) - ny // 2) % step == 0]] = True
     else:
         for y in range(ny):
             for z in range(nz[0]):
@@ -63,6 +65,7 @@ def make_sequence(
     preparations=64,
     ordering="forward",
     readout_flat=0.0016,
+    reduced_readout_dwell=None,
     echo_time=None,
     repetition_time=None,
     selective_rf_duration=0.012,
@@ -159,12 +162,13 @@ def make_sequence(
         tr = repetition_time
     if mutation == "all_refocusing":
         flip, tr = 180, 0.024
+    reduced_fraction = sampling.get("reduced_fov_fraction", 0.5)
     if reduced:
         rf, selective, rephase = pp.make_sinc_pulse(
             np.deg2rad(flip),
             duration=selective_rf_duration,
             dwell=reduced_rf_dwell or 0,
-            slice_thickness=fov[1] / 2,
+            slice_thickness=fov[1] * reduced_fraction,
             time_bw_product=reduced_excitation_tbw,
             apodization=0.5,
             return_gz=True,
@@ -179,16 +183,18 @@ def make_sequence(
             "z" if reduced_design == "inner_volume" else "y"
         )
         if mutation == "wrong_position" and reduced_design != "inner_volume":
-            rf.freq_offset = selective.amplitude * fov[1] / 2
+            rf.freq_offset = selective.amplitude * fov[1] * reduced_fraction
         preparations = min(preparations, 20)
     else:
         rf = None
     gre_gradient = gre_rephase = None
-    if not reduced and gre_excitation == "sinc":
+    if not reduced and (
+        gre_excitation == "sinc" or spec.get("slice_thickness_mm") is not None
+    ):
         rf, gre_gradient, gre_rephase = pp.make_sinc_pulse(
             np.deg2rad(flip),
             duration=0.0012,
-            slice_thickness=0.005,
+            slice_thickness=(spec.get("slice_thickness_mm") or 5.0) / 1000,
             time_bw_product=4,
             apodization=0.5,
             return_gz=True,
@@ -243,7 +249,7 @@ def make_sequence(
         ref, ref_gradient, _ = pp.make_sinc_pulse(
             np.pi,
             duration=reduced_refocusing_duration,
-            slice_thickness=reduced_refocusing_thickness or fov[1] / 2,
+            slice_thickness=reduced_refocusing_thickness or fov[1] * reduced_fraction,
             time_bw_product=reduced_refocusing_tbw,
             apodization=0.5,
             phase_offset=np.pi / 2,
@@ -256,10 +262,15 @@ def make_sequence(
         if mutation == "no_selection":
             ref_gradient = None
         if mutation == "wrong_position":
-            ref.freq_offset = ref_gradient.amplitude * fov[1] / 2
+            ref.freq_offset = ref_gradient.amplitude * fov[1] * reduced_fraction
     elif reduced_refocusing != "hard":
         raise ValueError(f"Unsupported reduced-FOV refocusing: {reduced_refocusing}")
-    read = trapezoid("x", flat_area=nx / fov[0], flat_time=readout_flat, system=system)
+    read_area = (
+        nx / fov[0]
+        if reduced_readout_dwell is None
+        else readout_flat / (fov[0] * reduced_readout_dwell)
+    )
+    read = trapezoid("x", flat_area=read_area, flat_time=readout_flat, system=system)
     pre_x = trapezoid("x", area=-read.area / 2, duration=0.0008, system=system)
     spoil_area = max(nx, 32) * 2 / fov[0] * spoiler_scale
     if spoiler_axis == "z":
@@ -426,15 +437,33 @@ def make_sequence(
         seq.add_block(*gradients)
         elapsed += pp.calc_duration(*gradients)
         delay = te + rfc - read.rise_time - read.flat_time / 2 - elapsed
+        if reduced_readout_dwell is not None:
+            delay = (
+                np.round(delay / system.block_duration_raster)
+                * system.block_duration_raster
+            )
         seq.add_block(pp.make_delay(delay))
         elapsed += delay
         events = [read]
         if pair is not None:
             xs = np.flatnonzero(mask[(slice(None), *pair)])
+            if reduced_readout_dwell is None:
+                dwell = read.flat_time / nx
+                adc_delay = read.rise_time + xs[0] * read.flat_time / nx
+            else:
+                dwell = reduced_readout_dwell
+                adc_delay = (
+                    read.rise_time
+                    + np.round(
+                        ((read.flat_time - len(xs) * dwell) / 2) / system.rf_raster_time
+                    )
+                    * system.rf_raster_time
+                    + xs[0] * dwell
+                )
             adc = pp.make_adc(
                 len(xs),
-                dwell=read.flat_time / nx,
-                delay=read.rise_time + xs[0] * read.flat_time / nx,
+                dwell=dwell,
+                delay=adc_delay,
                 phase_offset=phase,
                 system=system,
             )
@@ -469,7 +498,7 @@ def make_sequence(
         else:
             post = [
                 trapezoid(
-                    "x",
+                    spoiler_axis,
                     area=spoil_area * spoiler_factors[shot % len(spoiler_factors)],
                     duration=spoil_duration,
                     system=system,
@@ -492,14 +521,21 @@ def make_sequence(
                     )
                 )
                 if nz:
-                    post.append(
-                        trapezoid(
+                    rewinder = trapezoid(
+                        "z",
+                        area=-z / fov[2],
+                        duration=spoil_duration,
+                        system=system,
+                    )
+                    if post[0].channel == "z":
+                        post[0] = trapezoid(
                             "z",
-                            area=-z / fov[2],
+                            area=post[0].area + rewinder.area,
                             duration=spoil_duration,
                             system=system,
                         )
-                    )
+                    else:
+                        post.append(rewinder)
             seq.add_block(*post)
             elapsed += pp.calc_duration(*post)
         seq.add_block(pp.make_delay(tr - elapsed))

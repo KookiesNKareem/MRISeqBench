@@ -16,8 +16,13 @@ stable: append future tasks within each level instead of renumbering tasks.
 The infrastructure smoke task is unnumbered. T4.5 uses a fixed uniform-disc RF
 assay instead of cardiac anatomy; its phantom label is null (shown as `assay`
 in the CLI). This does not introduce a second numbered benchmark phantom.
-P0/P1/P2 and J0–J7 remain the authoring arm names; `P1 S1` as an arm
-means PyPulseq with MRzero, independently of phantom P1.
+Authoring labels follow Figure 1 of the
+[MRISeqBench Abstract](https://docs.google.com/document/d/1ssPmltYEzQQNVuKCOyroliBeHsXi6e7JOip7OZzillc/edit):
+P0 is PyPulseq, with S1/S3 for its simulator variants; J0–J4 identify the Julia
+tool configurations. J3 is PulseqBase.jl + Julia MCP (historical J6), and
+J4 S2 combines Pulseq.jl, Julia MCP, and KomaMRI.jl (historical J7).
+Phantom P1 is independent of these authoring labels. The complete mapping,
+including historical IDs, is in [ARMS.md](ARMS.md).
 
 ## Hardware
 
@@ -89,7 +94,8 @@ Task definitions use `sequence.level: T1` through `T4`, `object: P1@1`, and
 optionally `hardware: H3@1`. P1 resolves to the 2D or 3D cardiac object according
 to `sequence.matrix`; field-specific tissue properties are selected as before.
 T4.5 retains `object: uniform_disc@1` for its fixed RF assay. Arm definitions
-use `simulator: S1`, `S2`, `S3` or `none`; the existing language-compatibility
+use `simulator: S1`, `S2`, `S3` or `none`; experiment `arm` fields accept
+public labels such as `J4 S2@1` or `P0 S3@1`. The existing language-compatibility
 checks still apply. Manifest filenames and `id` fields retain their descriptive
 IDs; task labels are references, separate from manifest version numbers.
 
@@ -105,7 +111,10 @@ their existing spelling for saved contracts and campaign provenance.
 For repository analysis and listings, `case_labels(case)` from
 `mriseqbench.labels` computes the task, level, hardware and phantom labels
 without modifying the contract. Simulator modifiers are available through
-`SIMULATOR_LABELS` and `arm_label(arm)`.
+`SIMULATOR_LABELS` and `arm_label(arm)`. `ARM_REFERENCES` resolves public
+arm labels to manifest IDs. `J1 S2@1` is Pulseq.jl with KomaMRI.jl;
+`J4 S2@1` also includes Julia MCP.
+Historical prefixes are never used to infer the current label for catalog arms.
 
 `describe` accepts task and hardware labels, optionally with an explicit
 manifest version (e.g. `T2.6@2`). Existing manifest references still work:

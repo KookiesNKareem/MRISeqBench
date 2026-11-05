@@ -169,13 +169,32 @@ function serve()
     ready = "{\"mode\":\"persistent\",\"pid\":$(getpid()),\"julia_version\":\"$VERSION\",\"revise_version\":\"$(pkgversion(Revise))\",\"warmup\":[\"authoring\",\"pulseq_write_read\",\"revise\",\"revise_edit\"]}\n"
     write(joinpath(directory, "ready.tmp"), ready)
     mv(joinpath(directory, "ready.tmp"), joinpath(directory, "ready.json"))
+    # A CLI user can interrupt a request with SIGINT. Julia runs as container
+    # PID 1, so the default noninteractive exit would also kill the agent.
+    Base.exit_on_sigint(false)
     while true
-        for folder in readdir(directory; join=true)
-            if isfile(joinpath(folder, "request.toml")) && !isfile(joinpath(folder, "done"))
-                execute_request(folder)
+        try
+            for folder in readdir(directory; join=true)
+                if isfile(joinpath(folder, "request.toml")) && !isfile(joinpath(folder, "done"))
+                    execute_request(folder)
+                end
+            end
+            sleep(0.02)
+        catch exception
+            exception isa InterruptException || rethrow()
+            # Cover interruption during request bookkeeping or GC, outside the
+            # request's normal exception handler, as well as while idle.
+            for folder in readdir(directory; join=true)
+                if isfile(joinpath(folder, "running.toml")) && !isfile(joinpath(folder, "done"))
+                    touch(joinpath(folder, "stdout"))
+                    open(joinpath(folder, "stderr"), "a") do io
+                        println(io, "Julia request interrupted (SIGINT)")
+                    end
+                    write(joinpath(folder, "done.tmp"), "130")
+                    mv(joinpath(folder, "done.tmp"), joinpath(folder, "done"))
+                end
             end
         end
-        sleep(0.02)
     end
 end
 

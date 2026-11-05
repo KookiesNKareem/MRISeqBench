@@ -66,7 +66,9 @@ def make_sequence(case):
     x, y = np.meshgrid(axis, axis, indexing="ij")
     mask = x * x + y * y <= 60**2
     points = np.column_stack((x[mask], y[mask])) / 1000
-    target = target_at(np.stack((x, y), axis=-1))
+    target = target_at(
+        np.stack((x, y), axis=-1), case["task"]["sequence"].get("excitation_target")
+    )
     target = target[mask]
     # Exact small-tip encoding at interval midpoints, including relaxation/B0.
     remaining = (np.arange(count)[::-1] + 0.5) * dt + 31e-6

@@ -14,6 +14,17 @@ from pathlib import Path
 from ..io import write_json
 
 
+def helper_paths():
+    from .arm_mcp import MOUNTS
+
+    return [
+        Path(__file__).with_name(name)
+        for name in dict.fromkeys(
+            ["remote_author_worker.py", "arm_julia_client.py", *MOUNTS]
+        )
+    ]
+
+
 def ssh(host):
     return [
         "ssh",
@@ -88,10 +99,7 @@ class Fleet:
         self.broker_port = self.config.get("broker_port", 8766)
         if type(self.broker_port) is not int or not 1 <= self.broker_port <= 65535:
             raise ValueError("remote broker port must be an integer from 1 to 65535")
-        helpers = [
-            Path(__file__).with_name("remote_author_worker.py"),
-            Path(__file__).with_name("arm_gateway.py"),
-        ]
+        helpers = helper_paths()
         version = hashlib.sha256(b"".join(p.read_bytes() for p in helpers)).hexdigest()[
             :16
         ]
@@ -186,13 +194,15 @@ class Fleet:
     def launch(self, runtime, command, workspace, control, env):
         from . import arm_runtime
 
-        index = self.config["assignments"][workspace.parent.name]
+        trial_key = workspace.parent.name.split(".retry")[0]
+        index = self.config["assignments"][trial_key]
         host = self.hosts[index]
         self.slots[index].acquire()
         name = "mriseqbench-cloud-" + secrets.token_hex(12)
         token = secrets.token_hex(32)
         spec_path = control / "remote-author-spec.json"
         ready = False
+        completed = False
         try:
             remote(
                 host,
@@ -226,10 +236,8 @@ class Fleet:
                 ],
                 timeout=60,
             )
-            for path in [
-                Path(__file__).with_name("remote_author_worker.py"),
-                Path(__file__).with_name("arm_gateway.py"),
-            ]:
+            ready = True  # Return setup diagnostics even if MCP warmup fails.
+            for path in helper_paths():
                 sync(
                     host,
                     str(path),
@@ -252,11 +260,179 @@ class Fleet:
             )
             for k, value in env.items():
                 args += ["--env", f"{k}={value}"]
-            args += [image, "python3", "/mriseqbench-gateway.py", json.dumps(command)]
+            mcp = runtime.get("arm", {}).get("tool_interface") == "julia_mcp"
+            julia = runtime.get("arm", {}).get("language") == "julia"
+            isolation = {
+                "backend": "docker",
+                "remote_host": host,
+                "isolated": True,
+                "internet": False,
+                "container": name,
+                "persistent_container": mcp or julia,
+            }
+            if mcp:
+                from .arm_mcp import MOUNTS, TOOLS, UPSTREAM_COMMIT, pi_command
+
+                arm = runtime["arm"]
+                for filename, target in MOUNTS.items():
+                    if filename != "arm_gateway.py":
+                        args += arm_runtime.mount(
+                            self.helper_root + "/" + filename, target
+                        )
+                args += ["--env", f"MRISEQBENCH_AGENT_SIMULATOR={arm['simulator']}"]
+                started = time.monotonic()
+                remote(
+                    host,
+                    [
+                        "sudo",
+                        *args,
+                        "--detach",
+                        image,
+                        "/opt/mcp-venv/bin/python",
+                        "/arm_mcp_bridge.py",
+                        "--serve",
+                        "--workspace",
+                        str(workspace),
+                        "--heap",
+                        str(runtime["julia_heap_size_hint_mb"] or 100),
+                        "--agent-simulator",
+                        arm["simulator"],
+                        *(["--pulse-designer"] if arm["pulse_designer"] else []),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                timeout = runtime["setup_timeout_s"]
+                session = json.loads(
+                    remote(
+                        host,
+                        [
+                            "sudo",
+                            "docker",
+                            "exec",
+                            name,
+                            "/opt/mcp-venv/bin/python",
+                            "/arm_mcp_bridge.py",
+                            "--ready",
+                            "--timeout",
+                            str(timeout),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout + 10,
+                    ).stdout
+                )
+                if (
+                    session.get("mode") != "persistent_mcp"
+                    or session.get("pulse_designer") != arm["pulse_designer"]
+                    or session.get("simulator") != arm["simulator"]
+                ):
+                    raise ValueError(
+                        f"Remote Julia MCP session is not the selected arm: {session}"
+                    )
+                session.update(
+                    setup_elapsed_total_s=time.monotonic() - started,
+                    upstream_commit=UPSTREAM_COMMIT,
+                )
+                write_json(control / "julia-mcp-session.json", session)
+                isolation.update(
+                    julia_session=session,
+                    active_tools=TOOLS,
+                    tool_interface="aplavin/julia-mcp stdio through pinned Pi extension",
+                    upstream_commit=UPSTREAM_COMMIT,
+                )
+                author_command = [
+                    "sudo",
+                    "docker",
+                    "exec",
+                    name,
+                    "python3",
+                    "/mriseqbench-gateway.py",
+                    json.dumps(pi_command(command)),
+                ]
+            elif julia:
+                arm = runtime["arm"]
+                for filename in ("arm_julia_session.jl", "arm_julia_client.py"):
+                    args += arm_runtime.mount(
+                        self.helper_root + "/" + filename, "/" + filename
+                    )
+                started = time.monotonic()
+                timeout = runtime["setup_timeout_s"]
+                remote(
+                    host,
+                    [
+                        "sudo",
+                        *args,
+                        "--detach",
+                        image,
+                        "julia",
+                        "--startup-file=no",
+                        "--compiled-modules=existing",
+                        *(
+                            [f"--heap-size-hint={runtime['julia_heap_size_hint_mb']}M"]
+                            if runtime["julia_heap_size_hint_mb"] is not None
+                            else []
+                        ),
+                        "--project=/opt/author",
+                        "/arm_julia_session.jl",
+                        str(arm["pulse_designer"]).lower(),
+                        str(arm["unitful"]).lower(),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+                session = json.loads(
+                    remote(
+                        host,
+                        [
+                            "sudo",
+                            "docker",
+                            "exec",
+                            name,
+                            "python3",
+                            "/arm_julia_client.py",
+                            "--ready",
+                            "--timeout",
+                            str(timeout),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout + 5,
+                    ).stdout
+                )
+                if session.get("mode") != "persistent" or not session.get(
+                    "revise_version"
+                ):
+                    raise ValueError(
+                        "Remote Julia session did not confirm warm readiness"
+                    )
+                session["setup_elapsed_s"] = time.monotonic() - started
+                isolation["julia_session"] = session
+                write_json(control / "julia-session.json", session)
+                author_command = [
+                    "sudo",
+                    "docker",
+                    "exec",
+                    name,
+                    "python3",
+                    "/mriseqbench-gateway.py",
+                    json.dumps(command),
+                ]
+            else:
+                author_command = [
+                    "sudo",
+                    *args,
+                    image,
+                    "python3",
+                    "/mriseqbench-gateway.py",
+                    json.dumps(command),
+                ]
             write_json(
                 spec_path,
                 {
-                    "command": ["sudo", *args],
+                    "command": author_command,
                     "name": name,
                     "directory": str(control / "transport"),
                     "token": token,
@@ -288,15 +464,9 @@ class Fleet:
                         ]
                     )
                 ],
-                {
-                    "backend": "docker",
-                    "remote_host": host,
-                    "isolated": True,
-                    "internet": False,
-                    "container": name,
-                    "persistent_container": False,
-                },
+                isolation,
             )
+            completed = True
         finally:
             failure = None
             try:
@@ -359,7 +529,8 @@ class Fleet:
                     failure = exc
             with self.lock:
                 self.tokens.pop(token, None)
-                self.pending[index] -= 1
+                if completed and failure is None:
+                    self.pending[index] -= 1
                 retire = self.pending[index] == 0
             self.slots[index].release()
             if retire and failure is None and self.config.get("state_dir"):

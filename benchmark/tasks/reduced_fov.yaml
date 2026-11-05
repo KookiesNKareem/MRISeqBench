@@ -16,4 +16,27 @@ sequence:
   sampling:
     reduced_fov_fraction: 0.5
     pattern: reduced_fov
-evaluation: s3@4
+evaluation: s3@5
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm and set TE to 80 ms (tolerance
+    2 ms). Preserve the matrix and all other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    te_ms:
+      target: 80
+      tolerance: 2
+- id: parameter
+  request: Set TE to 100 ms (tolerance 2 ms). Retain the larger FOV and all other
+    requirements.
+  patch:
+    te_ms:
+      target: 100
+      tolerance: 2
+- id: sampling
+  request: Narrow the inner-volume reduced-FOV fraction along y to 0.25 (retaining
+    every 4th ky line), while retaining the 220 x 220 mm FOV and preceding TE change.
+  patch:
+    sampling.reduced_fov_fraction: 0.25

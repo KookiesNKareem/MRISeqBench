@@ -71,6 +71,20 @@ def test_tool_surface_is_consistent():
         "--mode",
         "json",
     ]
+    assert arm_mcp.pi_command(
+        ["python3", "/w/.workflow_rpc.py", "pi", "--mode", "rpc"]
+    ) == [
+        "python3",
+        "/w/.workflow_rpc.py",
+        "pi",
+        "--no-extensions",
+        "--extension",
+        "/arm_mcp_extension.ts",
+        "--tools",
+        ",".join(arm_mcp.TOOLS),
+        "--mode",
+        "rpc",
+    ]
     vendored = ROOT / "vendor/julia-mcp"
     assert "MIT License" in (vendored / "LICENSE").read_text()
     assert "async def julia_eval(" in (vendored / "server.py").read_text()

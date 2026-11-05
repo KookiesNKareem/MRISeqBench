@@ -121,6 +121,34 @@ def _peak_linear_rf_window(edges, coefficients, window_s):
     return float(averages[index]), float(starts[index]), float(width)
 
 
+def _trim_interval(edges, powers, active_start, active_end):
+    """Restrict piecewise-polynomial power to [active_start, active_end]."""
+    if active_end <= active_start or (
+        active_start <= 0.0 and active_end >= edges[-1] - 1e-12
+    ):
+        return edges, powers, 0.0
+    new_edges = [0.0]
+    new_powers = []
+    for i in range(len(powers)):
+        left, right = edges[i], edges[i + 1]
+        if right <= active_start + 1e-15 or left >= active_end - 1e-15:
+            continue
+        clipped_left = max(left, active_start)
+        clipped_right = min(right, active_end)
+        if clipped_right <= clipped_left + 1e-15:
+            continue
+        c0, c1, c2 = powers[i]
+        dt = clipped_left - left
+        if dt > 0 and (c1 != 0.0 or c2 != 0.0):
+            c0 = c0 + c1 * dt + c2 * dt * dt
+            c1 = c1 + 2.0 * c2 * dt
+        new_edges.append(float(clipped_right - active_start))
+        new_powers.append([float(c0), float(c1), float(c2)])
+    if len(new_edges) < 2:
+        return edges, powers, 0.0
+    return np.asarray(new_edges), np.asarray(new_powers), float(active_start)
+
+
 def sar_checks(seq, hardware):
     """Return required SAR checks using only the judge's hardware contract."""
     model = SARModel.model_validate(hardware["sar"])
@@ -140,6 +168,10 @@ def sar_checks(seq, hardware):
     edges, powers = [0.0], []
     clock = 0.0
     cache = {}
+    first_active_start = None
+    last_active_end = 0.0
+    rf_block_starts = []
+    has_physio_trigger = False
     for number, event_ids in seq.block_events.items():
         block_duration = float(seq.block_durations[number])
         if not np.isfinite(block_duration) or block_duration < 0:
@@ -154,7 +186,21 @@ def sar_checks(seq, hardware):
             continue
         end = clock + block_duration
         rf_id = int(event_ids[1])
+        has_rf_grad_adc = any(int(eid) != 0 for eid in event_ids[1:6])
+        block_has_trigger = False
+        if len(event_ids) > 6 and int(event_ids[6]) != 0:
+            block = seq.get_block(number)
+            for event in (getattr(block, "trigger", None) or {}).values():
+                if event.type == "trigger":
+                    block_has_trigger = True
+                    if event.channel == "physio1":
+                        has_physio_trigger = True
+        if (has_rf_grad_adc or block_has_trigger) and first_active_start is None:
+            first_active_start = clock
+        if has_rf_grad_adc:
+            last_active_end = end
         if rf_id:
+            rf_block_starts.append(clock)
             if rf_id not in cache:
                 rf = seq.get_block(number).rf
                 try:
@@ -189,10 +235,20 @@ def sar_checks(seq, hardware):
         or not np.isfinite(coefficient)
     ):
         raise ValueError("Invalid SAR integration timeline")
+    active_start = 0.0 if first_active_start is None else first_active_start
+    if has_physio_trigger:
+        target_end = last_active_end + 2.0
+    elif len(rf_block_starts) >= 2:
+        max_rf_gap = float(np.max(np.diff(rf_block_starts)))
+        target_end = max(last_active_end, rf_block_starts[-1] + max_rf_gap)
+    else:
+        target_end = last_active_end
+    active_end = min(clock, target_end) if last_active_end > active_start else clock
+    edges, powers, time_origin = _trim_interval(edges, powers, active_start, active_end)
     if not np.any(powers[:, 1:]):
         powers = powers[:, 0]
     checks = []
-    for window, multiplier in ((360, 1), (10, 2)):
+    for window, multiplier in ((360, 1), (10, 2), (1, 3)):
         mean_power, start, width = peak_window(edges, powers, window)
         value = coefficient * mean_power
         limit = model.whole_body_limit_W_per_kg * multiplier
@@ -205,12 +261,13 @@ def sar_checks(seq, hardware):
                     "field_strength_T": field,
                     "peak_W_per_kg": value,
                     "limit_W_per_kg": limit,
-                    "window_start_s": start,
+                    "window_start_s": start + time_origin,
                     "averaging_duration_s": width,
+                    "active_window_s": [float(active_start), float(active_end)],
                     "b1_rms_uT": float(np.sqrt(mean_power)),
                     "coefficient_W_per_kg_per_uT2": float(coefficient),
                     "load": model.model_dump(mode="json"),
-                    "scope": "synthetic global SAR; no local SAR or scanner certification",
+                    "scope": "synthetic global SAR over active acquisition window; no local SAR or scanner certification",
                 },
             }
         )

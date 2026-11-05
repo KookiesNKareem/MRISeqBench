@@ -1,5 +1,29 @@
 vec3(v) = vcat(Float64.(v), zeros(3-length(v)))
 sinusoid(e,t) = sin(2π*t/e["period_s"] + deg2rad(get(e,"phase_deg",0)))
+
+function cardiac_envelope(e,t)
+    rr = Float64(e["rr_interval_s"])
+    τ = mod(Float64(t), rr)
+    tsys = Float64(e["systolic_duration_s"])
+    d0, d1 = Float64.(e["diastolic_window_s"])
+    kick = Float64(get(e, "atrial_kick_scale", 0.35))
+    if τ < tsys
+        return sin(π * τ / tsys)^2
+    elseif τ <= d1
+        return 0.0
+    else
+        return kick * sin(π * (τ - d1) / (rr - d1))^2
+    end
+end
+
+function respiratory_envelope(e,t)
+    period = Float64(e["respiratory_period_s"])
+    tq = Float64(e["respiratory_quiescent_s"])
+    τ = mod(Float64(t), period)
+    τ <= tq && return 0.0
+    return sin(π * (τ - tq) / (period - tq))^2
+end
+
 function rotation(angles)
     a,b,c = deg2rad.(angles)
     rx = [1 0 0; 0 cos(a) -sin(a); 0 sin(a) cos(a)]
@@ -15,6 +39,12 @@ function coordinates(obj,e,t)
         s = sinusoid(e,t)
         return p * rotation([0,0,e["rotation_amplitude_deg"]*s])' .+
                (vec3(e["translation_amplitude_mm"])*s/1000)'
+    elseif model == "cardiac_respiratory"
+        sc = cardiac_envelope(e,t)
+        sr = respiratory_envelope(e,t)
+        rot = Float64(get(e,"cardiac_rotation_deg",0.0)) * sc
+        tr = (vec3(e["cardiac_translation_mm"])*sc .+ vec3(e["respiratory_translation_mm"])*sr)/1000
+        return p * rotation([0,0,rot])' .+ tr'
     elseif model == "affine_sinusoidal"
         return p .* (1 .+ vec3(e["strain_amplitude"])*sinusoid(e,t))'
     elseif model == "rigid_keyframes"
@@ -94,6 +124,25 @@ function native_motion!(c)
             a=vec3(e["translation_amplitude_mm"])/1000
             obj.motion=MotionList(rotate(0.0,0.0,Float64(e["rotation_amplitude_deg"]),tc;center=(0.0,0.0,0.0)),
                                   translate(a...,tc))
+        elseif e["model"] == "cardiac_respiratory"
+            t_card=collect(range(0.0,Float64(e["rr_interval_s"]),length=1025))
+            tc_card=TimeCurve(t=t_card,t_unit=cardiac_envelope.(Ref(e),t_card),periodic=true)
+            a_card=vec3(e["cardiac_translation_mm"])/1000
+            a_resp=vec3(e["respiratory_translation_mm"])/1000
+            if all(iszero, a_resp)
+                obj.motion=MotionList(
+                    rotate(0.0,0.0,Float64(get(e,"cardiac_rotation_deg",0.0)),tc_card;center=(0.0,0.0,0.0)),
+                    translate(a_card...,tc_card),
+                )
+            else
+                t_resp=collect(range(0.0,Float64(e["respiratory_period_s"]),length=1025))
+                tc_resp=TimeCurve(t=t_resp,t_unit=respiratory_envelope.(Ref(e),t_resp),periodic=true)
+                obj.motion=MotionList(
+                    rotate(0.0,0.0,Float64(get(e,"cardiac_rotation_deg",0.0)),tc_card;center=(0.0,0.0,0.0)),
+                    translate(a_card...,tc_card),
+                    translate(a_resp...,tc_resp),
+                )
+            end
         else
             if e["model"] == "rigid_keyframes"
                 poses=e["poses"]; t=Float64[q["time_s"] for q in poses]

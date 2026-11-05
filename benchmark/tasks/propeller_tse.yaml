@@ -18,4 +18,23 @@ sequence:
     echo_train_length: 8
     blade_width_lines: 8
     echo_spacing_ms: 10
-evaluation: s2@5
+evaluation: s2@6
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: parameter
+  request: Set TE to 50 ms (tolerance 2 ms). Retain the larger FOV and all other requirements.
+  patch:
+    te_ms:
+      target: 50
+      tolerance: 2
+- id: readout
+  request: Increase the PROPELLER readout to 48 rotated blades (still 16 lines per
+    blade), while retaining the 220 x 220 mm FOV and preceding TE change.
+  patch:
+    readout.shots: 48

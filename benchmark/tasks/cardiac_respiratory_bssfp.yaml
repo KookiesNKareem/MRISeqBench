@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.9
+id: cardiac_respiratory_bssfp
+version: 2
+objective: Acquire an ECG-triggered, respiratory-gated 2D balanced SSFP cardiac image
+  across four 32-line segments in the 600 to 800 ms mid-diastolic window (1000 ms RR
+  interval), gating one segment per 4000 ms end-expiratory respiratory cycle.
+object: P1@1
+evaluation: s4@4
+sequence:
+  level: T4
+  capabilities: [bssfp, cartesian, triggering, gating]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  duration_s: 20
+  temporal:
+    frames: 1
+    trigger_source: ecg
+    rr_interval_ms: 1000
+    trigger_delay_ms: 600
+    acquisition_window_ms: 200
+    segments_per_frame: 4
+    respiratory_period_ms: 4000
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm. Preserve the matrix and all
+    other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+- id: window
+  request: Shift the mid-diastolic acquisition window start to 640 ms and narrow the
+    acquisition window to 160 ms. Retain the 220 x 220 mm FOV and all other requirements.
+  patch:
+    temporal.trigger_delay_ms: 640
+    temporal.acquisition_window_ms: 160
+- id: segmentation
+  request: Acquire the cardiac frame across 8 respiratory-gated ECG segments (16 lines
+    per 4000 ms respiratory cycle) within a 100 ms mid-diastolic acquisition window
+    starting at 640 ms and a 40 s duration budget, retaining the 220 x 220 mm FOV.
+  patch:
+    temporal.segments_per_frame: 8
+    temporal.acquisition_window_ms: 100
+    duration_s: 40

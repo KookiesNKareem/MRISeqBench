@@ -14,6 +14,66 @@ import numpy as np
 ENGINE = os.environ["MRISEQBENCH_SIMULATOR"]
 
 
+def _mrzero_sequence_path(source, output, case):
+    import pypulseq as pp
+
+    seq_path = source / "sequence.seq"
+    rr_ms = (
+        case.get("task", {})
+        .get("sequence", {})
+        .get("temporal", {})
+        .get("rr_interval_ms")
+    )
+    raw = pp.Sequence(pp.Opts(B0=case["hardware"]["field_strength_T"]))
+    raw.read(str(seq_path))
+    has_adc = any(raw.get_block(b).adc is not None for b in raw.block_events)
+    if rr_ms is None and has_adc:
+        return seq_path
+    resolved = pp.Sequence(raw.system)
+    rr_s = float(rr_ms) / 1000.0 if rr_ms is not None else None
+    clock = 0.0
+    last_r_wave = -np.inf
+    raster = raw.block_duration_raster
+    for number in raw.block_events:
+        block = raw.get_block(number)
+        if rr_s is not None:
+            for event in (getattr(block, "trigger", None) or {}).values():
+                if event.type == "trigger" and event.channel == "physio1":
+                    t_arm = clock + float(event.delay)
+                    r_wave = max(
+                        np.ceil((t_arm - 1e-12) / rr_s) * rr_s,
+                        last_r_wave + rr_s,
+                    )
+                    wait = round((r_wave - t_arm) / raster) * raster
+                    if wait > 0:
+                        resolved.add_block(pp.make_delay(wait))
+                        clock += wait
+                    last_r_wave = r_wave
+        events = [
+            e
+            for k in ("rf", "gx", "gy", "gz", "adc")
+            if (e := getattr(block, k, None)) is not None
+        ]
+        duration = raw.block_durations[number]
+        if events:
+            resolved.add_block(*events, pp.make_delay(duration))
+        else:
+            resolved.add_block(pp.make_delay(duration))
+        clock += duration
+    if not has_adc:
+        resolved.add_block(
+            pp.make_adc(
+                num_samples=1,
+                dwell=raw.system.adc_raster_time,
+                delay=raw.system.adc_dead_time,
+                system=raw.system,
+            )
+        )
+    out_path = output / ".mrzero-resolved.seq"
+    resolved.write(str(out_path))
+    return out_path
+
+
 def simulate(source, output):
     source, output = Path(source), Path(output)
     case = json.loads((source / "case.json").read_text())
@@ -60,19 +120,34 @@ def simulate(source, output):
 
         obj = km.files.read_phantom(str(source / "phantom.phantom"))
         seq = km.files.read_seq(str(source / "sequence.seq"))
-        sim_params = km.core.default_sim_params()
-        sim_params["return_type"] = "mat"
-        sim_params["gpu"] = True
-        signal = np.asarray(
-            km.simulate(
-                obj,
-                seq,
-                km.Scanner(
-                    limits=km.HardwareLimits(B0=case["hardware"]["field_strength_T"])
-                ),
-                sim_params=sim_params,
-            )
+        rr_ms = (
+            case.get("task", {})
+            .get("sequence", {})
+            .get("temporal", {})
+            .get("rr_interval_ms")
         )
+        if rr_ms is not None:
+            seq = jl.KomaMRIBase.resolve_triggers(
+                seq,
+                jl.KomaMRIBase.CardiacSignal(
+                    heart_rate=1000.0 / float(rr_ms), first_peak=0.0
+                ),
+            )
+        has_adc = bool(
+            int(jl.seval("seq -> sum(adc.N for adc in seq.ADC; init=0)")(seq)) > 0
+        )
+        sim_params = km.core.default_sim_params()
+        sim_params["return_type"] = "mat" if has_adc else "state"
+        sim_params["gpu"] = True
+        raw_out = km.simulate(
+            obj,
+            seq,
+            km.Scanner(
+                limits=km.HardwareLimits(B0=case["hardware"]["field_strength_T"])
+            ),
+            sim_params=sim_params,
+        )
+        signal = np.asarray(raw_out if has_adc else raw_out.xy)
     elif ENGINE == "mrzero":
         import MRzeroCore as mr0
         import torch
@@ -111,7 +186,10 @@ def simulate(source, output):
                 voxel_shape="box",
             )
             obj = phantom.build()
-        seq = mr0.Sequence.import_file(str(source / "sequence.seq"))
+        resolved_path = _mrzero_sequence_path(source, output, case)
+        seq = mr0.Sequence.import_file(str(resolved_path))
+        if resolved_path != source / "sequence.seq":
+            resolved_path.unlink(missing_ok=True)
         graph = mr0.compute_graph(seq, obj, 200, 1e-5)
         cuda_obj = obj.cuda()
         # MRzeroCore 1.1.1's SimData.cuda() retains the CPU dephasing closure.

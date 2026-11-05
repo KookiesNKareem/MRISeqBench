@@ -44,6 +44,45 @@
           },
           "title": "Preparation Durations Ms",
           "type": "array"
+        },
+        "b_value_s_per_mm2": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "B Value S Per Mm2"
+        },
+        "venc_cm_per_s": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Venc Cm Per S"
+        },
+        "fat_suppression_max_ratio": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fat Suppression Max Ratio"
         }
       },
       "title": "ApplicationSpec",
@@ -79,6 +118,34 @@
         }
       },
       "title": "ExcitationTarget",
+      "type": "object"
+    },
+    "Followup": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "request": {
+          "minLength": 1,
+          "title": "Request",
+          "type": "string"
+        },
+        "patch": {
+          "additionalProperties": true,
+          "minProperties": 1,
+          "title": "Patch",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "request",
+        "patch"
+      ],
+      "title": "Followup",
       "type": "object"
     },
     "ReadoutSpec": {
@@ -359,7 +426,10 @@
               "mapping",
               "triggering",
               "gating",
-              "rf_excitation_2d"
+              "rf_excitation_2d",
+              "water_selective",
+              "diffusion",
+              "flow_encoding"
             ],
             "type": "string"
           },
@@ -444,6 +514,19 @@
             }
           ],
           "title": "Fov Mm"
+        },
+        "slice_thickness_mm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slice Thickness Mm"
         },
         "te_ms": {
           "anyOf": [
@@ -625,6 +708,19 @@
           ],
           "default": null,
           "title": "Acquisition Window Ms"
+        },
+        "respiratory_period_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Respiratory Period Ms"
         }
       },
       "required": [
@@ -698,6 +794,13 @@
       "exclusiveMinimum": 0,
       "title": "Version",
       "type": "integer"
+    },
+    "followups": {
+      "items": {
+        "$ref": "#/$defs/Followup"
+      },
+      "title": "Followups",
+      "type": "array"
     },
     "objective": {
       "minLength": 1,

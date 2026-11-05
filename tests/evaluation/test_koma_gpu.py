@@ -9,6 +9,7 @@ from pypulseq import (
     Opts,
     Sequence,
     make_adc,
+    make_arbitrary_rf,
     make_block_pulse,
     make_delay,
 )
@@ -213,4 +214,164 @@ def test_cuda_canonical_adc_compression_matches_full_rf_history(
     )
     compressed = rf_only_response(source, properties, ideal_spoiling=ideal_spoiling)
     np.testing.assert_allclose(compressed, full, atol=1e-9, rtol=1e-9)
+    assert s1_koma.worker().execution["cpu_fallback"] is False
+
+
+def test_cuda_reduced_fov_projection_matches_imperfect_refocuser_pathway(
+    tmp_path,
+):
+    from mriseqbench.evaluation.s1_image import canonical_response, rf_only_response
+
+    system = Opts(B0=3, rf_dead_time=0, rf_ringdown_time=0, adc_dead_time=0)
+    properties = np.array([[1.0, 1e3, 1e3]])
+    catalog = Catalog(ROOT)
+    case = catalog.resolve(
+        catalog.get("tasks", "reduced_fov"), hardware_ref="high_performance@1"
+    )
+
+    def spin_echo(flip, phase):
+        seq = Sequence(system)
+        seq.add_block(
+            make_block_pulse(np.pi / 2, duration=0.0002, system=system, use="excitation")
+        )
+        seq.add_block(make_delay(0.005))
+        seq.add_block(
+            make_block_pulse(
+                np.deg2rad(flip),
+                duration=0.0002,
+                phase_offset=phase,
+                system=system,
+                use="refocusing",
+            )
+        )
+        seq.add_block(make_delay(0.005))
+        seq.add_block(make_adc(1, dwell=20e-6, system=system))
+        path = tmp_path / f"echo-{flip}-{phase}.seq"
+        seq.write(str(path))
+        acquisition = inspect_sequence(path, case)
+        if flip < 135:
+            # The production parser reserves this flag for near-180 pulses;
+            # force the event into the projection operator to test its 120° law.
+            acquisition.pulses[-1].refocusing = True
+        return acquisition
+
+    def long_shaped_spin_echo():
+        seq = Sequence(system)
+        seq.add_block(
+            make_block_pulse(
+                np.pi / 2, duration=0.0002, system=system, use="excitation"
+            )
+        )
+        seq.add_block(make_delay(0.005))
+        # A single 6.2 ms RF event (>300 native 20 us intervals), with no
+        # zero-envelope padding and an internal zero-B1 gap. Normalize its
+        # area to 120 degrees so the ideal on-resonance echo is 0.75.
+        waveform = np.ones(310)
+        waveform[145:165] = 0
+        refocuser = make_arbitrary_rf(
+            waveform,
+            flip_angle=np.deg2rad(120),
+            no_signal_scaling=False,
+            dwell=20e-6,
+            system=system,
+            use="refocusing",
+        )
+        seq.add_block(refocuser)
+        seq.add_block(make_delay(0.005))
+        seq.add_block(make_adc(1, dwell=20e-6, system=system))
+        path = tmp_path / "long-shaped-echo.seq"
+        seq.write(str(path))
+        acquisition = inspect_sequence(path, case)
+        acquisition.pulses[-1].refocusing = True
+        return acquisition
+
+    def mz_to_transverse():
+        seq = Sequence(system)
+        seq.add_block(
+            make_block_pulse(
+                np.deg2rad(120),
+                duration=0.0002,
+                phase_offset=0.41,
+                system=system,
+                use="refocusing",
+            )
+        )
+        seq.add_block(make_delay(0.005))
+        seq.add_block(make_adc(1, dwell=20e-6, system=system))
+        path = tmp_path / "mz-to-transverse.seq"
+        seq.write(str(path))
+        acquisition = inspect_sequence(path, case)
+        acquisition.pulses[-1].refocusing = True
+        return acquisition
+
+    def repeated_echoes():
+        seq = Sequence(system)
+        seq.add_block(
+            make_block_pulse(
+                np.deg2rad(120), duration=0.0002, system=system, use="refocusing"
+            )
+        )
+        seq.add_block(make_delay(0.005))
+        seq.add_block(
+            make_block_pulse(np.pi / 2, duration=0.0002, system=system, use="excitation")
+        )
+        seq.add_block(make_delay(0.005))
+        seq.add_block(
+            make_block_pulse(
+                np.deg2rad(120),
+                duration=0.0002,
+                phase_offset=0.73,
+                system=system,
+                use="refocusing",
+            )
+        )
+        seq.add_block(make_delay(0.005))
+        seq.add_block(make_adc(1, dwell=20e-6, system=system))
+        path = tmp_path / "repeated-echoes.seq"
+        seq.write(str(path))
+        acquisition = inspect_sequence(path, case)
+        for pulse in acquisition.pulses:
+            if abs(pulse.flip - 120) < 1:
+                pulse.refocusing = True
+        return acquisition
+
+    refocus_180 = spin_echo(180, 0.41)
+    refocus_120 = spin_echo(120, np.pi / 2)
+    for acquisition, expected in ((refocus_180, 1.0), (refocus_120, 0.75)):
+        projected = canonical_response(
+            acquisition, properties, "reduced_fov", finite_rf=True
+        )[0, 0]
+        np.testing.assert_allclose(abs(projected), expected, atol=0.015, rtol=0.015)
+    long_shaped = long_shaped_spin_echo()
+    long_shaped_response = canonical_response(
+        long_shaped, properties, "reduced_fov", finite_rf=True
+    )[0, 0]
+    np.testing.assert_allclose(abs(long_shaped_response), 0.75, atol=0.025, rtol=0.025)
+    unprojected = rf_only_response(refocus_120, properties, ideal_spoiling=True)[0, 0]
+    projected = canonical_response(
+        refocus_120, properties, "reduced_fov", finite_rf=True
+    )[0, 0]
+    assert abs(unprojected) > abs(projected) + 0.20
+
+    mz_only = mz_to_transverse()
+    mz_fid = rf_only_response(mz_only, properties, ideal_spoiling=True)[0, 0]
+    mz_projected = canonical_response(
+        mz_only, properties, "reduced_fov", finite_rf=True
+    )[0, 0]
+    assert abs(mz_fid) > 0.50
+    assert abs(mz_projected) < 0.02
+
+    baseline = canonical_response(
+        spin_echo(120, 0.0), properties, "reduced_fov", finite_rf=True
+    )
+    for phase in (0.61, 1.92, 3.37):
+        varied = canonical_response(
+            spin_echo(120, phase), properties, "reduced_fov", finite_rf=True
+        )
+        np.testing.assert_allclose(varied, baseline, atol=0.015, rtol=0.015)
+
+    repeated = canonical_response(
+        repeated_echoes(), properties, "reduced_fov", finite_rf=True
+    )[0, 0]
+    np.testing.assert_allclose(abs(repeated), 0.375, atol=0.02, rtol=0.02)
     assert s1_koma.worker().execution["cpu_fallback"] is False

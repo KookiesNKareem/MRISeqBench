@@ -3,7 +3,8 @@ schema_version: 1
 id: pi_j5_pulseq_julia_unitful_koma
 version: 1
 suite: full@1
-arm: j5_pulseq_julia_unitful_koma@1
+# Public arm: J2 S2; filename and experiment ID retain historical naming.
+arm: J2 S2@1
 arm_runtime:
   author_image: mriseqbench/author-pulseq_julia_unitful:local
   simulator_image: mriseqbench/sim-koma:local

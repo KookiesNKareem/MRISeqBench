@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=../../schemas/arms.schema.json
+# Public arm label: J1. Historical ID retained for provenance.
 schema_version: 1
 id: j1_pulseq_julia
 version: 1

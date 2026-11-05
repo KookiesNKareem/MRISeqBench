@@ -11,9 +11,9 @@ Agents submit Pulseq `sequence.seq` files for physical waveform checks and Bloch
 simulation. Imaging tasks use BART reconstruction and image-quality evaluation;
 RF design tasks score spatial magnetization directly.
 
-An opt-in [agentic development suite](docs/AGENTIC.md) adds four-stage workflows
-for all 27 tasks. It is draft and requires separate simulation qualification.
-Single-turn experiments remain the default.
+Set `agentic: true` in an experiment to run [multi-turn edits](docs/AGENTIC.md)
+after successful generation. All 27 tasks include follow-ups; single-turn runs
+remain the default. Edited specifications still need simulation qualification.
 
 The first stable source release is **v1.0.0**. Use `git checkout v1.0.0` after
 cloning to reproduce this benchmark definition. See the [release notes](CHANGELOG.md)
@@ -34,8 +34,9 @@ Imaging tasks use static cardiac anatomy with fat and field-dependent T1/T2, fat
 shift and B0 ([cardiac phantom](docs/CARDIAC_PHANTOM.md)); the 2D RF task uses a
 uniform water disc and a fixed AI target. Reconstruction is standard BART with
 fixed settings. The full suite has 27 tasks on three scanner profiles (81 cases)
-at 128×128 (128×128×32 for volumes), each with a qualified
-[reference pulse](benchmark/references/README.md).
+at 128×128 (128×128×32 for volumes). [Reference authors and qualification](benchmark/references/README.md)
+are evaluator-version-specific; earlier passes do not establish qualification
+under this branch's stricter image limits.
 
 ## Run
 

@@ -1,8 +1,11 @@
 """Nonnegative error intervals and independent receiver/dropout stress controls."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
+from mriseqbench.catalog import Catalog
 from mriseqbench.evaluation.s1 import resolve_decision, score_precision
 from mriseqbench.evaluation.s1_case import case_bounds, case_image_scores
 from mriseqbench.models import ImagePrecision
@@ -65,8 +68,11 @@ def test_large_or_invalid_error_interval_does_not_pass(squared_interval):
     assert outcome is not True
 
 
-@pytest.mark.parametrize("corruption", ["none", "receiver", "blank", "gain", "ghost"])
-def test_physical_image_requirements_still_reject_corruption(corruption):
+@pytest.mark.parametrize("evaluator", ["s1", "s2", "s3", "s4"])
+@pytest.mark.parametrize(
+    "corruption", ["none", "receiver", "blank", "gain", "ghost", "faint_ghost"]
+)
+def test_physical_image_requirements_still_reject_corruption(corruption, evaluator):
     reference = np.ones((8, 8), complex)
     reference[4:] = 2
     images = np.repeat(reference[None], 8, axis=0)
@@ -78,6 +84,9 @@ def test_physical_image_requirements_still_reject_corruption(corruption):
         images *= 2
     elif corruption == "ghost":
         images = np.roll(images, 4, axis=1)
+    elif corruption == "faint_ghost":
+        # A 20% displaced copy passed the former 0.35 magnitude-NRMSE limit.
+        images += 0.2 * np.roll(images, 4, axis=1)
     support = np.ones((8, 8), bool)
     masks = {
         "myocardium": np.indices((8, 8))[0] < 4,
@@ -88,14 +97,10 @@ def test_physical_image_requirements_still_reject_corruption(corruption):
     )
     tolerances = ImagePrecision().model_dump()
     precise, _ = score_precision(metrics, intervals, tolerances)
-    criteria = {
-        "complex_nrmse_max": 0.45,
-        "magnitude_nrmse_max": 0.35,
-        "phase_rms_rad_max": 0.35,
-        "tissue_signal_fraction_min": 0.5,
-        "contrast_retention_min": 0.5,
-        "outside_energy_fraction_max": 0.25,
-    }
+    catalog = Catalog(Path(__file__).resolve().parents[2])
+    criteria = catalog.get("evaluators", evaluator).case_image_criteria[
+        "static"
+    ].model_dump()
     outcome, _ = resolve_decision(
         case_bounds(criteria),
         metrics,

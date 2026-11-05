@@ -21,9 +21,10 @@ shape deformation. Axis midpoints are subtracted, translating the source's z
 centre from approximately +20 mm to zero. Rounded Float32 coordinates are
 replaced with the declared uniform lattice spacing, removing only coordinate
 roundoff. The physical grid extends ±67.5 mm, ±66.75 mm and ±81.75 mm and fits
-the existing 200 mm field of view. The 2D object is native z plane 545
-(zero-based), immediately above the volume centre, with the same x/y cell
-geometry and material properties. It is the short-axis view of the same anatomy.
+the existing 200 mm field of view. The 2D object is native z plane 411
+(zero-based), the native z = 0 m mid-ventricular short-axis plane of the source
+phantom, with the same x/y cell geometry and material properties. It is the
+short-axis view of the same anatomy.
 
 The source has no motion or spatial B0 map. The benchmark adds a separate,
 static spatial B0 profile; this profile and intrinsic fat chemical shift remain

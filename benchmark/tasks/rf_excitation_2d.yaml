@@ -7,10 +7,37 @@ objective: Excite the upright letters AI in the supplied uniform water disc, mat
   the response is measured 1 microsecond after sequence end, with relaxation and declared B0. Finish
   within 40 ms.
 object: uniform_disc@1
-evaluation: rf_excitation@3
+evaluation: rf_excitation@4
 sequence:
   level: T4
   capabilities: [rf_excitation_2d]
   matrix: [128, 128]
   fov_mm: [200, 200]
   duration_s: 0.04
+followups:
+- id: amplitude
+  request: Reduce target transverse magnitude to 0.35; keep the target location and
+    shape.
+  patch:
+    excitation_target:
+      amplitude: 0.35
+      offset_mm:
+      - 0
+      - 0
+- id: translate
+  request: Translate the target by +10 mm along x; retain magnitude 0.35.
+  patch:
+    excitation_target:
+      amplitude: 0.35
+      offset_mm:
+      - 10
+      - 0
+- id: diagonal_shift
+  request: Set the target excitation amplitude to 0.45 and shift the target pattern
+    to (+10, -10) mm.
+  patch:
+    excitation_target:
+      amplitude: 0.45
+      offset_mm:
+      - 10
+      - -10

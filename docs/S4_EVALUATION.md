@@ -93,11 +93,11 @@ Readout transients, blur, displacement and B0 magnitude loss remain image errors
 
 | Every frame must meet | Limit |
 |---|---:|
-| Complex / magnitude NRMSE | ≤0.45 / ≤0.35 |
-| Phase RMS | ≤0.35 rad |
-| Minimum tissue signal | ≥0.5 |
-| Contrast retention (non-mapping tasks) | ≥0.5 |
-| Outside-object energy | ≤0.25 |
+| Complex / magnitude NRMSE | ≤0.15 / ≤0.10 |
+| Phase RMS | ≤0.15 rad |
+| Minimum tissue signal | ≥0.8 |
+| Contrast retention (non-mapping tasks) | ≥0.8 |
+| Outside-object energy | ≤0.01 |
 
 Myocardial echo signal must be ≥0.01 PD. The preparation effect is
 |S_prep − S_no-prep| / PD at the myocardium and the frame's k-space-centre echo, where S is the

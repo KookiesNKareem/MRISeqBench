@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../schemas/tasks.schema.json
+# T4.6
+id: water_selective_gre
+version: 2
+objective: Acquire a 2D water-selective spoiled GRE image on a 128 x 128 grid over a 200 x 200 mm FOV
+  using binomial or spectral-spatial water-selective excitation (without separate fat saturation or inversion
+  pulses) so that off-resonance fat excitation is suppressed below 15% of water excitation.
+object: P1@1
+evaluation: s4@4
+sequence:
+  level: T4
+  capabilities: [spoiled_gre, cartesian, water_selective]
+  matrix: [128, 128]
+  fov_mm: [200, 200]
+  te_ms: {target: 8.5, tolerance: 0.5}
+  tr_ms: {target: 24, tolerance: 1.0}
+  duration_s: 6
+  flip_angle_deg: 20
+  application:
+    fat_suppression_max_ratio: 0.15
+followups:
+- id: fov
+  request: Increase the in-plane FOV to 220 x 220 mm and set TR to 28 ms (tolerance 1.0 ms). Preserve
+    the matrix and all other requirements.
+  patch:
+    fov_mm:
+    - 220
+    - 220
+    tr_ms:
+      target: 28
+      tolerance: 1.0
+- id: parameter
+  request: Increase the water-selective flip angle to 25 degrees and tighten fat suppression so the fat-to-water
+    excitation ratio is at most 0.10. Retain the larger FOV and all other requirements.
+  patch:
+    flip_angle_deg: 25
+    application.fat_suppression_max_ratio: 0.10
+- id: timing
+  request: Set TE to 10.5 ms (tolerance 0.5 ms) and TR to 32 ms (tolerance 1.0 ms), retaining the 220
+    x 220 mm FOV, 25-degree flip angle, and <= 0.10 fat-to-water excitation ratio.
+  patch:
+    te_ms:
+      target: 10.5
+      tolerance: 0.5
+    tr_ms:
+      target: 32
+      tolerance: 1.0

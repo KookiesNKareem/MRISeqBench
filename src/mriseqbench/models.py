@@ -12,7 +12,7 @@ from pydantic import (
     model_validator,
 )
 
-from .labels import LEVEL_LABELS, SIMULATOR_LABELS, catalog_reference
+from .labels import ARM_REFERENCES, LEVEL_LABELS, SIMULATOR_LABELS, catalog_reference
 
 Positive = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 Finite = Annotated[float, Field(allow_inf_nan=False)]
@@ -20,6 +20,17 @@ PositiveInt = Annotated[int, Field(gt=0)]
 NonNegative = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Identifier = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")]
 Reference = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*@[1-9][0-9]*$")]
+ArmReference = Annotated[
+    Reference,
+    BeforeValidator(
+        lambda value: catalog_reference("arms", value),
+        json_schema_input_type=Reference
+        | Annotated[
+            str,
+            Field(pattern=r"^(" + "|".join(ARM_REFERENCES) + r")@[1-9][0-9]*$"),
+        ],
+    ),
+]
 TaskReference = Annotated[
     Reference,
     BeforeValidator(
@@ -110,6 +121,9 @@ SEQUENCE_CATEGORIES = {
         "triggering",
         "gating",
         "rf_excitation_2d",
+        "water_selective",
+        "diffusion",
+        "flow_encoding",
     ),
 }
 Capability = Literal[
@@ -183,6 +197,7 @@ class TemporalSpec(Strict):
     rr_interval_ms: Positive | None = None
     trigger_delay_ms: NonNegative | None = None
     acquisition_window_ms: Positive | None = None
+    respiratory_period_ms: Positive | None = None
 
     @model_validator(mode="after")
     def cardiac_window(self):
@@ -203,6 +218,11 @@ class TemporalSpec(Strict):
                 raise ValueError(
                     "cardiac acquisition window must end within the RR interval"
                 )
+        if self.respiratory_period_ms is not None:
+            if self.trigger_source != "ecg" or self.rr_interval_ms is None:
+                raise ValueError("respiratory_period_ms requires ECG triggering")
+            if self.respiratory_period_ms < self.rr_interval_ms:
+                raise ValueError("respiratory_period_ms must be at least rr_interval_ms")
         return self
 
 
@@ -211,6 +231,9 @@ class ApplicationSpec(Strict):
     inversion_times_ms: list[Positive] = Field(default_factory=list)
     preparation_duration_ms: Positive | None = None
     preparation_durations_ms: list[NonNegative] = Field(default_factory=list)
+    b_value_s_per_mm2: Positive | None = None
+    venc_cm_per_s: Positive | None = None
+    fat_suppression_max_ratio: Positive | None = None
 
     @model_validator(mode="after")
     def increasing_preparations(self):
@@ -235,6 +258,7 @@ class SequenceSpec(Strict):
     capabilities: Annotated[list[Capability], Field(min_length=1)]
     matrix: Grid
     fov_mm: Extent
+    slice_thickness_mm: Positive | None = None
     te_ms: Timing | None = None
     tr_ms: Timing | None = None
     duration_s: Positive
@@ -254,6 +278,8 @@ class SequenceSpec(Strict):
             )
         if len(self.matrix) != len(self.fov_mm):
             raise ValueError("matrix and FOV dimensions must match")
+        if self.slice_thickness_mm is not None and len(self.matrix) != 2:
+            raise ValueError("slice_thickness_mm is restricted to 2D acquisitions")
         if len(set(self.capabilities)) != len(self.capabilities):
             raise ValueError("duplicate capabilities")
         return self
@@ -264,7 +290,15 @@ class Submission(Strict):
     file: Literal["sequence.seq"] = "sequence.seq"
 
 
+class Followup(Strict):
+    id: Identifier
+    request: Annotated[str, Field(min_length=1)]
+    # Dotted paths relative to SequenceSpec. Values replace the whole named field.
+    patch: dict[str, object] = Field(min_length=1)
+
+
 class Task(Document):
+    followups: list[Followup] = Field(default_factory=list)
     schema_version: Literal[1] = 1
     version: PositiveInt = 1
     objective: Annotated[str, Field(min_length=1)]
@@ -278,7 +312,7 @@ class Task(Document):
     def cardiac_application_contract(self):
         if self.id == "rf_excitation_2d" and (
             self.sequence.level != "S4"
-            or self.evaluation != "rf_excitation@3"
+            or self.evaluation != "rf_excitation@4"
             or self.object != "uniform_disc@1"
             or self.sequence.capabilities != ["rf_excitation_2d"]
             or self.sequence.matrix != (128, 128)
@@ -291,6 +325,7 @@ class Task(Document):
                     self.sequence.temporal,
                     self.sequence.application,
                     self.sequence.flip_angle_deg,
+                    self.sequence.slice_thickness_mm,
                     self.sequence.te_ms,
                     self.sequence.tr_ms,
                 )
@@ -299,7 +334,12 @@ class Task(Document):
             raise ValueError(
                 "AI excitation requires the fixed S4 excitation-only water-disc contract"
             )
-        if self.sequence.level == "S4" and self.id != "rf_excitation_2d":
+        if self.sequence.level == "S4" and self.id not in {
+            "rf_excitation_2d",
+            "water_selective_gre",
+            "dwi_epi",
+            "venc_flow_2d",
+        }:
             if not {"triggering", "gating"} <= set(self.sequence.capabilities):
                 raise ValueError(
                     "S4 cardiac applications require triggering and gating capabilities"
@@ -461,6 +501,37 @@ class Deformation(Strict):
         return self
 
 
+class CardiacRespiratoryMotion(Strict):
+    kind: Literal["motion"]
+    model: Literal["cardiac_respiratory"]
+    rr_interval_s: Positive
+    systolic_duration_s: Positive
+    diastolic_window_s: tuple[NonNegative, Positive]
+    cardiac_translation_mm: Vector
+    cardiac_rotation_deg: Finite = 0
+    atrial_kick_scale: Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)] = 0.35
+    respiratory_period_s: Positive
+    respiratory_quiescent_s: NonNegative
+    respiratory_translation_mm: Vector
+
+    @model_validator(mode="after")
+    def valid_windows(self):
+        d0, d1 = self.diastolic_window_s
+        if not (0 < self.systolic_duration_s <= d0 < d1 <= self.rr_interval_s):
+            raise ValueError(
+                "cardiac windows must satisfy 0 < systolic_duration_s <= diastolic_window_s[0] < diastolic_window_s[1] <= rr_interval_s"
+            )
+        if self.respiratory_quiescent_s >= self.respiratory_period_s:
+            raise ValueError(
+                "respiratory_quiescent_s must be strictly less than respiratory_period_s"
+            )
+        if len(self.cardiac_translation_mm) != len(self.respiratory_translation_mm):
+            raise ValueError(
+                "cardiac and respiratory translation dimensions must match"
+            )
+        return self
+
+
 class TimeVariation(Strict):
     kind: Literal["time_variation"]
     model: Literal["sinusoidal"]
@@ -493,7 +564,8 @@ class TimeVariation(Strict):
 
 B0Effect = Annotated[B0 | ConstantB0 | GaussianB0 | MapB0, Field(discriminator="model")]
 MotionEffect = Annotated[
-    Motion | RigidTrajectory | Deformation, Field(discriminator="model")
+    Motion | RigidTrajectory | Deformation | CardiacRespiratoryMotion,
+    Field(discriminator="model"),
 ]
 Effect = Annotated[B0Effect | MotionEffect | TimeVariation, Field(discriminator="kind")]
 
@@ -817,49 +889,14 @@ class ArmRuntime(Strict):
 
 
 class Concurrency(Strict):
-    agents: Annotated[int, Field(ge=1, le=128)] = 1
+    agents: Annotated[int, Field(ge=1, le=256)] = 1
     graders: Annotated[int, Field(ge=1, le=64)] = 1
     # Campaign-wide agent simulator executions sharing the selected GPU.
     simulators: Annotated[int, Field(ge=1, le=64)] = 4
 
 
-class WorkflowStage(Strict):
-    id: Identifier
-    request: Annotated[str, Field(min_length=1)]
-    # Dotted paths relative to SequenceSpec. Values replace the whole named field.
-    patch: dict[str, object] = Field(min_length=1)
-
-
-class Workflow(Document):
-    schema_version: Literal[1] = 1
-    initial_patch: dict[str, object] = Field(default_factory=dict)
-    task: TaskReference
-    qualification: Literal["draft"] = "draft"
-    stages: Annotated[list[WorkflowStage], Field(min_length=3, max_length=3)]
-
-    @model_validator(mode="after")
-    def unique_stages(self):
-        if len({s.id for s in self.stages}) != len(self.stages):
-            raise ValueError("workflow stage IDs must be unique")
-        return self
-
-
-class WorkflowRun(Strict):
-    mode: Literal["generate_edit", "supplied_edit", "final_spec"] = "generate_edit"
-    seed_manifest: str | None = None
-    version: Literal[1] = 1
-    stage_timeout_s: Positive = 3600
-    allow_unqualified: bool = False
-
-    @model_validator(mode="after")
-    def supplied_seed(self):
-        if (self.mode == "supplied_edit") != (self.seed_manifest is not None):
-            raise ValueError("seed_manifest is required exactly for supplied_edit mode")
-        return self
-
-
 class Experiment(Document):
-    workflow: WorkflowRun | None = None
+    agentic: StrictBool = False
     suite: Reference
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)] = 42
     repeats: Annotated[int, Field(gt=0, le=1000)] = 1
@@ -869,13 +906,13 @@ class Experiment(Document):
     feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
     api_proxy: ApiProxyConfig | None = None
     submission_mode: Literal["file", "submit"] = "submit"
-    arm: Reference | None = None
+    arm: ArmReference | None = None
     arm_runtime: ArmRuntime | None = None
     concurrency: Concurrency = Field(default_factory=Concurrency)
 
     @model_validator(mode="after")
     def arm_isolation(self):
-        if self.workflow is not None:
+        if self.agentic:
             if self.submission_mode != "submit":
                 raise ValueError("workflows require explicit submission mode")
             if self.agent.uses_model and self.agent.adapter != "pi":
@@ -908,7 +945,6 @@ class Experiment(Document):
 
 
 MODELS = {
-    "workflows": Workflow,
     "tasks": Task,
     "objects": Object,
     "physics": Physics,
